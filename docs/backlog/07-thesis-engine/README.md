@@ -40,6 +40,15 @@ for the memo** (recommendation is thesis-relative).
 
 Single fund (no multi-tenancy). Thesis back-testing (vcbrain has it) — post-MVP note.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** thesis-gate classifier (cheap, in-thesis / deal-breaker with reason).
+- **n8n (MANDATORY, two n8n agents):** `thesis-gate`, `thesis-fit-score`.
+- **Data model:** @database-engineer — `thesis` config table (versioned); reconcile with 01.
+- **UX/Design + UX-brainstorm with operator:** thesis config form + the «lens» interaction (thesis switch re-sorts feed live) — @designer designs, @frontend-developer builds.
+- **QA:** @qa-engineer — soft-fail keeps open door (gray-out, not hide), gate reasons visible.
+
 ## Open questions
 
 - Default demo thesis: «B2B tech, pre-seed/seed, EU+US, $100K» (mirrors sponsor) — confirm.

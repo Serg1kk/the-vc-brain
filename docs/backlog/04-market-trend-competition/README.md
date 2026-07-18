@@ -80,6 +80,15 @@ No paid databases (Crunchbase etc. — post-MVP). Funding histories only from pu
 Tavily. Tech-stack benchmarking of competitors (NotebookLM idea) — post-MVP note in UI.
 Deck-vs-codebase AI-washing check lives in feature 05 (truth-gap), not here.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** category classifier, market/trend researcher, dedicated competitive agent (web-discovery, unnamed competitors).
+- **n8n (MANDATORY, two n8n agents):** `market-intel`, `competition-intel`.
+- **Data model — LIKELY SCHEMA REVISION:** @database-engineer — typed competitor entity (per_competitor_record + our `threat_level`/`switching_cost` fields), `why_now`, tailwinds[]/headwinds[] on the company card. Reconcile with 01 BEFORE building.
+- **UX/Design:** Market & Competition tabs of the card — mock with @designer here, implement in 09.
+- **QA:** @qa-engineer — TAM-sanity math, competitor dedup, founder-claims-vs-found mismatch → Trust flag.
+
 ## Open questions
 
 - Tavily credit budget per card (search is cheap, /research mini 4-110 credits) — cap in

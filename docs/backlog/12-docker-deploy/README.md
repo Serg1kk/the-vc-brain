@@ -37,6 +37,16 @@ ElevenLabs) wired via .env.
 No CI/CD, no backups, no monitoring (hackathon). One environment knob: DEMO_MODE (pre-warmed
 data, faster crons).
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **@devops is the CENTER of this feature:** compose, volumes, .env wiring, VPS deploy, TLS, smoke of the demo script end-to-end.
+- **Data model:** @database-engineer — `supabase/schema.sql` first-boot apply.
+- **Build:** @backend-developer — compose wiring of n8n workflows export (`n8n/workflows/` versioned in repo).
+- **n8n:** export/import discipline via the global `n8n` skill (instances management); workflows themselves come from features 02-11.
+- **UX/Design:** none.
+- **QA:** @qa-engineer — cold-boot test (fresh clone → compose up → demo works), DEMO_MODE pre-warm check.
+
 ## Open questions
 
 - Reuse operator's existing local n8n instance for building workflows, then export → compose?

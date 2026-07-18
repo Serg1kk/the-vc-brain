@@ -45,6 +45,15 @@ thesis-fit), (c) **контекст для memo** (рекомендация от
 
 Один фонд (без multi-tenancy). Back-testing thesis (есть у vcbrain) — пометка post-MVP.
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** классификатор thesis-gate (дешёвый, in-thesis / deal-breaker с причиной).
+- **n8n (ОБЯЗАТЕЛЬНО, два n8n-агента):** `thesis-gate`, `thesis-fit-score`.
+- **Дата-модель:** @database-engineer — конфиг-таблица `thesis` (версионируемая); согласовать с 01.
+- **UX/Дизайн + UX-брейншторм с оператором:** форма конфига тезиса + интеракция «линза» (переключение тезиса пересортирует фид вживую) — проектирует @designer, собирает @frontend-developer.
+- **QA:** @qa-engineer — soft-fail сохраняет open door (gray-out, не скрытие), причины гейта видимы.
+
 ## Открытые вопросы
 
 - Дефолтный demo-thesis: «B2B tech, pre-seed/seed, EU+US, $100K» (зеркалит спонсора) —

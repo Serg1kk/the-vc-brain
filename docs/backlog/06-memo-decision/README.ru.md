@@ -59,6 +59,15 @@ Financials/cap table — только «не раскрыто» + блок bench
 опциональные секции, включать только если дёшево. Adversarial committee pass — stretch (см.
 05).
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** агенты-писатели секций (цитаты = только claim_ids), агент deep-dive-вопросов; decision-нода детерминированная (НЕ LLM-вызов).
+- **n8n (ОБЯЗАТЕЛЬНО, два n8n-агента):** `generate-memo`, `deep-dive-questions`.
+- **Дата-модель — ВОЗМОЖНО ДОПОЛНЕНИЕ СХЕМЫ:** @database-engineer — версионируемая таблица `memos` (нет в первом срезе 01); согласовать с 01.
+- **UX/Дизайн:** memo view — первоклассный артефакт инвестора: layout с @designer (trust-бейджи, блок вопросов, баннер рекомендации); реализация в 09.
+- **QA:** @qa-engineer — нецитированный факт не рендерится, required-секции на месте, пути «not disclosed», защита от padding (length ≠ rigor).
+
 ## Открытые вопросы
 
 - Целевая длина memo (1 экран? 2?) — грумить с оператором против «padding работает против

@@ -51,6 +51,15 @@ Channels LinkedIn / X / ProductHunt / patents / accelerators: sidebar entries wi
 soon» + honest tooltip (what it would add). No real outreach. No continuous 24/7 crawling —
 cron with modest windows; demo pre-warmed with a seeded scan.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** thesis pre-gate classifier, footprint-extraction agents (GitHub/HN/site → claims).
+- **n8n (MANDATORY `n8n-requirements-orchestrator` → `n8n-workflow-builder`):** `radar-scan`, `identity-resolve`, `radar-score-trigger`.
+- **Data model:** @database-engineer — writes claims/raw_snapshots; any schema change must be reconciled with feature 01.
+- **UX/Design:** not here (feed UI lives in 09). No frontend work.
+- **QA:** @qa-engineer — identity-resolution correctness (no guessed links), rate-limit behavior, robots.txt respect visible.
+
 ## Open questions
 
 - Which HN window for the live demo (last 48h Show HN?) — pick during build; pre-select 3-5

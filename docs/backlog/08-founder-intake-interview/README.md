@@ -61,6 +61,16 @@ Email sending mocked. Voice AGENT (hears intonation/latency, counters LLM-assist
 post-MVP with its own text-vs-voice risk analysis (roadmap parking lot). No auth for founders —
 share_token links only.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** THE key product prompt — interview agent (gap-driven questions, pre-fill confirmation, guardrails baked into system prompt); claims-extraction from answers.
+- **n8n (MANDATORY, two n8n agents):** `intake-form` trigger, `interview-agent` webhook flow, `follow-up-interview` (share-token), ElevenLabs STT/TTS proxy nodes.
+- **Data model:** @database-engineer — interviews / voice_artifacts / share_token; possible additions (progress, question log); reconcile with 01.
+- **UX/Design — HEAVIEST UX FEATURE, mandatory UX-brainstorm with operator:** split-screen live-preview of the card, mic/TTS controls, disclosure banner, progress, «request a human», «Voice agent — next phase» note — @designer first, then @frontend-developer.
+- **Build:** @backend-developer — thin ElevenLabs proxy (key never in browser).
+- **QA:** @qa-engineer — all 8 interview guardrails from roadmap verified one by one; voice originals stored & linked to claims.
+
 ## Open questions
 
 - Interview length cap (5-7 questions?) and gap-priority order — groom.

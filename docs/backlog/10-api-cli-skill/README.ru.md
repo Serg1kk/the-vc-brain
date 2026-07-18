@@ -51,6 +51,16 @@ webhooks для действий) + **CLI**, оборачивающий его, 
 MCP-сервер — post-MVP (skill дешевле закрывает историю про агентов). Auth = один service-
 токен (без ключей per-fund). Rate limiting — нет (demo).
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED) — здесь план СНАЧАЛА определяет контракт API-поверхности (endpoints, токены, формат ошибок), потом сборка. Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** агент NL-поиска (запрос → структурный фильтр + FTS).
+- **n8n (ОБЯЗАТЕЛЬНО, два n8n-агента):** action-вебхуки (`/apply`, `/score`, `/nl-search`).
+- **Дата-модель:** @database-engineer — экспозиция PostgREST (вьюхи, сервисные токены, что публично vs внутреннее); согласовать с 01.
+- **Сборка:** @backend-developer — CLI (`vcbrain`, --json везде) + тонкие кастомные endpoints; Claude-скилл пишется по конвенциям глобального `skill-creator`.
+- **UX/Дизайн:** нет (только api.md + доки скилла).
+- **QA:** @qa-engineer — контрактные тесты на endpoint, evidence-поля в каждом ответе, CLI-smoke всех команд.
+
 ## Открытые вопросы
 
 - Язык CLI: Python (Typer, соответствует ops) vs Node (единый runtime с фронтом) — грумить

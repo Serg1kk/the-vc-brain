@@ -69,6 +69,16 @@ n8n + Supabase + фронтенд-компонент чата:
 помощью LLM) — post-MVP со своим отдельным риск-анализом text-vs-voice (parking lot в
 roadmap). Без auth для founders — только ссылки share_token.
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** КЛЮЧЕВОЙ промпт продукта — интервью-агент (вопросы из gaps, подтверждение pre-fill, гардрейлы зашиты в system prompt); извлечение claims из ответов.
+- **n8n (ОБЯЗАТЕЛЬНО, два n8n-агента):** триггер `intake-form`, webhook-флоу `interview-agent`, `follow-up-interview` (share-token), прокси-ноды ElevenLabs STT/TTS.
+- **Дата-модель:** @database-engineer — interviews / voice_artifacts / share_token; возможны дополнения (progress, лог вопросов); согласовать с 01.
+- **UX/Дизайн — САМАЯ UX-ТЯЖЁЛАЯ ФИЧА, обязательный UX-брейншторм с оператором:** сплит-экран live-preview карточки, контролы микрофона/TTS, баннер дисклоужера, прогресс, «request a human», пометка «Voice agent — next phase» — сначала @designer, потом @frontend-developer.
+- **Сборка:** @backend-developer — тонкий ElevenLabs-прокси (ключ не попадает в браузер).
+- **QA:** @qa-engineer — все 8 гардрейлов интервью из roadmap проверить по одному; голосовые оригиналы сохранены и связаны с claims.
+
 ## Открытые вопросы
 
 - Лимит длины интервью (5-7 вопросов?) и порядок приоритета gaps — грумить.

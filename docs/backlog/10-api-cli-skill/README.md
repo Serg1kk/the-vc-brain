@@ -47,6 +47,16 @@ service directly.
 MCP server — post-MVP (skill covers the agent story cheaper). Auth = single service token
 (no per-fund keys). Rate limiting — none (demo).
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED) — here the plan defines the API surface contract FIRST (endpoints, tokens, error shapes), then build. Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** NL-search agent (query → structured filter + FTS).
+- **n8n (MANDATORY, two n8n agents):** action webhooks (`/apply`, `/score`, `/nl-search`).
+- **Data model:** @database-engineer — PostgREST exposure (views, service tokens, what's public vs internal); reconcile with 01.
+- **Build:** @backend-developer — CLI (`vcbrain`, --json everywhere) + thin custom endpoints; the Claude skill is written with the global `skill-creator` conventions.
+- **UX/Design:** none (api.md + skill docs only).
+- **QA:** @qa-engineer — contract tests per endpoint, evidence fields present in every response, CLI smoke on all commands.
+
 ## Open questions
 
 - CLI language: Python (Typer, matches ops) vs Node (single runtime with front) — groom at

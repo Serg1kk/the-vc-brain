@@ -51,6 +51,15 @@ light/dark theme.
 No auth screens (single fund). Channel stubs clickable → «coming soon» panel with what the
 channel would add. Mobile — not a target (judges watch desktop demo).
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **UX/Design — @designer is the CENTER of this feature + UX-brainstorm with operator** (4 open questions: density, live-preview, demo first frame, theme). Prepares design brief + tokens for the Lovable vs Claude Design bake-off; investor-grade «Notion approachability + Bloomberg depth».
+- **Build:** @frontend-developer — SPA over Supabase REST + n8n webhooks; pure REST so the front stays swappable.
+- **AI logic:** none new here (renders 03-07 outputs). NL-search UI hits feature 10's endpoint.
+- **Data model:** @database-engineer — read views only; no schema changes expected.
+- **QA:** @qa-engineer — axes never collapse into one number anywhere in UI (REQ-002), evidence-on-click works for every rendered number, channel stubs honest.
+
 ## Open questions
 
 - Lovable vs Claude Design bake-off — operator runs both, we pick; @designer agent prepares

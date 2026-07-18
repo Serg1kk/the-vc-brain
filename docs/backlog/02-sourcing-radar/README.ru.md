@@ -58,6 +58,15 @@ Rate limits на demo-масштабе не проблема (GitHub 5k/ч, HN 1
 soon» + честный тултип (что бы это добавило). Без реального outreach. Без непрерывного
 24/7-краулинга — cron со скромными окнами; demo прогрет заранее заготовленным сканом.
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** классификатор thesis pre-gate, агенты извлечения следов (GitHub/HN/сайт → claims).
+- **n8n (ОБЯЗАТЕЛЬНО `n8n-requirements-orchestrator` → `n8n-workflow-builder`):** `radar-scan`, `identity-resolve`, `radar-score-trigger`.
+- **Дата-модель:** @database-engineer — запись claims/raw_snapshots; любые изменения схемы согласовать с фичей 01.
+- **UX/Дизайн:** здесь не нужен (UI фида — в 09). Фронта нет.
+- **QA:** @qa-engineer — корректность identity resolution (никаких угаданных связей), поведение на rate-limits, видимый respect robots.txt.
+
 ## Открытые вопросы
 
 - Какое окно HN для живого демо (последние 48ч Show HN?) — выбрать во время билда;

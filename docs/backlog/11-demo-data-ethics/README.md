@@ -47,6 +47,15 @@ public-data-only, opt-out, data minimisation, robots.txt respect.
 No GDPR paperwork (a demo, stated as such: «for production in EU — documented legitimate
 interest assessment per EDPB 03/2026»). Real founders: professional-signal data only.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** synthetic-profile generator with seeded contradictions.
+- **n8n (MANDATORY, two n8n agents):** radar pre-warm run on the fresh HN window (uses feature 02 workflows).
+- **Data model:** @database-engineer — `synthetic` flag; reconcile with 01.
+- **UX/Design:** small but visible — synthetic badge, opt-out button, «what we collect» note; @designer folds into 09.
+- **QA:** @qa-engineer — synthetics NEVER render unbadged (REQ-004 honesty), opt-out actually deletes, no Art.9/minimisation violations in collected fields.
+
 ## Open questions
 
 - Contact the real founders? (Nice-touch post-hackathon: «you were scored by our demo, here's

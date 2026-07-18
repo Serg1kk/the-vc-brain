@@ -62,6 +62,15 @@ Reference-звонки → прокси-сигналы или «References: не
 Полный adversarial-комитет validator-critic (IDEA-003) — stretch; если хватит времени — один
 n8n-агент «адвокат дьявола», который должен найти ≥2 возражения на memo.
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** роутер клеймов (factual-static / factual-dynamic / qualitative / unverifiable), детектор противоречий; валидатор проверяет ФАКТЫ, не мнение другой LLM (GVC).
+- **n8n (ОБЯЗАТЕЛЬНО, два n8n-агента):** `verify-claims`, `contradiction-scan`, `trust-rollup` (детерминированный).
+- **Дата-модель:** @database-engineer — словарь verification_status, audit trail в events; согласовать с 01.
+- **UX/Дизайн:** бейджи статусов + паттерн evidence-on-click — словарь/цвета согласовать с @designer (рендер в 09).
+- **QA:** @qa-engineer — КРИТИЧНО здесь: нет путей фабрикации, противоречие снижает Trust детерминированно, audit-строка на каждую верификацию.
+
 ## Открытые вопросы
 
 - Глубина верификации на бюджет claim'а (вызовы LLM+Tavily) — ограничить на карточку, грумить.

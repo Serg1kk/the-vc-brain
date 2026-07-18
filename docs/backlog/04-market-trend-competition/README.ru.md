@@ -89,6 +89,15 @@ bull/neutral/bear.
 пометка post-MVP в UI. Проверка AI-washing deck-vs-codebase живёт в фиче 05 (truth-gap), не
 здесь.
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **AI-логика (ОБЯЗАТЕЛЬНО `ai-agent-builder`):** классификатор категории, market/trend-ресерчер, выделенный competitive-агент (web-discovery, неназванные конкуренты).
+- **n8n (ОБЯЗАТЕЛЬНО, два n8n-агента):** `market-intel`, `competition-intel`.
+- **Дата-модель — ВЕРОЯТЕН ПЕРЕСМОТР СХЕМЫ:** @database-engineer — типизированная сущность конкурента (per_competitor_record + наши поля `threat_level`/`switching_cost`), `why_now`, tailwinds[]/headwinds[] на карточке компании. Согласовать с 01 ДО разработки.
+- **UX/Дизайн:** вкладки Market и Competition карточки — макет с @designer здесь, реализация в 09.
+- **QA:** @qa-engineer — математика TAM-sanity, дедуп конкурентов, расхождение claims фаундера с найденным → Trust-флаг.
+
 ## Открытые вопросы
 
 - Бюджет кредитов Tavily на карточку (search дешёвый, /research mini 4-110 кредитов) —

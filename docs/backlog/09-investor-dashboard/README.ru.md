@@ -57,6 +57,15 @@ competition) → **memo view**. Основные контексты K1 (утре
 Без экранов auth (один фонд). Заглушки каналов кликабельны → панель «coming soon» с тем, что
 добавил бы канал. Mobile — не цель (судьи смотрят десктопное демо).
 
+## Агенты и режимы работы (оркестрация — читать перед грумом)
+
+- **Сначала план:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (до ✅ APPROVED). Git/деплой — ТОЛЬКО @devops.
+- **UX/Дизайн — @designer ЦЕНТР этой фичи + UX-брейншторм с оператором** (4 открытых вопроса: плотность, live-preview, первый кадр демо, тема). Готовит дизайн-бриф + токены для бейк-оффа Lovable vs Claude Design; investor-grade «Notion approachability + Bloomberg depth».
+- **Сборка:** @frontend-developer — SPA поверх Supabase REST + n8n webhooks; чистый REST, фронт остаётся подменяемым.
+- **AI-логика:** новой нет (рендерит выходы 03-07). UI NL-поиска бьёт в endpoint фичи 10.
+- **Дата-модель:** @database-engineer — только read-вьюхи; изменений схемы не ожидается.
+- **QA:** @qa-engineer — оси нигде в UI не схлопываются в одно число (REQ-002), evidence-on-click работает для каждой отрисованной цифры, каналы-заглушки честные.
+
 ## Открытые вопросы
 
 - Bake-off Lovable vs Claude Design — оператор прогоняет оба, мы выбираем; агент @designer

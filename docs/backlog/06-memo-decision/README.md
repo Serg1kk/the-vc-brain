@@ -53,6 +53,15 @@ n8n workflow **`generate-memo`** (prompts via ai-agent-builder):
 Financials/cap table — «not disclosed» + benchmark block only. Exit perspective / DD log —
 optional sections, include only if cheap. Adversarial committee pass — stretch (see 05).
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** section-writer agents (citations = claim_ids only), deep-dive-questions agent; decision node is deterministic (NOT an LLM call).
+- **n8n (MANDATORY, two n8n agents):** `generate-memo`, `deep-dive-questions`.
+- **Data model — POSSIBLE SCHEMA ADDITION:** @database-engineer — versioned `memos` table (not in 01 first cut); reconcile with 01.
+- **UX/Design:** memo view is a first-class investor artifact — layout with @designer (trust badges, questions block, recommendation banner); implement in 09.
+- **QA:** @qa-engineer — no uncited facts can render, required sections present, «not disclosed» paths, padding guard (length ≠ rigor).
+
 ## Open questions
 
 - Memo length target (1 screen? 2?) — groom with operator against «padding counts against».

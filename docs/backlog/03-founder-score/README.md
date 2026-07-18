@@ -62,6 +62,15 @@ Social-personality analysis (X/Twitter traits) — stretch per Carl (SCOPE-005),
 grayed «Personality (research)» block. No prediction intervals (Research Area 1) — show
 confidence honestly instead.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** 4 sub-scorer agents (execution-signals, expertise-signals, leadership-sales-proxies, red-flags) — the core prompts of the product.
+- **n8n (MANDATORY, two n8n agents):** `score-founder`, `aggregate-score` (deterministic Code node — formula owned by backend).
+- **Data model:** @database-engineer — scores append-only + formula/weights config row; reconcile with 01.
+- **UX/Design:** not here (score visualization in 09); but define the score-breakdown JSON contract WITH @designer so the card can render it.
+- **QA:** @qa-engineer — formula determinism tests, missing→confidence (not score), axis independence (REQ-002/003).
+
 ## Open questions
 
 - Final formula_v1 weights — groom with operator; keep a config table so judges see

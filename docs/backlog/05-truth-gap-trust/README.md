@@ -56,6 +56,15 @@ Reference calls → proxy signals or «References: unavailable at this stage» (
 Validator-critic full adversarial committee (IDEA-003) — stretch; if time allows, one
 «devil's advocate» n8n agent that must find ≥2 objections per memo.
 
+## Agents & work modes (orchestration — read before grooming)
+
+- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
+- **AI logic (MANDATORY `ai-agent-builder`):** claim router (factual-static / factual-dynamic / qualitative / unverifiable), contradiction detector; validator checks FACTS, never another LLM's opinion (GVC).
+- **n8n (MANDATORY, two n8n agents):** `verify-claims`, `contradiction-scan`, `trust-rollup` (deterministic).
+- **Data model:** @database-engineer — verification_status vocab, events audit trail; reconcile with 01.
+- **UX/Design:** status badges + evidence-on-click pattern — agree vocab/colors with @designer (renders in 09).
+- **QA:** @qa-engineer — CRITICAL here: no fabrication paths, contradiction lowers Trust deterministically, audit row per verification.
+
 ## Open questions
 
 - Verification depth per claim budget (LLM+Tavily calls) — cap per card, groom.
