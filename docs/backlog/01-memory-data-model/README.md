@@ -2,6 +2,9 @@
 
 Status: backlog · Depends on: — · Blocks: everything
 
+> **Design approved (2026-07-19): [design.md](design.md)** — supersedes the
+> «Implementation view» section below.
+
 ## What it is
 
 The persistent Memory layer of The VC Brain in **Supabase (Postgres)**: founders, companies,

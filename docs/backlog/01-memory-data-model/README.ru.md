@@ -4,6 +4,9 @@
 
 Status: backlog · Depends on: — · Blocks: everything
 
+> **Дизайн утверждён (19.07.2026): [design.md](design.md)** (EN) — заменяет секцию
+> «Implementation view» ниже.
+
 ## Что это
 
 Постоянный слой Memory в The VC Brain на **Supabase (Postgres)**: founders, companies,

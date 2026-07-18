@@ -103,15 +103,20 @@ survivorship bias — RSK-002..004 with sources).
    multi-channel vision.
 2. **P1 primary context: K1+K2** (inbound triage → pre-call prep). K3 radar works on one
    channel; other channels stubbed in the dashboard.
-3. **Founder-side agent: FULL cycle.** Interview at application time (live LLM agent) + a real
-   share-link second interview requested by the VC (email sending mocked). Cards (company /
-   founder / team) are generated during the first interview, **pre-filled from public
-   footprints** («we already found your GitHub — confirm and fill the gaps»).
-   **Voice input/output in the chat (MVP):** a mic button (ElevenLabs STT) to speak answers and
-   TTS playback of the agent's questions — speaking is easier than typing (less mid-chat
-   abandonment), and **voice originals are stored as evidence artifacts**: a spoken answer has
-   provenance a copy-pasted text doesn't (possible legal value; abandoning mid-interview is
-   itself a founder signal). UI carries a note: **«Voice agent — next phase»**.
+3. **Founder-side: COMPACT intake (option B — REVISED Jul 19 ~02:00, supersedes «full cycle»).**
+   Re-checked against Carl's own speech and brief document: two-sidedness is literally his
+   («Fix works both ways», the credit-card apply metaphor, «apply through a form and get
+   through that door») — but HIS entry is a minimal form («should not get too long»), and all
+   rubric weight sits on the investor side. So:
+   - **Minimal form** (deck + company name + artifact links) + **upload ANY files/presentations**
+     — deck parsed (text extraction → claims); other file types optional, a **dummy upload
+     button is acceptable for MVP** (parsed «later» honestly labeled).
+   - **Optional short agent-check**: 3-5 gap-driven questions (text chat), pre-filled from
+     public footprints; skippable — never a wall. Guardrails from the research stay.
+   - **Voice input/TTS — stretch within MVP** (only if time remains), not core.
+   - **«Request follow-up interview» + email — polished STUBS** (composed email + link shown,
+     nothing sent). Full interview cycle + voice agent → post-MVP parking lot.
+   - Freed time (~1.5-2h) flows into features 04/05/06 depth (where 55%+ of the rubric lives).
 4. **Demo data:** 3-5 real founders (HN Show HN / GitHub) + 1-2 synthetic profiles with
    seeded contradictions (to safely demo truth-gap / red flags).
 5. **API: REST + CLI + a ready-made Claude skill for the CLI** — the skill ships full docs:

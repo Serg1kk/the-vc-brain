@@ -1,6 +1,15 @@
-# 08 · Founder Intake & Interview Agent (voice-enabled)
+# 08 · Founder Intake & Optional Agent-Check (compact — option B)
 
-Status: backlog · Depends on: 01, 02 · The founder-side heart (two-sidedness)
+Status: backlog · Depends on: 01, 02 · Founder-side entry (two-sidedness, asymmetric)
+
+> **REVISED Jul 19 ~02:00 (operator decision, option B)** — supersedes the «full cycle»
+> framing below where they conflict. Compact intake: minimal form + **upload ANY
+> files/presentations** (deck parsed to claims; other types optional — a **dummy upload
+> button is fine for MVP**, honestly labeled) + **optional short agent-check** (3-5
+> gap-driven text questions, skippable, never a wall). Voice in/TTS — stretch within MVP,
+> not core. «Request follow-up» + email — polished STUBS. Full interview cycle + voice
+> agent → post-mvp/. Freed ~1.5-2h go into features 04/05/06. Rationale: Carl's own brief —
+> «Fix works both ways» but the entry is a SHORT form; rubric weight is investor-side.
 
 ## What it is
 

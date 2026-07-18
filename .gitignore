@@ -3,6 +3,8 @@ internal/
 .claude/
 CLAUDE.md
 AGENTS.md
+.automation/
+session-history/
 
 # --- Secrets ---
 .env
