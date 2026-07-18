@@ -9,11 +9,11 @@
 
 | # | Task | Executor | Depends on | Status | Result / commit | Notes |
 |---|------|----------|-----------|--------|-----------------|-------|
-| 1 | Supabase self-hosted up (`infra/supabase/`) | @devops | — | in_progress | | ∥ with Task 2 steps 1-3 |
-| 2 | Repo scaffolding `db/` + CLAUDE.md Commands | @database-engineer | Step 4 waits on 1 | in_progress | | steps 1-3 ∥ Task 1 |
-| 3 | Registries + seeds | @database-engineer | 1, 2 | pending | | sequential 3→8 |
-| 4 | Identity core (+FTS founders/companies) | @database-engineer | 3 | pending | | |
-| 5 | Funnel (applications, theses) | @database-engineer | 4 | pending | | |
+| 1 | Supabase self-hosted up (`infra/supabase/`) + n8n | @devops | — | done | commits 903601b (docs), 668e41d (infra); PG 17.6, Kong 8000, n8n 5678 | keys via official generate-keys.sh; .env not committed |
+| 2 | Repo scaffolding `db/` + CLAUDE.md Commands | @database-engineer | Step 4 waits on 1 | done | apply+smoke exit 0 on live DB | |
+| 3 | Registries + seeds | @database-engineer | 1, 2 | done | 4 registries seeded (5/6/3/5 rows), non-collapse seed guard | |
+| 4 | Identity core (+FTS founders/companies) | @database-engineer | 3 | done | dedup gate + search_tsv proven; normalized_name GENERATED | |
+| 5 | Funnel (applications, theses) | @database-engineer | 4 | done | minimal intake + re-application proven; theses UNIQUE(name,version) | deck NOT NULL → replaced by inbound-only CHECK (design addendum) |
 | 6 | Evidence ledger (+claims.search_tsv) | @database-engineer | 5 | pending | | |
 | 7 | Intelligence (scores, ai_runs) | @database-engineer | 6 | pending | | |
 | 8 | Interview, experience & ops | @database-engineer | 7 | pending | | |
@@ -28,3 +28,6 @@
   advisory folded into Task 9.
 - 2026-07-19 · tracker created; dispatched @devops (docs commit → Task 1) and
   @database-engineer (Task 2 steps 1-3).
+- 2026-07-19 ~02:03 · Task 2 steps 1-3 done, files verified on disk (apply.sh with NOTIFY
+  pgrst, smoke harness with BEGIN/EXCEPTION pattern, CLAUDE.md Commands). Task 1 still
+  in progress (infra/ dirs created, containers coming up).

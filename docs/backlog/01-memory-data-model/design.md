@@ -121,7 +121,11 @@ Conventions: `id uuid PK default gen_random_uuid()`, `created_at timestamptz def
   `status CHECK (status in ('sourced','screening','diligence','decision','invest','pass'))`,
   `thesis_id FK NULL` (nullable: minimal intake must not depend on a seeded thesis; the
   gate step fills it), `thesis_gate CHECK (thesis_gate in ('passed','failed','borderline')
-  OR NULL)` (cheap pre-filter result, SCOPE-007), `deck_storage_path`, `artifact_links jsonb`
+  OR NULL)` (cheap pre-filter result, SCOPE-007), `deck_storage_path` — **required for
+  `kind='inbound'` only** (`CHECK (kind <> 'inbound' OR deck_storage_path IS NOT NULL)`):
+  the REQ-008 minimal floor applies to inbound applications, while `radar_activated` rows
+  are deckless by definition (cold-outreach funnel entries created before the founder
+  applies; addendum surfaced during Task 5 implementation), `artifact_links jsonb`
   (repo/live URL/demo — REC-014), `submitted_by`, timestamps.
   **Re-application = new row** → the rejection→growth→return trajectory is preserved
   for free (SIG-025).

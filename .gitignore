@@ -20,3 +20,4 @@ __pycache__/
 .process-meetings/
 node_modules/
 other-projects/
+infra/supabase/volumes/
