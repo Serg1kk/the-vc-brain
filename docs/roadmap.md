@@ -107,11 +107,31 @@ survivorship bias — RSK-002..004 with sources).
    share-link second interview requested by the VC (email sending mocked). Cards (company /
    founder / team) are generated during the first interview, **pre-filled from public
    footprints** («we already found your GitHub — confirm and fill the gaps»).
+   **Voice input/output in the chat (MVP):** a mic button (ElevenLabs STT) to speak answers and
+   TTS playback of the agent's questions — speaking is easier than typing (less mid-chat
+   abandonment), and **voice originals are stored as evidence artifacts**: a spoken answer has
+   provenance a copy-pasted text doesn't (possible legal value; abandoning mid-interview is
+   itself a founder signal). UI carries a note: **«Voice agent — next phase»**.
 4. **Demo data:** 3-5 real founders (HN Show HN / GitHub) + 1-2 synthetic profiles with
    seeded contradictions (to safely demo truth-gap / red flags).
 5. **API: REST + CLI + a ready-made Claude skill for the CLI** — the skill ships full docs:
    how to work with the CLI, database structure, available methods, query patterns; a fund's
    agent plugs in a token from their system and works with the service. MCP — not in MVP.
+6. **Tech stack — OPERATOR OVERRIDE (Jul 19): n8n + Supabase hybrid.** All product workflows,
+   automations, assistants and agents are built as **visual n8n workflows** (visible and
+   understandable, not code); backend code only as a thin layer where n8n is awkward.
+   Database — **Supabase** (Postgres; PostgREST gives REST out of the box; storage for voice
+   artifacts). No vector DB for now (operator will call it if needed). Frontend — SPA
+   (Lovable / Claude Design experiment) over Supabase REST + n8n webhooks. CLI + Claude skill
+   on top of the same REST surface. docker-compose locally (operator's familiar
+   n8n+Supabase self-hosted setup), VPS at the end. n8n work goes ONLY through the operator's
+   global agents: `n8n-requirements-orchestrator` → `n8n-workflow-builder`.
+   *(Architect's earlier FastAPI+SQLite comparison kept as reference; its key borrow — vantage's
+   «model proposes, backend decides» + append-only versioned scores — carries over as the
+   scoring pattern inside n8n/Supabase.)*
+
+**Feature backlog: [`docs/backlog/`](backlog/) — 11 MVP features (01-11), one folder each with a
+detailed README. Grooming/spec/plan per feature happens in separate terminals.**
 
 ### Founder-interview guardrails (from Exa research, Jul 18 — non-negotiable)
 
@@ -136,6 +156,30 @@ Zapier Ezra pilot, field experiment (3,000+ applicants, exe wp 2602).
 - ⚠️ **Known risk:** async interviews deter applicants (-50% continuation in the field
   experiment, worst for women) — mitigations: pre-fill (short), disclosure, human option,
   and the interview being optional-after-form, not a wall.
+
+## External services policy (operator, Jul 19)
+
+**Buy/connect over build:** we do NOT build our own databases — we plug into existing
+services and use them to the maximum. Operator can add subscriptions if a service is worth it.
+
+In the product now: **OpenAI** (reasoning/scoring) · **Tavily** (search/research/crawl) ·
+**ElevenLabs** (STT/TTS in the interview chat) · **GitHub API** + **HN Algolia** (free, sourcing core).
+Free candidates to plug next (from data-sources research + OSS references): **YC OSS API**
+(~2.3k B2B startups — ground-truth cohort) · **Adzuna** (hiring velocity — «#1 breakout
+predictor» per Thesis-Agent) · ProductHunt GraphQL (non-commercial ToS ok for hackathon) ·
+USPTO/EPO patents · Wikipedia pageviews. Paid founder/company data providers (Crunchbase,
+Harmonic, Specter, PDL) — post-MVP, only if a concrete gap demands it.
+
+## Post-MVP (parking lot — operator, Jul 19)
+
+- **Voice interview agent** (replaces the text chat for interviews): modern voice models hear
+  intonation, hesitation, latency, «is he searching/reading while answering» — a natural
+  counter to LLM-assisted answering that text chat cannot detect. Needs its own work item:
+  **detailed risk analysis «text agent vs voice agent»** (gaming resistance, deterrence/drop-off,
+  accessibility, bias of voice-based judgments, legal/consent for voice analysis). Explicitly
+  out of the 24h scope; the MVP UI carries a «Voice agent — next phase» note.
+- Второе интервью email-делivery по-настоящему; MCP-сервер; остальные sourcing-каналы
+  из дашборда-заглушек.
 
 ## Open questions (для tech phase)
 
