@@ -42,8 +42,11 @@ competition) → **memo view**. Основные контексты K1 (утре
 2. **Card**: hero с осями+трендами; вкладки: Evidence (таблица ledger: claim → ссылка на
    источник → confidence → бейдж статуса), Market (чип категории, стрелка тренда + цитируемые
    факты, TAM sanity, bull/neutral/bear), Competition (таблица с threat levels), Interview
-   (транскрипт + плееры voice-артефактов), честный блок «Что мы не знаем»; действия: View
-   memo · Request follow-up interview · delete-on-request (этика).
+   (транскрипт + плееры voice-артефактов), честный блок «Что мы не знаем»; **placeholder-блок «Interview
+   signals — next phase»** (тизер: скоры из интервью, метрики сравнения голос vs звонок);
+   **пометки/комментарии менеджера на карточке** (питают
+   AI-предложение формы доп-вопросов — 08); действия: View memo · Suggest follow-up
+   questions · delete-on-request (этика).
 3. **Memo view**: обязательные секции, бейджи trust на каждый claim, блок deep-dive вопросов,
    баннер рекомендации с сработавшими правилами thesis; экспорт в markdown.
 4. **Thesis config** (форма из 07). 5. Экраны founder-стороны живут в 08.

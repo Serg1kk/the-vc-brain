@@ -7,7 +7,8 @@ READMEs' Boundaries blocks.
   remains after MVP** (operator, Jul 19): a mode choice at intake — text chat OR a voice agent
   talking from the site, personalized by the founder's card, with tools. Operator's estimate:
   relatively quick on ElevenLabs. Longer-term version also hears intonation, hesitation,
-  latency — counters LLM-assisted answering; that full version still needs the «text vs voice
+  latency — counters LLM-assisted answering — and produces SEPARATE interview-derived
+  scores incl. voice-recording vs live-call comparison metrics (teased in the MVP UI); that full version still needs the «text vs voice
   agent» risk analysis (gaming resistance, deterrence, accessibility, bias, consent). UI
   already carries the teaser note.
 - **Self-learning mode for product agents** (operator, Jul 19): agents/assistants keep

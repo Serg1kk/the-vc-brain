@@ -114,8 +114,14 @@ survivorship bias — RSK-002..004 with sources).
    - **Optional short agent-check**: 3-5 gap-driven questions (text chat), pre-filled from
      public footprints; skippable — never a wall. Guardrails from the research stay.
    - **Voice input/TTS — stretch within MVP** (only if time remains), not core.
-   - **«Request follow-up interview» + email — polished STUBS** (composed email + link shown,
-     nothing sent). Full interview cycle + voice agent → post-MVP parking lot.
+   - **Follow-up simplified to «additional questions», manager-driven:** the VC manager
+     leaves notes/comments on the card («check this», «verify that») → based on these notes +
+     gaps, AI SUGGESTS a follow-up question form to send to the founder; send/email — polished
+     STUB (composed form + email shown, nothing sent). Full follow-up interview cycle + voice
+     agent → post-MVP parking lot.
+   - **MANDATORY UI teaser** of the future AI Interview: short pitch of why it's powerful —
+     separate interview scores, voice-recording vs live-call comparison metrics,
+     intonation/hesitation signals (anti-gaming).
    - Freed time (~1.5-2h) flows into features 04/05/06 depth (where 55%+ of the rubric lives).
 4. **Demo data:** 3-5 real founders (HN Show HN / GitHub) + 1-2 synthetic profiles with
    seeded contradictions (to safely demo truth-gap / red flags).

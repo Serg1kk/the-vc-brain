@@ -36,8 +36,9 @@ Screens (SPA over Supabase REST + n8n webhooks):
 2. **Card**: hero with axes+trends; tabs: Evidence (ledger table: claim → source link →
    confidence → status badge), Market (category chip, trend arrow + cited facts, TAM sanity,
    bull/neutral/bear), Competition (table with threat levels), Interview (transcript +
-   voice-artifact players), «What we don't know» honest block; actions: View memo · Request
-   follow-up interview · delete-on-request (ethics).
+   voice-artifact players), «What we don't know» honest block; **«Interview signals — next
+   phase» placeholder block** (teaser: interview-derived scores, voice vs call comparison
+   metrics); **manager notes/comments on the card** (feed the AI-suggested follow-up questions form — 08); actions: View memo · Suggest follow-up questions · delete-on-request (ethics).
 3. **Memo view**: required sections, per-claim trust badges, deep-dive questions block,
    recommendation banner with thesis rules fired; export markdown.
 4. **Thesis config** (07's form). 5. Founder-side screens live in 08.

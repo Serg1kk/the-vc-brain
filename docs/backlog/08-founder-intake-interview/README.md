@@ -7,8 +7,13 @@ Status: backlog · Depends on: 01, 02 · Founder-side entry (two-sidedness, asym
 > files/presentations** (deck parsed to claims; other types optional — a **dummy upload
 > button is fine for MVP**, honestly labeled) + **optional short agent-check** (3-5
 > gap-driven text questions, skippable, never a wall). Voice in/TTS — stretch within MVP,
-> not core. «Request follow-up» + email — polished STUBS. Full interview cycle + voice
-> agent → post-mvp/. Freed ~1.5-2h go into features 04/05/06. Rationale: Carl's own brief —
+> not core. Follow-up simplified: VC-manager notes/comments on the card → AI
+> suggests an additional-questions form (send/email — polished STUB). Full interview cycle + voice
+> agent → post-mvp/. **MANDATORY UI teaser (operator):** the founder flow must showcase the
+> upcoming «AI Interview — next phase» panel with a short pitch of WHY it's powerful and what
+> it will add: separate interview-derived scores, voice-recording vs live-call comparison
+> metrics, intonation/hesitation/latency signals (anti-gaming), richer founder profile.
+> Freed ~1.5-2h go into features 04/05/06. Rationale: Carl's own brief —
 > «Fix works both ways» but the entry is a SHORT form; rubric weight is investor-side.
 
 ## What it is
