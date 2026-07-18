@@ -11,11 +11,13 @@
 > Читать в первую очередь: [`../roadmap.md`](../roadmap.md) (зафиксированные решения) ·
 > [`../personas.md`](../personas.md) · трекеры intel в `internal/Meetings/`.
 
+**Параллелизация и зависимости: [TRACKER.md](TRACKER.md)** (EN) — волны, критический путь, правила терминалов. Обновляйте там Status по ходу.
+
 ## Фичи (MVP)
 
 | # | Фича | Одной строкой | Зависит от |
 |---|---|---|---|
-| [01](01-memory-data-model/) | Память и модель данных | SQLite-схема: founders, companies, cards, claims+evidence ledger, append-only версионированные scores, watchlist | — |
+| [01](01-memory-data-model/) | Память и модель данных | Supabase-схема: founders, companies, cards, claims+evidence ledger, append-only версионированные scores, watchlist | — |
 | [02](02-sourcing-radar/) | Sourcing radar | GitHub+HN-скан → identity resolution → discovery feed; остальные каналы — честные заглушки | 01 |
 | [03](03-founder-score/) | Founder Score (cold-start) | Signal/anti-signal скоринг оси Founder; «модель предлагает, backend решает» | 01 |
 | [04](04-market-trend-competition/) | Рынок, тренд и конкурентная аналитика | Категория продукта → динамика тренда категории → TAM sanity → конкурентный анализ (Tavily research) | 01 |

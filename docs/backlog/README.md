@@ -9,11 +9,13 @@
 > Read first: [`../roadmap.md`](../roadmap.md) (locked decisions) ·
 > [`../personas.md`](../personas.md) · intel trackers in `internal/Meetings/`.
 
+**Parallelization & dependencies: [TRACKER.md](TRACKER.md)** — waves, critical path, terminal rules. Update Status there as features move.
+
 ## Features (MVP)
 
 | # | Feature | One-liner | Depends on |
 |---|---|---|---|
-| [01](01-memory-data-model/) | Memory & data model | SQLite schema: founders, companies, cards, claims+evidence ledger, append-only versioned scores, watchlist | — |
+| [01](01-memory-data-model/) | Memory & data model | Supabase schema: founders, companies, cards, claims+evidence ledger, append-only versioned scores, watchlist | — |
 | [02](02-sourcing-radar/) | Sourcing radar | GitHub+HN scan → identity resolution → discovery feed; other channels as honest stubs | 01 |
 | [03](03-founder-score/) | Founder Score (cold-start) | Signal/anti-signal scoring of the Founder axis; «model proposes, backend decides» | 01 |
 | [04](04-market-trend-competition/) | Market, trend & competition intel | Product category → category trend dynamics → TAM sanity → competitive analysis (Tavily research) | 01 |
