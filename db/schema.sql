@@ -192,9 +192,13 @@ CREATE TABLE IF NOT EXISTS applications (
   -- never block/delete the application it is attached to.
   thesis_id          uuid REFERENCES theses(id) ON DELETE SET NULL,
   thesis_gate        text CHECK (thesis_gate IN ('passed', 'failed', 'borderline')),
-  -- Minimal intake floor (REQ-008): company_id above + deck_storage_path here
-  -- are the only two things an applicant must supply.
-  deck_storage_path  text NOT NULL,
+  -- Minimal intake floor (REQ-008) for the INBOUND track only: company_id
+  -- above + deck_storage_path here. Nullable at the column level -- the
+  -- inbound-only requirement is enforced by the named CHECK constraint below
+  -- (design.md SS4.3 addendum, 2026-07-19): radar_activated rows are deckless
+  -- by definition -- cold-outreach funnel entries created before the founder
+  -- ever applies.
+  deck_storage_path  text,
   artifact_links     jsonb NOT NULL DEFAULT '{}'::jsonb,
   submitted_by       text,
   created_at         timestamptz NOT NULL DEFAULT now(),
@@ -205,4 +209,568 @@ CREATE INDEX IF NOT EXISTS idx_applications_company_id ON applications (company_
 CREATE INDEX IF NOT EXISTS idx_applications_thesis_id ON applications (thesis_id) WHERE thesis_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications (status);
 
--- (table groups appended below by Tasks 6-8; enforcement layer by Task 9)
+-- Backward-compat guard for the pre-addendum live table (already created with
+-- deck_storage_path NOT NULL by an earlier apply): idempotent regardless of
+-- whether this run just created the table above or is fixing an existing one.
+-- DROP NOT NULL on an already-nullable column is a safe no-op, not an error.
+ALTER TABLE applications ALTER COLUMN deck_storage_path DROP NOT NULL;
+
+-- No native "ADD CONSTRAINT IF NOT EXISTS" in Postgres -- guard via pg_constraint.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'applications_deck_required_for_inbound'
+      AND conrelid = 'applications'::regclass
+  ) THEN
+    ALTER TABLE applications
+      ADD CONSTRAINT applications_deck_required_for_inbound
+      CHECK (kind <> 'inbound' OR deck_storage_path IS NOT NULL);
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Task 6: Evidence ledger (design.md SS4.4)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS raw_signals (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source        text NOT NULL REFERENCES signal_sources(slug) ON DELETE RESTRICT,
+  source_url    text,
+  payload       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  -- Dedup + idempotent n8n retries: a retried sourcing workflow re-posting the
+  -- same observation must be a no-op, not a duplicate row.
+  content_hash  text NOT NULL UNIQUE,
+  founder_id    uuid REFERENCES founders(id) ON DELETE RESTRICT,
+  company_id    uuid REFERENCES companies(id) ON DELETE RESTRICT,
+  -- Business timestamp of the observation itself, distinct from created_at
+  -- (ingestion time below) -- callers must supply it, no silent default.
+  observed_at   timestamptz NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now()
+  -- Append-only (Task 9 forbid_mutation target): no updated_at.
+);
+
+CREATE INDEX IF NOT EXISTS idx_raw_signals_founder_id ON raw_signals (founder_id) WHERE founder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_raw_signals_company_id ON raw_signals (company_id) WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_raw_signals_source ON raw_signals (source);
+
+CREATE TABLE IF NOT EXISTS cards (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_type       text NOT NULL REFERENCES card_types(slug) ON DELETE RESTRICT,
+  founder_id      uuid REFERENCES founders(id) ON DELETE RESTRICT,
+  company_id      uuid REFERENCES companies(id) ON DELETE RESTRICT,
+  application_id  uuid REFERENCES applications(id) ON DELETE RESTRICT,
+  status          text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'prefilled', 'confirmed')),
+  completeness    numeric(3,2) CHECK (completeness BETWEEN 0 AND 1),
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cards_founder_id ON cards (founder_id) WHERE founder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_company_id ON cards (company_id) WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_application_id ON cards (application_id) WHERE application_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS claims (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id              uuid NOT NULL REFERENCES cards(id) ON DELETE RESTRICT,
+  -- Dotted slug vocabulary, free-form (design.md SS11 open item): e.g.
+  -- traction.users, founder.domain_expertise, market.competitors.
+  topic                text NOT NULL,
+  -- Word-for-word source text -- the verbatim layer against LLM echo-chamber
+  -- re-centering (RSK-003).
+  text_verbatim        text NOT NULL,
+  value                jsonb,
+  axis                 text REFERENCES score_axes(slug) ON DELETE RESTRICT,
+  source_kind          text NOT NULL CHECK (source_kind IN ('self_reported', 'public', 'interview', 'voice', 'derived')),
+  base_confidence      numeric(3,2) CHECK (base_confidence BETWEEN 0 AND 1),
+  verification_status  text NOT NULL DEFAULT 'unverified'
+                         CHECK (verification_status IN ('unverified', 'partially_supported', 'verified', 'contradicted', 'missing')),
+  -- Idempotency; nullable -- a synthesized/derived "missing" marker claim has
+  -- no underlying raw content to hash.
+  content_hash         text UNIQUE,
+  -- Corrections are new rows; history never erased (koi/actual-news pattern).
+  supersedes_claim_id  uuid REFERENCES claims(id) ON DELETE RESTRICT,
+  -- M1 addendum (absent from design.md SS4.4's column list, required by SS7):
+  -- feeds NL-search over topic + verbatim text.
+  search_tsv           tsvector GENERATED ALWAYS AS (
+                          to_tsvector('english', coalesce(topic, '') || ' ' || coalesce(text_verbatim, ''))
+                        ) STORED,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  -- Mutable table (SS5.3): only verification_status is meant to change post-
+  -- insert (recomputed from evidence); text/value corrections go through
+  -- supersedes_claim_id instead. touch_updated_at trigger attached in Task 9.
+  updated_at           timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_claims_card_id ON claims (card_id);
+CREATE INDEX IF NOT EXISTS idx_claims_axis ON claims (axis) WHERE axis IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_claims_verification_status ON claims (verification_status);
+CREATE INDEX IF NOT EXISTS idx_claims_supersedes ON claims (supersedes_claim_id) WHERE supersedes_claim_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_claims_search_tsv ON claims USING gin (search_tsv);
+
+CREATE TABLE IF NOT EXISTS evidence (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_id        uuid NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
+  relation        text NOT NULL CHECK (relation IN ('supports', 'contradicts', 'context')),
+  strength        numeric(3,2) CHECK (strength BETWEEN 0 AND 1),
+  -- sieve-mcp vocabulary; same vocabulary as signal_sources.base_tier (Task 3).
+  tier            text NOT NULL CHECK (tier IN ('documented', 'discovered', 'inferred', 'missing')),
+  quote_verbatim  text,
+  source_url      text,
+  raw_signal_id   uuid REFERENCES raw_signals(id) ON DELETE RESTRICT,
+  captured_at     timestamptz NOT NULL DEFAULT now(),
+  -- Writer computes over claim_id+relation+source_url+quote -- a retried
+  -- truth-gap workflow cannot double-insert and skew per-claim trust.
+  content_hash    text NOT NULL UNIQUE,
+  created_at      timestamptz NOT NULL DEFAULT now()
+  -- Append-only (Task 9 forbid_mutation target): no updated_at.
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_claim_id ON evidence (claim_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_raw_signal_id ON evidence (raw_signal_id) WHERE raw_signal_id IS NOT NULL;
+
+-- ============================================================================
+-- Task 7: Intelligence (design.md SS4.5)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS scores (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Subject is founder_id XOR application_id (design.md SS4.5) -- exactly one
+  -- of the two must be set. The sum-equals-1 form rejects BOTH set and
+  -- NEITHER set with the same CHECK (two-sided XOR, m1).
+  founder_id        uuid REFERENCES founders(id) ON DELETE RESTRICT,
+  application_id    uuid REFERENCES applications(id) ON DELETE RESTRICT,
+  axis              text NOT NULL REFERENCES score_axes(slug) ON DELETE RESTRICT,
+  value             numeric(5,2) NOT NULL CHECK (value BETWEEN 0 AND 100),
+  trend             text CHECK (trend IN ('improving', 'stable', 'declining')),
+  confidence        numeric(3,2) CHECK (confidence BETWEEN 0 AND 1),
+  -- What was absent when this was computed -- feeds REQ-003 (missing data
+  -- lowers confidence, never the score itself).
+  missing_flags     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  input_claim_ids   uuid[] NOT NULL DEFAULT '{}',
+  formula_version   text,
+  prompt_version    text,
+  model             text,
+  thesis_id         uuid REFERENCES theses(id) ON DELETE SET NULL,
+  computed_at       timestamptz NOT NULL DEFAULT now(),
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  -- Append-only (Task 9 forbid_mutation target): "never reset" is a grant, not
+  -- a convention -- no updated_at, UPDATE/DELETE revoked at the DB level.
+  CONSTRAINT scores_subject_xor CHECK (
+    ((founder_id IS NOT NULL)::int + (application_id IS NOT NULL)::int) = 1
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_scores_founder_axis ON scores (founder_id, axis, computed_at)
+  WHERE founder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_scores_application_axis ON scores (application_id, axis, computed_at)
+  WHERE application_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS ai_runs (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Free text on purpose (extraction, scoring, memo, interview_turn,
+  -- truth_gap, ... -- design.md SS4.5): new task types must not need a
+  -- migration, same extensibility stance as founder_identities.kind.
+  task_type         text NOT NULL,
+  founder_id        uuid REFERENCES founders(id) ON DELETE RESTRICT,
+  company_id        uuid REFERENCES companies(id) ON DELETE RESTRICT,
+  application_id    uuid REFERENCES applications(id) ON DELETE RESTRICT,
+  model             text NOT NULL,
+  prompt_version    text,
+  input_hash        text,
+  output_json       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  confidence        numeric(3,2) CHECK (confidence BETWEEN 0 AND 1),
+  -- Multi-model/panel divergence preserved, never erased.
+  disagreement      jsonb,
+  n8n_execution_id  text,
+  created_at        timestamptz NOT NULL DEFAULT now()
+  -- Append-only (Task 9 forbid_mutation target): no updated_at.
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_runs_founder_id ON ai_runs (founder_id) WHERE founder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_runs_company_id ON ai_runs (company_id) WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_runs_application_id ON ai_runs (application_id) WHERE application_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_runs_task_type ON ai_runs (task_type);
+
+-- ============================================================================
+-- Task 8: Interview, experience & ops (design.md SS4.6-SS4.7)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS interviews (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id  uuid NOT NULL REFERENCES applications(id) ON DELETE RESTRICT,
+  card_id         uuid REFERENCES cards(id) ON DELETE RESTRICT,
+  kind            text NOT NULL CHECK (kind IN ('first', 'follow_up')),
+  -- VC-requested second-interview link; email delivery mocked in MVP.
+  share_token     text UNIQUE,
+  -- Mid-interview abandonment is itself a founder signal.
+  status          text NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'in_progress', 'completed', 'abandoned')),
+  -- AI-disclosure guardrail timestamp.
+  disclosed_at    timestamptz,
+  transcript      jsonb,
+  started_at      timestamptz,
+  completed_at    timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- Mutable table (SS5.3): status/completed_at lifecycle.
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_interviews_application_id ON interviews (application_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_card_id ON interviews (card_id) WHERE card_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_interviews_status ON interviews (status);
+
+CREATE TABLE IF NOT EXISTS voice_artifacts (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  interview_id     uuid NOT NULL REFERENCES interviews(id) ON DELETE RESTRICT,
+  question_ref     text,
+  -- Supabase Storage path -- a spoken original is a provenance artifact,
+  -- harder to fake than pasted text.
+  storage_path     text NOT NULL,
+  duration_sec     int CHECK (duration_sec >= 0),
+  transcript_text  text,
+  created_at       timestamptz NOT NULL DEFAULT now()
+  -- SS5.3 bucket 3 (mutable-rarely): no updated_at.
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_artifacts_interview_id ON voice_artifacts (interview_id);
+
+CREATE TABLE IF NOT EXISTS memos (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id        uuid NOT NULL REFERENCES applications(id) ON DELETE RESTRICT,
+  version               int NOT NULL,
+  -- Required-section gate (invariant #9): padding control stays a prompt
+  -- concern, this only enforces the keys exist.
+  sections              jsonb NOT NULL
+                          CHECK (sections ?& array['snapshot', 'hypotheses', 'swot', 'problem_product', 'traction']),
+  gaps                  jsonb NOT NULL DEFAULT '{}'::jsonb,
+  -- memo -> claim -> evidence -> raw_signal chain (Agentic Traceability).
+  cited_claim_ids       uuid[] NOT NULL DEFAULT '{}',
+  recommendation        text CHECK (recommendation IN ('invest', 'pass', 'watch')),
+  conditions            jsonb,
+  deep_dive_questions   jsonb,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  -- No status column by design: a memo row is immutable, regeneration = a new
+  -- (application_id, version) row, current memo = highest version. Append-
+  -- only (Task 9 forbid_mutation target): no updated_at.
+  UNIQUE (application_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memos_application_id ON memos (application_id);
+
+CREATE TABLE IF NOT EXISTS watchlist (
+  id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  founder_id                  uuid REFERENCES founders(id) ON DELETE RESTRICT,
+  company_id                  uuid REFERENCES companies(id) ON DELETE RESTRICT,
+  reason                      text,
+  -- Alert rule, e.g. {"metric":"gh_commit_weeks","delta":">2x","window_days":30}.
+  condition                   jsonb,
+  added_from_application_id   uuid REFERENCES applications(id) ON DELETE SET NULL,
+  last_scored_at              timestamptz,
+  next_check_at               timestamptz,
+  active                      boolean NOT NULL DEFAULT true,
+  created_at                  timestamptz NOT NULL DEFAULT now(),
+  updated_at                  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_watchlist_founder_id ON watchlist (founder_id) WHERE founder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_watchlist_company_id ON watchlist (company_id) WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_watchlist_active ON watchlist (active) WHERE active;
+
+CREATE TABLE IF NOT EXISTS metric_observations (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  founder_id   uuid REFERENCES founders(id) ON DELETE RESTRICT,
+  company_id   uuid REFERENCES companies(id) ON DELETE RESTRICT,
+  metric       text NOT NULL REFERENCES metric_kinds(slug) ON DELETE RESTRICT,
+  value        numeric NOT NULL,
+  observed_at  timestamptz NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  -- Idempotency: retried sourcing workflows cannot double-insert and distort
+  -- velocity. NULLS NOT DISTINCT needs PG15+ (we run 17.6).
+  UNIQUE NULLS NOT DISTINCT (metric, founder_id, company_id, observed_at)
+  -- SS5.3 bucket 3 (mutable-rarely): no updated_at.
+);
+
+CREATE INDEX IF NOT EXISTS idx_metric_observations_founder ON metric_observations (metric, founder_id, observed_at)
+  WHERE founder_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_metric_observations_company ON metric_observations (metric, company_id, observed_at)
+  WHERE company_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS events (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type   text NOT NULL,
+  -- Free text, same extensibility stance as founder_identities.kind /
+  -- ai_runs.task_type -- e.g. 'founder', 'company', 'application'.
+  entity_type  text,
+  entity_id    uuid,
+  payload      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  -- n8n workflow/execution id or a user identifier.
+  actor        text,
+  created_at   timestamptz NOT NULL DEFAULT now()
+  -- Append-only (Task 9 forbid_mutation target): no updated_at.
+);
+
+-- Task 9's purge_founder queries "entity_type='founder' AND entity_id=<id>"
+-- directly -- this composite index is for that lookup.
+CREATE INDEX IF NOT EXISTS idx_events_entity ON events (entity_type, entity_id) WHERE entity_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
+
+-- ============================================================================
+-- Task 9: Enforcement layer (design.md SS5 items 2-4)
+-- ============================================================================
+
+-- Prerequisite: make the two self-referencing RESTRICT FKs deferrable.
+--
+-- A single bulk DELETE that removes both ends of a self-referencing chain at
+-- once (e.g. `DELETE FROM claims WHERE id = ANY(...)` covering a claim AND
+-- the claim that supersedes it) can raise a SPURIOUS 23503: Postgres checks
+-- the RESTRICT trigger per physical row as it processes the statement, in an
+-- unspecified order -- if it reaches the superseded (older) row before the
+-- superseding (newer) one, it sees the newer row "still there" and blocks,
+-- even though that row is being removed by the very same statement. This is
+-- non-deterministic (depends on heap/index scan order) and purge_founder()
+-- below does exactly this kind of bulk delete. DEFERRABLE INITIALLY DEFERRED
+-- moves the check to COMMIT (after every row in the transaction is already
+-- gone), which is a no-op behavior change for all normal application code.
+--
+-- Smoke-testing implication (read before adding a negative case against
+-- either column): db/tests/smoke.sql's outer transaction always ROLLBACKs,
+-- so a deferred violation NEVER fires inside it -- a naive
+-- BEGIN...EXCEPTION sub-block testing "supersedes_claim_id / merged_into_
+-- founder_id pointing at a nonexistent row -> 23503" would silently pass
+-- without ever raising. To test it, call `SET CONSTRAINTS ALL IMMEDIATE;`
+-- right after the offending INSERT, inside the same sub-block, before the
+-- expected-failure RAISE EXCEPTION -- that forces the check to fire there
+-- instead of waiting for a COMMIT this suite never performs.
+ALTER TABLE claims
+  ALTER CONSTRAINT claims_supersedes_claim_id_fkey DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE founders
+  ALTER CONSTRAINT founders_merged_into_founder_id_fkey DEFERRABLE INITIALLY DEFERRED;
+
+-- ---- Step 1: append-only enforcement ---------------------------------------
+
+CREATE OR REPLACE FUNCTION forbid_mutation() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Purge bypass, two predicates (R1): the GUC alone is USERSET -- any
+  -- session, including one holding only the anon/service_role PostgREST key,
+  -- can `SET vcbrain.purging = 'on'`. The current_user check makes that
+  -- attack inert: purge_founder() is SECURITY DEFINER, so its cascade runs
+  -- AS the function's owner (postgres, set explicitly below) regardless of
+  -- who called it -- a hostile session can forge the GUC but cannot also
+  -- become current_user = 'postgres' (no ordinary session can SET ROLE to a
+  -- superuser it wasn't authenticated as). Both predicates must hold.
+  IF current_setting('vcbrain.purging', true) = 'on' AND current_user = 'postgres' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    ELSE
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  RAISE EXCEPTION
+    'append-only invariant violated: % on %.% is not permitted (id=%) -- use purge_founder() for GDPR erasure',
+    TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, COALESCE(NEW.id, OLD.id);
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_scores_forbid_mutation
+  BEFORE UPDATE OR DELETE ON scores
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+CREATE OR REPLACE TRIGGER trg_raw_signals_forbid_mutation
+  BEFORE UPDATE OR DELETE ON raw_signals
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+CREATE OR REPLACE TRIGGER trg_evidence_forbid_mutation
+  BEFORE UPDATE OR DELETE ON evidence
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+CREATE OR REPLACE TRIGGER trg_ai_runs_forbid_mutation
+  BEFORE UPDATE OR DELETE ON ai_runs
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+CREATE OR REPLACE TRIGGER trg_events_forbid_mutation
+  BEFORE UPDATE OR DELETE ON events
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+CREATE OR REPLACE TRIGGER trg_memos_forbid_mutation
+  BEFORE UPDATE OR DELETE ON memos
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+-- ---- Step 2: updated_at on the mutable set (design.md SS5.3) --------------
+
+CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_founders_touch_updated_at
+  BEFORE UPDATE ON founders
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_companies_touch_updated_at
+  BEFORE UPDATE ON companies
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_cards_touch_updated_at
+  BEFORE UPDATE ON cards
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_claims_touch_updated_at
+  BEFORE UPDATE ON claims
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_applications_touch_updated_at
+  BEFORE UPDATE ON applications
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_watchlist_touch_updated_at
+  BEFORE UPDATE ON watchlist
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_interviews_touch_updated_at
+  BEFORE UPDATE ON interviews
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_theses_touch_updated_at
+  BEFORE UPDATE ON theses
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- ---- Step 3: purge_founder() -- the ONLY deletion door (design.md SS5.4) --
+
+CREATE OR REPLACE FUNCTION purge_founder(p_founder_id uuid) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_person_ids          uuid[];  -- p_founder_id + every merged-duplicate tombstone (R3)
+  v_sole_company_ids     uuid[];
+  v_sole_app_ids         uuid[];
+  v_sole_interview_ids   uuid[];
+  v_all_card_ids         uuid[];
+  v_all_claim_ids        uuid[];
+BEGIN
+  -- Purge bypass for this transaction only (SET LOCAL semantics via the
+  -- `is_local` arg); forbid_mutation() also requires current_user = the
+  -- owner set below, so a forged GUC from any other session stays inert.
+  PERFORM set_config('vcbrain.purging', 'on', true);
+
+  -- R3: same-person tombstones (merged_into_founder_id = this founder) are
+  -- folded into ONE erasure, not a separate purge per duplicate -- they are
+  -- the same human, so this whole call produces exactly one anonymized audit
+  -- row at the end, not one per tombstone.
+  SELECT array_agg(id) INTO v_person_ids
+  FROM founders WHERE merged_into_founder_id = p_founder_id;
+  v_person_ids := array_append(COALESCE(v_person_ids, '{}'), p_founder_id);
+
+  -- Sole-founder companies (R2, one consistent rule) for ANY id in this
+  -- person's identity set: this founder (or one of their tombstones) is the
+  -- ONLY founder_company row for that company -- the company is entirely
+  -- this person's data shadow (design.md SS5 item 4 rationale). Multi-founder
+  -- companies keep their company-level artifacts; only this person's
+  -- founder-scoped rows are removed below.
+  SELECT array_agg(DISTINCT fc.company_id) INTO v_sole_company_ids
+  FROM founder_company fc
+  WHERE fc.founder_id = ANY (v_person_ids)
+    AND NOT EXISTS (
+      SELECT 1 FROM founder_company fc2
+      WHERE fc2.company_id = fc.company_id AND fc2.founder_id <> ALL (v_person_ids)
+    );
+  v_sole_company_ids := COALESCE(v_sole_company_ids, '{}');
+
+  SELECT array_agg(id) INTO v_sole_app_ids
+  FROM applications WHERE company_id = ANY (v_sole_company_ids);
+  v_sole_app_ids := COALESCE(v_sole_app_ids, '{}');
+
+  SELECT array_agg(id) INTO v_sole_interview_ids
+  FROM interviews WHERE application_id = ANY (v_sole_app_ids);
+  v_sole_interview_ids := COALESCE(v_sole_interview_ids, '{}');
+
+  -- Card sweep set: founder-subject cards for ANY person id, UNION
+  -- company-linked cards from the sole-founder subtree. founder_id /
+  -- company_id / application_id on cards are three independent nullable
+  -- columns with no XOR -- a card can carry more than one at once, so this
+  -- is OR/UNION, never an assumption that the sets are disjoint.
+  SELECT array_agg(DISTINCT id) INTO v_all_card_ids
+  FROM cards
+  WHERE founder_id = ANY (v_person_ids)
+     OR company_id = ANY (v_sole_company_ids)
+     OR application_id = ANY (v_sole_app_ids);
+  v_all_card_ids := COALESCE(v_all_card_ids, '{}');
+
+  SELECT array_agg(id) INTO v_all_claim_ids
+  FROM claims WHERE card_id = ANY (v_all_card_ids);
+  v_all_claim_ids := COALESCE(v_all_claim_ids, '{}');
+
+  -- Delete-order hazard (plan.md Task 9, binding): evidence.raw_signal_id can
+  -- cross subtrees (founder-scoped evidence referencing a company-scoped
+  -- raw_signal). Sweep ALL evidence -> claims -> cards in the ENTIRE purge
+  -- set (both the founder-direct and the sole-founder-company subtrees)
+  -- BEFORE deleting ANY raw_signals below.
+  DELETE FROM evidence WHERE claim_id = ANY (v_all_claim_ids);
+  DELETE FROM claims WHERE id = ANY (v_all_claim_ids);
+  DELETE FROM cards WHERE id = ANY (v_all_card_ids);
+
+  -- founder_company for every id in this person's identity set MUST go
+  -- before the companies delete below: by construction every founder_company
+  -- row for a sole-founder company belongs to this person's identity set
+  -- (that is what "sole" means here), so this single statement clears every
+  -- founder_company edge into v_sole_company_ids as a side effect, and also
+  -- covers the founder-direct (non-sole) companies this person is linked to
+  -- elsewhere -- pulled forward from the tail of this function on purpose.
+  DELETE FROM founder_company WHERE founder_id = ANY (v_person_ids);
+
+  -- Sole-founder company subtree: voice_artifacts -> interviews -> memos ->
+  -- applications, scores (via those applications), then the company-scoped
+  -- raw_signals/metric_observations/watchlist, then the companies row itself.
+  DELETE FROM voice_artifacts WHERE interview_id = ANY (v_sole_interview_ids);
+  DELETE FROM interviews WHERE id = ANY (v_sole_interview_ids);
+  DELETE FROM memos WHERE application_id = ANY (v_sole_app_ids);
+  DELETE FROM scores WHERE application_id = ANY (v_sole_app_ids);
+  DELETE FROM applications WHERE id = ANY (v_sole_app_ids);
+  DELETE FROM raw_signals WHERE company_id = ANY (v_sole_company_ids);
+  DELETE FROM metric_observations WHERE company_id = ANY (v_sole_company_ids);
+  DELETE FROM watchlist WHERE company_id = ANY (v_sole_company_ids);
+  DELETE FROM companies WHERE id = ANY (v_sole_company_ids);
+
+  -- Founder-direct rows, for every id in this person's identity set.
+  DELETE FROM scores WHERE founder_id = ANY (v_person_ids);
+  DELETE FROM metric_observations WHERE founder_id = ANY (v_person_ids);
+  DELETE FROM raw_signals WHERE founder_id = ANY (v_person_ids);
+  DELETE FROM ai_runs WHERE founder_id = ANY (v_person_ids);
+  DELETE FROM watchlist WHERE founder_id = ANY (v_person_ids);
+
+  -- Prior audit history for every id in the set -- GDPR beats audit
+  -- (design.md SS5.4); the one anonymized row this function writes at the
+  -- end is what survives.
+  DELETE FROM events WHERE entity_type = 'founder' AND entity_id = ANY (v_person_ids);
+
+  -- founder_identities for every id, then the tombstones (two separate
+  -- statements, tombstones-first -- they reference the canonical row via
+  -- merged_into_founder_id, so this ordering alone is correct without
+  -- relying on the DEFERRABLE change above), then the canonical founders
+  -- row itself. Hard DELETE, no tombstone of the erasure.
+  DELETE FROM founder_identities WHERE founder_id = ANY (v_person_ids);
+  DELETE FROM founders WHERE merged_into_founder_id = p_founder_id;
+  DELETE FROM founders WHERE id = p_founder_id;
+
+  -- Exactly one anonymized audit row survives -- no PII in the payload.
+  INSERT INTO events (event_type, entity_type, entity_id, payload, actor)
+  VALUES ('founder_purged', 'founder', p_founder_id, '{}'::jsonb, 'purge_founder');
+END;
+$$;
+
+-- forbid_mutation()'s current_user check above is hardcoded to 'postgres' and
+-- must stay in sync with this function's actual owner (SECURITY DEFINER runs
+-- the cascade AS the owner) -- pin it explicitly rather than relying on
+-- whichever role happened to run schema.sql.
+ALTER FUNCTION purge_founder(uuid) OWNER TO postgres;
+
+-- (Task 9 Step 4 smoke assertions appended in db/tests/smoke.sql)
