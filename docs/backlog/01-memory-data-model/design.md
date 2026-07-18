@@ -152,7 +152,8 @@ Conventions: `id uuid PK default gen_random_uuid()`, `created_at timestamptz def
   `verification_status CHECK (in ('unverified','partially_supported','verified',
   'contradicted','missing'))`, `content_hash` (idempotency),
   `supersedes_claim_id uuid NULL` (corrections are new rows; history never erased —
-  koi/actual-news pattern). A gap is a first-class row: `topic='round.cap_table',
+  koi/actual-news pattern), `search_tsv` generated tsvector over topic + text_verbatim
+  (feeds §7 NL-search; addendum per plan review M1). A gap is a first-class row: `topic='round.cap_table',
   verification_status='missing'` renders as «Cap table: not disclosed» (REQ-004).
 - **`evidence`** — one row per (dis)confirmation. `claim_id FK`,
   `relation CHECK (relation in ('supports','contradicts','context'))`,
