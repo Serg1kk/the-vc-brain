@@ -3,7 +3,6 @@ internal/
 .claude/
 CLAUDE.md
 AGENTS.md
-docs/
 
 # --- Secrets ---
 .env
