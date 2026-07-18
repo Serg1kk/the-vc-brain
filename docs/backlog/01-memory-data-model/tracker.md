@@ -18,9 +18,9 @@
 | 7 | Intelligence (scores, ai_runs) | @database-engineer | 6 | done | XOR both ways, 0-100 bound, append-only versioning proven | |
 | 8 | Interview, experience & ops | @database-engineer | 7 | done | memo `?&` CHECK, NULLS NOT DISTINCT dedup, mutable interviews | |
 | 9 | Enforcement (triggers, purge_founder) | @database-engineer | 3-8 | done | 42 smoke blocks; real R1 attack (SET ROLE service_role) blocked; purge ordering bug found+fixed; DEFERRABLE on 2 self-FKs | re-applied on REAL supabase-db @54322 after port incident |
-| 10 | Cold-start reset proof + REST checks | @database-engineer | 9 | in_progress | | |
-| 11 | Handoff docs (`db/README.md`) + final commit | @database-engineer → @devops | 10 | pending | | ∥ with 12 |
-| 12 | Adversarial QA gate (`qa-report-01.md`) | @qa-engineer | 10 | pending | | ∥ with 11 |
+| 10 | Cold-start reset proof + REST checks | @database-engineer | 9 | done | reset ≈28s/5 commands; REST PATCH scores → 400 P0001 (judge proof); purge re-proven via independent path | CRITICAL FIND: down -v didn't wipe bind-mounted PGDATA — reset sequence + CLAUDE.md fixed |
+| 11 | Handoff docs (`db/README.md`) + final commit | @database-engineer → @devops | 10 | docs done, commit pending | db/README.md (tenant DSN caveat, idempotency keys, purge contract); feature README EN+RU statuses | ∥ with 12 |
+| 12 | Adversarial QA gate (`qa-report-01.md`) | @qa-engineer | 10 | in_progress | | ∥ with 11 |
 
 ## Event log
 
@@ -52,3 +52,9 @@
   unchanged, CLAUDE.md Commands updated (file gitignored). Working DSN confirmed by
   orchestrator: tenant-qualified username `postgres.<POOLER_TENANT_ID>` @ 54322, PG 17.6,
   wrong-password properly rejected. @db-engineer go for re-apply + Task 9.
+- 2026-07-19 ~02:45 · Task 9 done on real supabase-db (@db-engineer): 42 smoke blocks green,
+  double-apply idempotent; purge ordering bug (founder_company before companies) found and
+  fixed in manual validation; R1 attack tested via real SET ROLE service_role → blocked;
+  CLAUDE.md DSN examples fixed to tenant-qualified form. Task 10 dispatched.
+- 2026-07-19 ~02:50 · commit beb9396 (@devops): db tasks 6-9 (evidence ledger, intelligence,
+  interview/ops, enforcement layer).

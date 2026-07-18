@@ -1,9 +1,12 @@
 # 01 · Memory & Data Model (Supabase)
 
-Status: backlog · Depends on: — · Blocks: everything
+Status: schema implemented · Depends on: — · Blocks: everything
 
 > **Design approved (2026-07-19): [design.md](design.md)** — supersedes the
-> «Implementation view» section below.
+> «Implementation view» section below. **Implementation plan (approved, executed):
+> [plan.md](plan.md).** Full schema, seeds, enforcement triggers and `purge_founder()` are
+> live in `db/` (schema.sql, seed.sql, tests/smoke.sql, README.md) — 43 smoke assertions
+> green on a cold-start reset. Remaining: Task 12 adversarial QA gate.
 
 ## What it is
 

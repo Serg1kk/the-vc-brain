@@ -2,10 +2,13 @@
 
 > English version (primary): [README.md](README.md)
 
-Status: backlog · Depends on: — · Blocks: everything
+Status: схема реализована · Depends on: — · Blocks: everything
 
 > **Дизайн утверждён (19.07.2026): [design.md](design.md)** (EN) — заменяет секцию
-> «Implementation view» ниже.
+> «Implementation view» ниже. **План реализации (утверждён, выполнен): [plan.md](plan.md)**
+> (EN). Полная схема, сиды, триггеры enforcement и `purge_founder()` — в `db/` (schema.sql,
+> seed.sql, tests/smoke.sql, README.md), 43 smoke-проверки зелёные на cold-start reset.
+> Осталось: Task 12 — adversarial QA gate.
 
 ## Что это
 
