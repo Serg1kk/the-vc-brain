@@ -654,7 +654,9 @@ BEGIN
   VALUES (
     '00000000-0000-0000-0000-000000000803', '00000000-0000-0000-0000-000000000501', 1,
     '{"snapshot": "Analytical Engines Inc, pre-seed.", "hypotheses": ["strong technical founder"], "swot": {"strengths": ["deep OSS track record"]}, "problem_product": "AI infra for VCs.", "traction": "early users, unverified"}'::jsonb,
-    'watch'
+    -- Investment-committee vocabulary (db/schema.sql memos_recommendation_check,
+    -- operator decision 2026-07-19): 'watch' was retired to 'watchlist'.
+    'watchlist'
   );
 
   INSERT INTO watchlist (id, founder_id, reason, active)

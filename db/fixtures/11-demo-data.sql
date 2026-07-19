@@ -187,6 +187,15 @@ INSERT INTO cards (id, card_type, company_id, application_id, status, completene
    '11f00001-0000-0000-0000-000000000002', '11f00002-0000-0000-0000-000000000002', 'confirmed', 0.80)
 ON CONFLICT (id) DO NOTHING;
 
+-- Founder card (added: api_founders resolves company_name/application_id
+-- through a card_type='founder' row -- db/schema.sql's founder_cards CTE --
+-- not through founder_company alone; without this row Femke never resolves
+-- there, breaking the is_synthetic badge's only documented read path).
+INSERT INTO cards (id, card_type, founder_id, application_id, status, completeness) VALUES
+  ('11f00003-0000-0000-0000-000000000202', 'founder',
+   '11f00007-0000-0000-0000-000000000002', '11f00002-0000-0000-0000-000000000002', 'confirmed', 0.70)
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO raw_signals (id, source, source_url, payload, content_hash, company_id, observed_at) VALUES
   ('11f00005-0000-0000-0000-000000000201', 'deck_parse', NULL,
    '{"text": "Cassia Health builds ambient clinical documentation for Dutch GP practices, tuned to NHG guidelines. Practices subscribe per clinician seat. We are based in Amsterdam, Netherlands. Twelve practices are on our discovery-interview panel.", "note": "fixture deck excerpt"}'::jsonb,
@@ -258,6 +267,12 @@ INSERT INTO cards (id, card_type, company_id, application_id, status, completene
    '11f00001-0000-0000-0000-000000000003', '11f00002-0000-0000-0000-000000000003', 'confirmed', 0.85)
 ON CONFLICT (id) DO NOTHING;
 
+-- Founder card (see Cassia's comment above -- same fix, same reason).
+INSERT INTO cards (id, card_type, founder_id, application_id, status, completeness) VALUES
+  ('11f00003-0000-0000-0000-000000000302', 'founder',
+   '11f00007-0000-0000-0000-000000000003', '11f00002-0000-0000-0000-000000000003', 'confirmed', 0.70)
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO raw_signals (id, source, source_url, payload, content_hash, company_id, observed_at) VALUES
   ('11f00005-0000-0000-0000-000000000301', 'deck_parse', NULL,
    '{"text": "Kelpgrid sells a forecasting API for grid-scale battery arbitrage on Nordic intraday markets. Battery asset operators pay per MW under management. The team is based in Copenhagen, Denmark. One operator with 40 MW under management has signed a paid pilot.", "note": "fixture deck excerpt"}'::jsonb,
@@ -327,6 +342,15 @@ INSERT INTO cards (id, card_type, company_id, application_id, status, completene
    '11f00001-0000-0000-0000-000000000004', '11f00002-0000-0000-0000-000000000004', 'confirmed', 0.85)
 ON CONFLICT (id) DO NOTHING;
 
+-- Founder card (added: api_founders resolves company_name/application_id
+-- through a card_type='founder' row — db/schema.sql's founder_cards CTE —
+-- not through founder_company alone; without this row Claire never resolves
+-- there, breaking the is_synthetic badge's only documented read path).
+INSERT INTO cards (id, card_type, founder_id, application_id, status, completeness) VALUES
+  ('11f00003-0000-0000-0000-000000000402', 'founder',
+   '11f00007-0000-0000-0000-000000000004', '11f00002-0000-0000-0000-000000000004', 'confirmed', 0.70)
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO raw_signals (id, source, source_url, payload, content_hash, company_id, observed_at) VALUES
   ('11f00005-0000-0000-0000-000000000401', 'deck_parse', NULL,
    '{"text": "Ledgerline builds autonomous audit-trail agents for AI-generated accounting entries. Mid-market accounting firms pay per entity audited. The team is based in Paris, France. The market for AI audit tooling will reach $6B by 2029. Claire writes with unusual clarity about where auditors actually lose time.", "note": "fixture deck excerpt"}'::jsonb,
@@ -347,11 +371,17 @@ INSERT INTO claims (id, card_id, topic, text_verbatim, value, axis, source_kind,
   ('11f00004-0000-0000-0000-000000000404', '11f00003-0000-0000-0000-000000000401',
    'market.size_tam', 'The market for AI audit tooling will reach $6B by 2029.',
    '{"tam_usd_high": 6000000000, "year": 2029}'::jsonb, NULL, 'self_reported', 0.50, 'f11fix:claim:404'),
-  -- Qualitative: founder.leadership.* routes to class=qualitative — pinned to
-  -- unverified by design (judgement, not a checkable fact).
   ('11f00004-0000-0000-0000-000000000405', '11f00003-0000-0000-0000-000000000401',
    'company.what_is_built', 'Agents that reconstruct and sign the audit trail behind every AI-generated ledger entry.',
-   NULL, NULL, 'self_reported', 0.70, 'f11fix:claim:405')
+   NULL, NULL, 'self_reported', 0.70, 'f11fix:claim:405'),
+  -- Qualitative: founder.leadership.* routes to class=qualitative — pinned to
+  -- unverified by design (judgement, not a checkable fact). On the FOUNDER
+  -- card, not the company card (same placement as Voltaic's claim 108) —
+  -- topic reuses tracewire/quietgpu's 'compression' vocabulary (a founder
+  -- who states the value proposition with unusual economy of language).
+  ('11f00004-0000-0000-0000-000000000406', '11f00003-0000-0000-0000-000000000402',
+   'founder.leadership.compression', 'Claire writes with unusual clarity about where auditors actually lose time.',
+   NULL, NULL, 'self_reported', 0.55, 'f11fix:claim:406')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO evidence (id, claim_id, relation, strength, tier, quote_verbatim, source_url, raw_signal_id, content_hash) VALUES
@@ -360,7 +390,9 @@ INSERT INTO evidence (id, claim_id, relation, strength, tier, quote_verbatim, so
   ('11f00006-0000-0000-0000-000000000402', '11f00004-0000-0000-0000-000000000403', 'supports', 0.90, 'documented',
    'based in Paris, France', NULL, '11f00005-0000-0000-0000-000000000401', 'f11fix:evidence:402'),
   ('11f00006-0000-0000-0000-000000000403', '11f00004-0000-0000-0000-000000000404', 'supports', 0.50, 'documented',
-   'will reach $6B by 2029', NULL, '11f00005-0000-0000-0000-000000000401', 'f11fix:evidence:403')
+   'will reach $6B by 2029', NULL, '11f00005-0000-0000-0000-000000000401', 'f11fix:evidence:403'),
+  ('11f00006-0000-0000-0000-000000000404', '11f00004-0000-0000-0000-000000000406', 'supports', 0.55, 'documented',
+   'Claire writes with unusual clarity about where auditors actually lose time', NULL, '11f00005-0000-0000-0000-000000000401', 'f11fix:evidence:404')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
@@ -396,6 +428,16 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO cards (id, card_type, company_id, application_id, status, completeness) VALUES
   ('11f00003-0000-0000-0000-000000000501', 'company',
    '11f00001-0000-0000-0000-000000000005', '11f00002-0000-0000-0000-000000000005', 'draft', 0.25)
+ON CONFLICT (id) DO NOTHING;
+
+-- Founder card (see Cassia's comment above — same fix, same reason).
+-- 'draft'/0.10, not 'confirmed'/0.70 like the other three added here:
+-- Marcus's own founder.profile note says "Deck disclosed almost nothing
+-- about the founder" — the low-completeness draft card is the honest match
+-- for that story, same shape as patchbay's Yuki Andersen card below.
+INSERT INTO cards (id, card_type, founder_id, application_id, status, completeness) VALUES
+  ('11f00003-0000-0000-0000-000000000502', 'founder',
+   '11f00007-0000-0000-0000-000000000005', '11f00002-0000-0000-0000-000000000005', 'draft', 0.10)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO raw_signals (id, source, source_url, payload, content_hash, company_id, observed_at) VALUES

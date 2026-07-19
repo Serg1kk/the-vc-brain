@@ -578,7 +578,12 @@ CREATE TABLE IF NOT EXISTS memos (
   gaps                  jsonb NOT NULL DEFAULT '{}'::jsonb,
   -- memo -> claim -> evidence -> raw_signal chain (Agentic Traceability).
   cited_claim_ids       uuid[] NOT NULL DEFAULT '{}',
-  recommendation        text CHECK (recommendation IN ('invest', 'pass', 'watch')),
+  -- Investment-committee vocabulary (docs/backlog/06-memo-decision/README.md
+  -- SS4, operator decision 2026-07-19): four values, not the earlier three.
+  -- 'invest'/'watch' never shipped past this schema file -- 'proceed' /
+  -- 'proceed-with-conditions' / 'watchlist' are what the decision node
+  -- actually emits.
+  recommendation        text CHECK (recommendation IN ('proceed', 'proceed-with-conditions', 'pass', 'watchlist')),
   conditions            jsonb,
   deep_dive_questions   jsonb,
   created_at            timestamptz NOT NULL DEFAULT now(),
@@ -589,6 +594,43 @@ CREATE TABLE IF NOT EXISTS memos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memos_application_id ON memos (application_id);
+
+-- Backward-compat guard for the pre-migration live table (already created
+-- with the three-value ('invest','pass','watch') CHECK by an earlier apply):
+-- idempotent regardless of whether CREATE TABLE above just created memos
+-- with the new four-value CHECK or is fixing an existing one. Same
+-- pg_constraint-guard convention as applications_deck_required_for_inbound
+-- above -- Postgres has no "ADD/DROP CONSTRAINT IF (NOT) EXISTS" native form.
+-- `memos_recommendation_check` is the real, looked-up (not guessed) name
+-- Postgres auto-generates for this column's unnamed CHECK -- verified live
+-- against the running database (2026-07-19) before this migration was
+-- written, table had 0 rows. Detecting "still the old constraint" by
+-- checking for 'invest' in its definition (never a substring of any new
+-- value) rather than unconditionally dropping-and-recreating on every apply
+-- run: a fresh clone's CREATE TABLE above already installs the new
+-- definition under this same auto-generated name, and this block must be a
+-- true no-op against that, not a drop/recreate cycle every single run.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'memos_recommendation_check'
+      AND conrelid = 'memos'::regclass
+      AND pg_get_constraintdef(oid) LIKE '%''invest''%'
+  ) THEN
+    ALTER TABLE memos DROP CONSTRAINT memos_recommendation_check;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'memos_recommendation_check'
+      AND conrelid = 'memos'::regclass
+  ) THEN
+    ALTER TABLE memos
+      ADD CONSTRAINT memos_recommendation_check
+      CHECK (recommendation IN ('proceed', 'proceed-with-conditions', 'pass', 'watchlist'));
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS watchlist (
   id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
