@@ -172,3 +172,61 @@ either hits the append-only trigger (P0001) or a `RESTRICT` foreign key (23503).
   invariant is visible straight through the REST surface.
 - A forged `SET vcbrain.purging = 'on'` from a non-owner role (`service_role`) does not bypass
   the guard — `current_user` must also be the function owner.
+
+## Feature 07 — Thesis Engine additions (2026-07-19)
+
+**New append-only table `thesis_evaluations`** — one row per (application, thesis-version,
+input fingerprint). Carries the verdict, the rules that fired, the extracted-attribute snapshot,
+the thesis config snapshot, `coverage`, and `evaluation_mode` (`full` | `keyword`). Wired into the
+enforcement layer like every other append-only table: `forbid_mutation` trigger plus its own
+`REVOKE TRUNCATE` statement.
+
+**`theses` gained** `is_default`, two partial unique indexes (`uq_theses_active_name` — one active
+version per name; `uq_theses_single_default` — one default among active rows), a
+`validate_thesis_config()` BEFORE INSERT/UPDATE trigger, and an `activate_thesis_version(uuid)`
+SECURITY DEFINER RPC.
+
+> **Publishing a new thesis version: use the RPC.** INSERT the new row with **`active = false`
+> explicitly** (the column defaults to `true`, so omitting it is a deterministic 23505 against
+> `uq_theses_active_name`), then `POST /rpc/activate_thesis_version`. Never raw-INSERT an active
+> row and never flip `active`/`is_default` by hand — the RPC moves both together in one
+> transaction, and splitting them can leave the gate with no thesis to load.
+
+**`validate_thesis_config()` rejects**: a `hard` rule without a valid `hard_justification`
+(**including when the key is absent entirely** — a naive plpgsql `NOT IN` returns NULL there and
+silently permits it, which is the whole reason this check exists); `focus` + `hard`; a
+`deal_breaker` with non-zero weight; a `must_have`/`focus` weight that is absent, non-numeric or
+negative; duplicate rule ids; unsupported ops; wrong operand types. An **empty config `'{}'` is
+accepted** — that is the column default, and rejecting it would break any feature creating a bare
+thesis row.
+
+**`scores` gained the `thesis_fit` axis** (`is_screening_axis = false`; feature 07 is its sole
+writer). ⚠️ «Current thesis fit» resolves per **`(application_id, axis, thesis_id)`**, not per
+`(application_id, axis)` — several theses can be active at once. This is a **query convention, not
+a constraint**; `scores` has no uniqueness for any axis.
+
+**`purge_founder()`** now sweeps `thesis_evaluations` **before** the `scores` delete.
+`thesis_evaluations` RESTRICTs against `applications`, `scores` **and** `ai_runs`, and `scores` is
+the earliest of the three — a reviewer reproduced a live `23503` with the sweep placed after
+`ai_runs`. Regression fixture in smoke.
+
+**Idempotency keys added by 07** — all written select-by-key-then-insert, never `ON CONFLICT`
+(which returns zero rows over PostgREST and nulls the provenance FK):
+
+| Table | Key |
+|---|---|
+| `thesis_evaluations` | `(application_id, thesis_id, input_fingerprint)` |
+| `raw_signals` | `sha256(application_id ‖ input_text_hash ‖ prompt_version)` |
+| `claims` (observations) | `sha256(card_id ‖ topic ‖ raw_signal_id ‖ item_key)` |
+| `claims` (gaps) | `(card_id, topic)` + `source_kind='derived'` — gaps have `content_hash = NULL` by design, so the hash cannot serve as the key |
+| `evidence` | `sha256(claim_id ‖ relation)` |
+| `ai_runs` | `input_hash = sha256(application_id ‖ input_text_hash ‖ prompt_version ‖ model)` |
+
+> The claims recipe anchors on **`raw_signal_id`, not `ai_run_id`** — deliberately diverging from
+> feature 04, which includes `ai_run_id` on purpose so a re-run mints new rows for `scores.trend`.
+> 07 needs retry-safety and has no trend, so anchoring on the run would defeat dedup entirely.
+> Do not «harmonise» these back together.
+
+**Claim topic prefix `company.*`** — `.sector`, `.business_model`, `.geography_country`,
+`.stage_evidence`, `.what_is_built`. Gaps use the **base topic** with
+`verification_status = 'missing'`, per 01's definition — not a `.gap` suffix.

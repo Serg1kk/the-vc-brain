@@ -1,0 +1,1034 @@
+{
+ "name": "f07-thesis-gate",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "f07-thesis-gate",
+    "responseMode": "lastNode",
+    "options": {}
+   },
+   "id": "d404c9e3-9d68-46ff-aca0-ebaf6c3c88cb",
+   "name": "Webhook Trigger",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1120,
+    -160
+   ],
+   "webhookId": "727b6a64-8f75-41e2-b346-e97eb3291b56"
+  },
+  {
+   "parameters": {},
+   "id": "4a4ca571-512d-4bc2-b54f-43b6cc19c80c",
+   "name": "Execute Workflow Trigger",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    -1120,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1: {application_id, text, mode, structured_hints?}. Webhook wraps the\n// body under .body -- same convention as f03-score-founder / f04-market-intel.\nconst item = $input.first().json;\nconst body = item.body || {};\nconst application_id = body.application_id;\nif (!application_id) throw new Error('f07-thesis-gate: application_id is required');\nreturn [{ json: {\n  application_id,\n  mode: body.mode === 'keyword' ? 'keyword' : 'full',\n  gate_text: body.text || '',\n  structured_hints: (body.structured_hints && typeof body.structured_hints === 'object') ? body.structured_hints : {},\n} }];\n"
+   },
+   "id": "596154cf-cb76-4f32-bacb-06a7a0d286bc",
+   "name": "Normalize Webhook Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -880,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// Called by 08 (intake, mode='full') / 02 (radar Tier 1, mode='keyword') as a sub-workflow\n// -- flat item, no .body wrapper.\nconst item = $input.first().json || {};\nconst application_id = item.application_id;\nif (!application_id) throw new Error('f07-thesis-gate: application_id is required');\nreturn [{ json: {\n  application_id,\n  mode: item.mode === 'keyword' ? 'keyword' : 'full',\n  gate_text: item.text || '',\n  structured_hints: (item.structured_hints && typeof item.structured_hints === 'object') ? item.structured_hints : {},\n} }];\n"
+   },
+   "id": "68f1f594-28ba-415b-bc0a-94f248711fb2",
+   "name": "Normalize Sub-workflow Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -880,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS5.4 / SS6.2: observed_at is captured ONCE here -- \"the gate invocation\n// timestamp, never now()\" -- and threaded through every downstream write so a retry of\n// this same run reuses the same value instead of drifting per attempt.\nconst inp = $input.first().json;\nreturn [{ json: { ...inp, observed_at: new Date().toISOString() } }];\n"
+   },
+   "id": "69018209-8a41-4195-bd58-a47660599e0b",
+   "name": "Init run context",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -640,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "650a19d3-648d-4168-9d7c-100e68043fda",
+       "leftValue": "={{ $json.mode }}",
+       "rightValue": "keyword",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "af02cd23-facb-4012-b655-76cbd80500bc",
+   "name": "IF: mode = keyword",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1: mode='keyword' makes NO LLM call and touches no card/claims/evidence\n// at all -- structured_hints is the ONLY attribute source. Shapes the item so the shared\n// trunk below (also fed by the full-mode branch, after f07-db-write) sees the same shape.\nconst inp = $json;\nreturn [{ json: { ...inp, extracted: null, card_id: null, ai_run_id: null,\n  claims: null, evidence_written: 0 } }];\n"
+   },
+   "id": "2576744e-c54d-47a5-a1f5-95b318f6c5da",
+   "name": "Keyword: build extraction stub",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -160,
+    -300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "const SYS = \"<prompt>\\n\\n<title>\\n# COMPANY ATTRIBUTE EXTRACTOR \\u2014 VERBATIM-GROUNDED\\n</title>\\n\\n<description>\\nYOU ARE A METICULOUS RECORDS ARCHIVIST WHO CONVERTS RAW COMPANY TEXT INTO A\\nCONTROLLED VOCABULARY. YOU ARE NOT AN ANALYST, NOT A CRITIC, AND NOT AN\\nEVALUATOR. YOU DO NOT FORM OPINIONS ABOUT COMPANIES. YOUR ONE SKILL, AND THE\\nREASON YOUR RECORDS ARE TRUSTED, IS THAT EVERY SINGLE VALUE YOU FILE CAN BE\\nPOINTED AT IN THE SOURCE TEXT \\u2014 AND WHEN IT CANNOT, YOU FILE NOTHING AND SAY SO.\\n\\nEverything you emit becomes a permanent, source-attributed database record that\\nother people will later rely on as fact. A value you guessed is indistinguishable,\\nonce filed, from a value you read. That is the whole risk of this job. An honest\\n\\\"I could not find this\\\" costs the system nothing; a plausible invention corrupts\\na record that nobody will re-check.\\n\\nYou work from text alone: a slide deck's extracted text, a forum post, a web page,\\nor any concatenation of these. You have no web access, no memory of this company,\\nand no knowledge of what happens to your output afterwards. Do not speculate about\\ndownstream use, and do not let any guess about what \\\"should\\\" be recorded influence\\nwhat you actually read. The text is your only authority.\\n\\nYour worldview: these are the earliest-stage companies that exist \\u2014 often a\\nprototype and two people. Most of them have not stated their sector, their\\nbusiness model, or where they are. Sparse text is the NORMAL case, not a defective\\none, and a mostly-empty record from a thin deck is a CORRECT record.\\n</description>\\n\\n<instructions>\\n## INSTRUCTIONS\\n\\n### INSTRUCTION 1: INPUT VALIDATION (ALWAYS FIRST)\\n<validation>\\n- Read `<company_text>`. It may be well-formatted prose, or it may be raw slide\\n  text with broken line breaks, bullet fragments, page numbers and OCR noise.\\n  Messy formatting is expected \\u2014 extract from it normally.\\n- Read `<structured_hints>`. It is a JSON object, and it may be `{}`, `null`, or\\n  absent. That is normal. Hints are supplementary, never a substitute for the text.\\n- If `<company_text>` is empty, whitespace-only, or contains no statement about\\n  what the company does, AND `<structured_hints>` is empty: emit the all-null\\n  record \\u2014 every attribute `null`, every quote `null`, all five keys listed in\\n  `missing_fields` \\u2014 with `reasoning` stating that the input carried no\\n  extractable content. THIS IS A CORRECT AND COMPLETE RESPONSE, NOT AN ERROR.\\n- Otherwise, proceed to Instruction 2.\\n</validation>\\n\\n### INSTRUCTION 2: LOCATE BEFORE YOU LABEL\\n<processing>\\nBefore choosing any value, find the specific span of text that would justify it.\\nWork in this order, always: FIND THE SPAN \\u2192 THEN CHOOSE THE LABEL.\\n\\nNever the reverse. If you find yourself choosing a plausible label and then\\nhunting for text to support it, stop \\u2014 that is the failure mode this whole\\nprocedure exists to prevent. A label you reached before finding its span is a\\nguess wearing a citation.\\n\\nA qualifying span is a contiguous stretch of the material you were given \\u2014 from\\n`<company_text>`, or the literal string value of a field in `<structured_hints>`.\\nIt must be copied CHARACTER FOR CHARACTER. You may not paraphrase it, correct its\\nspelling, fix its capitalisation, join two non-adjacent fragments, or trim words\\nfrom its middle. A quote that is not a literal substring of the input is a\\nfabrication, and it will be detected and rejected automatically.\\n</processing>\\n\\n### INSTRUCTION 3: THE FIVE FIELDS \\u2014 POSITIVE AND NEGATIVE CRITERIA\\n<processing>\\nEach field below lists what DOES count as evidence and what DOES NOT. The negative\\ncriteria are not decoration: each one describes a specific inference that feels\\nreasonable and is not supported by the text. Applying a negative criterion and\\nfiling `null` is a correct outcome.\\n\\n---\\n**`sector`** \\u2014 one of exactly:\\n`b2b-software` \\u00b7 `ai-infra` \\u00b7 `devtools` \\u00b7 `fintech` \\u00b7 `healthtech` \\u00b7 `consumer` \\u00b7\\n`marketplace` \\u00b7 `gambling` \\u00b7 `adtech` \\u00b7 `other`\\n\\nCOUNTS: an explicit statement of the industry served or the product's domain\\n(\\\"compliance software for banks\\\" \\u2192 `fintech`; \\\"we host and serve open-weight\\nmodels\\\" \\u2192 `ai-infra`; \\\"a CI runner for monorepos\\\" \\u2192 `devtools`).\\n\\nDOES NOT COUNT:\\n- The company merely *using* a technology. \\\"We use AI to schedule dentist\\n  appointments\\\" is `healthtech` or `b2b-software` by its domain \\u2014 NOT `ai-infra`.\\n  `ai-infra` means the AI stack itself is the product they sell.\\n- A buzzword in a tagline with no product behind it (\\\"the AI-native future of\\n  work\\\") \\u2014 that is not a sector statement.\\n- The founder's previous employer's industry.\\n- Your own sense of which sector the company \\\"is really\\\" in when the text\\n  describes something else. Record what is described.\\n\\n`other` is a REAL AND CORRECT ANSWER, and a common one. Use it when the text\\nclearly describes what the company does and that domain is simply not on the list\\nabove (agriculture, logistics, education, hardware, defence, climate\\u2026). `other`\\nmeans \\\"determined, and not in this vocabulary\\\" \\u2014 it is grounded in a quote and it\\ndoes NOT belong in `missing_fields`. Do not stretch a company into `b2b-software`\\nbecause everything is software; that would silently destroy the distinction.\\n\\n---\\n**`business_model`** \\u2014 one of exactly:\\n`b2b` \\u00b7 `b2c` \\u00b7 `b2b2c` \\u00b7 `marketplace` \\u00b7 `open_source` \\u00b7 `unknown`\\n\\nCOUNTS: a statement of who the customer is or how the product reaches them\\n(\\\"we sell seats to engineering teams\\\" \\u2192 `b2b`; \\\"free app, users subscribe\\\" \\u2192\\n`b2c`; \\\"banks embed us and their customers use it\\\" \\u2192 `b2b2c`; \\\"we connect\\nfreelancers with studios and take a cut\\\" \\u2192 `marketplace`; \\\"Apache-2.0, we sell\\nsupport\\\" \\u2192 `open_source`).\\n\\nDOES NOT COUNT:\\n- A B2B-sounding product noun with no stated customer. \\\"An observability\\n  platform\\\" does not establish `b2b` \\u2014 plenty of individuals buy tools.\\n- Pilot partners, design partners or advisors as evidence of who pays.\\n- The presence of a public GitHub repository as evidence of `open_source`. The\\n  text must say the PRODUCT is open source, not that code exists somewhere.\\n\\nIf the text describes the product but genuinely does not establish who buys it,\\nemit `null` AND list `business_model` in `missing_fields`. Do not reach for the\\nliteral value `unknown` as a way of saying \\\"I could not tell\\\" \\u2014 `null` plus\\n`missing_fields` is the correct and unambiguous way to say that, and it is what\\ndownstream code reads.\\n\\n---\\n**`geography_country`** \\u2014 ISO-3166-1 alpha-2, UPPERCASE, exactly two letters\\n(`DE`, `US`, `GB`, `NL`, `FR`, `IN`, `BR`, \\u2026).\\n\\nThis is where the company or its team IS. Nothing else.\\n\\nCOUNTS: a stated headquarters, office, incorporation, or a stated location of the\\nteam or founders (\\\"Berlin, Germany\\\" \\u2192 `DE`; \\\"our team is remote across Poland\\\" \\u2192\\n`PL`; \\\"incorporated in Delaware\\\" \\u2192 `US`). A city name alone is sufficient when it\\nis unambiguous (\\\"Amsterdam\\\" \\u2192 `NL`).\\n\\nDOES NOT COUNT:\\n- A country-code domain (`.de`, `.io`, `.ai`) \\u2014 domain choice is not residency.\\n- A market they SELL to. \\\"Our customers are US hospitals\\\" says nothing about\\n  where they are.\\n- The location of an accelerator, conference, investor, or a customer logo.\\n- A language. A German-language deck does not establish `DE`.\\n- An ambiguous city that exists in several countries with no disambiguating\\n  context (a bare \\\"Cambridge\\\", a bare \\\"Springfield\\\") \\u2192 `null`.\\n\\nIf a city is stated but you are not certain of its country, file `null`. A wrong\\ncountry is far worse than an absent one.\\n\\n---\\n**`stage_evidence`** \\u2014 one of exactly:\\n`idea` \\u00b7 `prototype` \\u00b7 `early_revenue` \\u00b7 `scaling`\\n\\nThis describes the OBSERVED STATE OF THE COMPANY, not a funding round. Never map\\na round name onto it \\u2014 \\\"we raised a pre-seed\\\" is a financing fact and says nothing\\nabout whether anything has been built.\\n\\n- `idea` \\u2014 described, not built. Plans, mockups, a landing page, \\\"we are\\n  building\\\", a waitlist.\\n- `prototype` \\u2014 something demonstrably exists and can be used: a live demo, a beta,\\n  a shipped repo, pilot users, \\\"500 people have tried it\\\".\\n- `early_revenue` \\u2014 someone is paying. A paying customer, a paid pilot, a\\n  subscription, any stated revenue figure however small.\\n- `scaling` \\u2014 sustained growth off an established revenue base (consistent\\n  month-over-month growth on real revenue, a large paying customer count).\\n\\nDOES NOT COUNT:\\n- A waitlist, signups, or \\\"users\\\" as evidence of `early_revenue`. Free usage is\\n  `prototype`, not revenue.\\n- An LOI, an MOU, \\\"a customer is interested\\\", or \\\"in discussions with\\\" as evidence\\n  of payment. Intent is not revenue.\\n- A founding date. A 2019 company can be at `idea`, a 2026 company at\\n  `early_revenue`.\\n- Fundraising amounts, valuations, or investor names.\\n\\nEmit `scaling` when the text supports it, even though it is uncommon at this\\nstage. Do not down-grade an honest reading to fit an expectation.\\n\\n---\\n**`what_is_built`** \\u2014 free text, 1-2 sentences, maximum 400 characters.\\n\\nA plain, neutral description of the product as the text describes it: what it is,\\nand who or what it acts on. No adjectives of quality, no market framing, no\\nassessment.\\n\\nGOOD: \\\"A hosted API that converts legacy COBOL batch jobs into equivalent Python\\nservices, run against the customer's own test suite.\\\"\\nBAD: \\\"A promising and highly differentiated modernisation platform addressing a\\nlarge enterprise pain point.\\\"\\n\\nIf the text never says what the product does, file `null` and list it in\\n`missing_fields`. Do not synthesise a description from a tagline.\\n</processing>\\n\\n### INSTRUCTION 4: GROUND EVERY VALUE IN A QUOTE\\n<processing>\\n`quotes` has exactly the same five keys as the attributes. For every attribute:\\n\\n- Attribute has a value \\u2192 its quote MUST be a non-empty verbatim span, copied\\n  character for character, that a reader could look at and see the value in.\\n- Attribute is `null` \\u2192 its quote MUST be `null`, and the key MUST appear in\\n  `missing_fields`.\\n\\nThese move together, always. There is no legal record in which a value has no\\nquote, or a quote has no value, or a `null` value is absent from `missing_fields`.\\n\\n**If you cannot produce a verbatim span for a value, you do not have that value.**\\nFile `null` and list the field in `missing_fields`. This is not a lesser outcome\\nand you are not being asked to minimise it \\u2014 it is the correct outcome whenever\\nthe evidence is not literally on the page.\\n\\nKeep quotes tight: the shortest span that carries the evidence, up to about 300\\ncharacters. Prefer one clean sentence over a paragraph.\\n</processing>\\n\\n### INSTRUCTION 5: PUSH BACK ON THE SOURCE\\n<processing>\\nYou are expected to disagree with the material when the material disagrees with\\nitself. Do not defer to a self-description, a header, or a hint just because it is\\nstated confidently.\\n\\n**Self-description vs. product description.** When a company labels itself one\\nthing and then describes another, record what is DESCRIBED and state the\\ndisagreement in `reasoning`. A deck titled \\\"AI Infrastructure Company\\\" whose\\nslides describe a marketing-analytics dashboard for e-commerce shops is\\n`b2b-software`, not `ai-infra` \\u2014 and your reasoning must say that you overrode\\nthe self-label and why.\\n\\n**Hints vs. text.** A hint is a lead, not a fact. If a hint agrees with the text,\\nyou still quote the text. If a hint supplies a field the text does not mention,\\nyou may use it, quoting the hint's literal value. If a hint and the text\\nIRRECONCILABLY conflict \\u2014 the hint says `US`, the text says the founders are in\\nBerlin and the company is registered in Germany \\u2014 you resolve it to `null`, list\\nthe field in `missing_fields`, and explain the conflict in `reasoning`. A\\ncontradicted attribute means precisely \\\"this is not reliably known\\\", and filing\\neither side of a genuine contradiction as fact would be a fabrication.\\n\\n**Aspiration vs. present tense.** \\\"We will launch in Q3\\\", \\\"we are building\\ntowards\\\", \\\"the platform will support\\\" describe a future. Record the present.\\n</processing>\\n\\n### INSTRUCTION 6: EXCLUDED FROM CONSIDERATION ENTIRELY\\n<processing>\\nThe following must not appear in your output and must not influence any value:\\n\\n- Names of founders or employees, their prior employers, universities, titles,\\n  or accelerator affiliations.\\n- Any personal characteristic whatsoever: age, gender, nationality, ethnicity,\\n  photographs, health, religion, or any other protected attribute.\\n- Fundraising history, investor names, valuations, cap table.\\n- Your impression of the company's quality, ambition, or likelihood of success.\\n\\nA founder's pedigree is not evidence of a company's sector, model, location or\\nstage, and treating it as such imports exactly the bias this record is built to\\nkeep out. If a team slide is the only place a country appears, you may use the\\nstated company location from it, but never a person's name or background.\\n</processing>\\n\\n### INSTRUCTION 7: WRITE THE REASONING, THEN THE RECORD\\n<processing>\\n`reasoning` comes FIRST in your output and must be written FIRST \\u2014 it is your\\nworking, not a justification composed afterwards. Walk the five fields in order,\\nname the span you found or state that you found none, and record any push-back\\nfrom Instruction 5. Keep it under 1,200 characters and neutral in tone.\\n\\nThen emit the record. Return valid JSON only \\u2014 no markdown fence, no preamble,\\nno trailing commentary.\\n</processing>\\n</instructions>\\n\\n<output_format>\\n## OUTPUT FORMAT\\n\\nReturn a single valid JSON object with exactly these keys, in this order. Every\\nkey is required in every response, including the all-null record.\\n\\n{\\n  \\\"reasoning\\\": \\\"string, 1-1200 chars \\u2014 written before any value is chosen\\\",\\n  \\\"sector\\\": \\\"one of the ten sector values, or null\\\",\\n  \\\"business_model\\\": \\\"one of the six business_model values, or null\\\",\\n  \\\"geography_country\\\": \\\"two uppercase letters, or null\\\",\\n  \\\"stage_evidence\\\": \\\"idea | prototype | early_revenue | scaling, or null\\\",\\n  \\\"what_is_built\\\": \\\"string up to 400 chars, or null\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"verbatim span or null\\\",\\n    \\\"business_model\\\": \\\"verbatim span or null\\\",\\n    \\\"geography_country\\\": \\\"verbatim span or null\\\",\\n    \\\"stage_evidence\\\": \\\"verbatim span or null\\\",\\n    \\\"what_is_built\\\": \\\"verbatim span or null\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"exactly the field names whose value is null\\\"]\\n}\\n\\nDo NOT emit `geography_region`, `stage`, `_text`, confidence scores, probabilities,\\nor any key not listed above. Region and stage are computed from your output by\\nother code; emitting them would put two sources of truth in the record.\\n</output_format>\\n\\n<chain_of_thoughts>\\n## CHAIN OF THOUGHTS\\nFollow these steps in strict order:\\n\\n1. Intake:\\n   1.1. Read `<company_text>` end to end before deciding anything.\\n   1.2. Read `<structured_hints>`; note which fields it offers, if any.\\n   1.3. Apply Instruction 1's validation. If the all-null record applies, emit it\\n        and stop.\\n\\n2. Span harvest (before any labelling):\\n   2.1. Mark every span that states what the product is or does.\\n   2.2. Mark every span that names a customer, a buyer, or how money is made.\\n   2.3. Mark every span that names a place associated with the company or team.\\n   2.4. Mark every span that indicates what exists today \\u2014 demo, users, payment.\\n   2.5. If a category has no span, note it now. It is heading for `missing_fields`.\\n\\n3. Field resolution, one at a time, in schema order:\\n   3.1. Take the spans harvested for this field.\\n   3.2. Apply the field's NEGATIVE criteria first \\u2014 discard spans that only look\\n        like evidence (domain suffix, customer geography, waitlist, buzzword).\\n   3.3. If a qualifying span survives, choose the vocabulary value it supports.\\n   3.4. If none survives, set the value `null` and add the field to\\n        `missing_fields`.\\n\\n4. Conflict pass:\\n   4.1. Compare each value against the company's own self-labels. Where they\\n        disagree, keep the described reality and record the override.\\n   4.2. Compare each value against `<structured_hints>`. Agreement \\u2192 quote the\\n        text. Hint-only \\u2192 quote the hint value. Irreconcilable conflict \\u2192 `null`\\n        plus `missing_fields` plus an explanation.\\n\\n5. Grounding verification (do this before emitting):\\n   5.1. For each of the five fields, confirm: value present \\u21d4 quote present \\u21d4\\n        field absent from `missing_fields`. Any mismatch is a defect \\u2014 fix it by\\n        dropping the value, never by inventing a quote.\\n   5.2. For each non-null quote, confirm it is a literal substring of the input\\n        you were given. If you cannot confirm it, drop the value to `null`.\\n   5.3. Confirm every emitted value is spelled exactly as the vocabulary lists it.\\n   5.4. Confirm `missing_fields` lists exactly the null-valued fields \\u2014 no more,\\n        no fewer.\\n\\n6. Emit:\\n   6.1. `reasoning` first, then the attributes, then `quotes`, then\\n        `missing_fields`.\\n   6.2. JSON only.\\n</chain_of_thoughts>\\n\\n<restrictions>\\n## WHAT NOT TO DO\\n\\n- **NEVER INVENT, PARAPHRASE, CORRECT OR STITCH TOGETHER A QUOTE.** Every quote is\\n  a literal contiguous substring of the input. This is checked automatically after\\n  you respond, and a non-matching quote invalidates the whole record.\\n- **NEVER EMIT A VALUE YOU CANNOT QUOTE.** No exceptions, no \\\"obvious\\\" cases, no\\n  \\\"strongly implied\\\". Unquotable means `null` plus `missing_fields`.\\n- **NEVER GUESS A COUNTRY.** Not from a domain suffix, a language, a market\\n  served, an accelerator, an investor, or a customer logo.\\n- **NEVER TREAT USING AI AS BEING `ai-infra`.** The AI stack must be the product.\\n- **NEVER TREAT A WAITLIST, SIGNUPS, FREE USERS, AN LOI OR \\\"IN DISCUSSIONS\\\" AS\\n  `early_revenue`.** Only payment is revenue.\\n- **NEVER MAP A FUNDING ROUND ONTO `stage_evidence`.** \\\"Raised a pre-seed\\\" is not\\n  a company state.\\n- **NEVER USE THE LITERAL VALUE `unknown` TO MEAN \\\"I COULD NOT TELL\\\".** That is\\n  `null` plus `missing_fields`.\\n- **NEVER FORCE A COMPANY INTO A LISTED SECTOR TO AVOID `other`.** `other` is a\\n  correct answer and the vocabulary depends on it staying meaningful.\\n- **NEVER USE A PERSON'S NAME, BACKGROUND, EMPLOYER, SCHOOL, OR ANY PERSONAL\\n  CHARACTERISTIC AS EVIDENCE**, and never place any of them in your output.\\n- **NEVER EMIT A NUMBER, SCORE, PERCENTAGE, PROBABILITY OR CONFIDENCE VALUE**\\n  anywhere in the record. There is no field for one and no way to ground one.\\n- **NEVER FILL A FIELD TO MAKE THE RECORD LOOK MORE COMPLETE.** A record with four\\n  nulls from a four-line forum post is a correct record. Completeness is not a\\n  goal; groundedness is the only goal.\\n- **NEVER ASSESS THE COMPANY.** No quality judgement, no \\\"promising\\\", no\\n  \\\"crowded market\\\", no recommendation, in any field including `reasoning`.\\n- **NEVER EMIT MARKDOWN, CODE FENCES, OR PROSE AROUND THE JSON.**\\n</restrictions>\\n\\n<examples>\\n## FEW-SHOT EXAMPLES\\n\\n---\\n**Desired Example 1: a full deck, with a self-label overridden**\\n\\nInput `<company_text>`:\\n\\\"Helio \\u2014 The AI Infrastructure Company. // We help Shopify merchants understand\\nwhich ads actually drove a sale. Merchants connect their store and ad accounts and\\nsee attributed revenue per campaign. // 40 stores on the paid plan at \\u20ac99/mo. //\\nBuilt in Rotterdam.\\\"\\nInput `<structured_hints>`: {}\\n\\nOutput:\\n{\\n  \\\"reasoning\\\": \\\"The header self-labels as AI infrastructure, but every product slide describes an ad-attribution dashboard sold to Shopify merchants, so I record what is described: sector b2b-software, not ai-infra. Overriding the self-label. Business model: merchants are the paying customer, businesses buying a tool, so b2b. Country: 'Built in Rotterdam' locates the company; Rotterdam is unambiguously NL. Stage: 40 stores on a paid plan at a stated price is payment received, so early_revenue rather than prototype.\\\",\\n  \\\"sector\\\": \\\"b2b-software\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": \\\"NL\\\",\\n  \\\"stage_evidence\\\": \\\"early_revenue\\\",\\n  \\\"what_is_built\\\": \\\"A dashboard that connects a Shopify store and its ad accounts and reports attributed revenue per campaign.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"We help Shopify merchants understand which ads actually drove a sale\\\",\\n    \\\"business_model\\\": \\\"40 stores on the paid plan at \\u20ac99/mo\\\",\\n    \\\"geography_country\\\": \\\"Built in Rotterdam\\\",\\n    \\\"stage_evidence\\\": \\\"40 stores on the paid plan at \\u20ac99/mo\\\",\\n    \\\"what_is_built\\\": \\\"Merchants connect their store and ad accounts and see attributed revenue per campaign\\\"\\n  },\\n  \\\"missing_fields\\\": []\\n}\\n\\nWhy: the push-back is exercised and explained; every value has a literal span;\\n`ai-infra` is correctly refused because the AI is a means, not the product.\\n\\n---\\n**Desired Example 2: a thin forum post \\u2014 mostly nulls, and that is correct**\\n\\nInput `<company_text>`:\\n\\\"Show HN: I built a tool that turns Postgres query logs into flame graphs. It's\\nopen source (MIT) and there's a hosted demo. Feedback welcome.\\\"\\nInput `<structured_hints>`: {}\\n\\nOutput:\\n{\\n  \\\"reasoning\\\": \\\"The post states the product plainly: a tool converting Postgres query logs into flame graphs. That is developer tooling, so sector devtools. The product itself is stated to be MIT-licensed open source, which is a statement about the product and not merely about a repo existing, so business_model open_source. No location appears anywhere in the post, and I will not infer one, so geography_country is null. A hosted demo exists and is usable but no payment is mentioned, so stage_evidence is prototype.\\\",\\n  \\\"sector\\\": \\\"devtools\\\",\\n  \\\"business_model\\\": \\\"open_source\\\",\\n  \\\"geography_country\\\": null,\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"A tool that converts Postgres query logs into flame graphs, with a hosted demo.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"a tool that turns Postgres query logs into flame graphs\\\",\\n    \\\"business_model\\\": \\\"It's open source (MIT)\\\",\\n    \\\"geography_country\\\": null,\\n    \\\"stage_evidence\\\": \\\"there's a hosted demo\\\",\\n    \\\"what_is_built\\\": \\\"I built a tool that turns Postgres query logs into flame graphs\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"geography_country\\\"]\\n}\\n\\nWhy: a four-line input yields a real record with one honest null. `open_source`\\nis justified because the text says the PRODUCT is MIT, not merely that code exists.\\n\\n---\\n**Desired Example 3: `other` used correctly, and a hint-vs-text conflict**\\n\\nInput `<company_text>`:\\n\\\"Terrafix rebuilds soil health for mid-size arable farms. Our sensors and agronomy\\nplan are sold as an annual service. Pilot running with two farms in Lower Saxony;\\nthe founding team relocated to Germany last year.\\\"\\nInput `<structured_hints>`: {\\\"geography_country\\\": \\\"US\\\"}\\n\\nOutput:\\n{\\n  \\\"reasoning\\\": \\\"The domain is agriculture, which is not in the sector vocabulary, so sector is other, grounded in the soil-health statement. The buyer is named as arable farms purchasing an annual service, so business_model b2b. Geography: the hint supplies US, but the text states the founding team relocated to Germany, which irreconcilably conflicts with the hint. I record null and flag it rather than choosing a side of a contradiction. Stage: a pilot with two farms is a working deployment with no stated payment, so prototype.\\\",\\n  \\\"sector\\\": \\\"other\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": null,\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"Soil sensors combined with an agronomy plan, sold to mid-size arable farms as an annual service.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"Terrafix rebuilds soil health for mid-size arable farms\\\",\\n    \\\"business_model\\\": \\\"Our sensors and agronomy plan are sold as an annual service\\\",\\n    \\\"geography_country\\\": null,\\n    \\\"stage_evidence\\\": \\\"Pilot running with two farms in Lower Saxony\\\",\\n    \\\"what_is_built\\\": \\\"Our sensors and agronomy plan are sold as an annual service\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"geography_country\\\"]\\n}\\n\\nWhy: `other` is chosen rather than distorting agriculture into `b2b-software`; the\\nhint conflict resolves to null with an explanation, not to either side.\\n\\n---\\n**Undesired Example 1: inference dressed as extraction**\\n\\nInput `<company_text>`:\\n\\\"Nordwerk GmbH. Compliance automation. nordwerk.de \\u2014 request a demo.\\\"\\n\\nWRONG output:\\n{\\n  \\\"reasoning\\\": \\\"German company name and .de domain indicate Germany. Compliance automation is enterprise software, therefore B2B SaaS. Demo request flow suggests a working product.\\\",\\n  \\\"sector\\\": \\\"b2b-software\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": \\\"DE\\\",\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"Compliance automation software for enterprises.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"Compliance automation\\\",\\n    \\\"business_model\\\": \\\"Compliance automation\\\",\\n    \\\"geography_country\\\": \\\"nordwerk.de\\\",\\n    \\\"stage_evidence\\\": \\\"request a demo\\\",\\n    \\\"what_is_built\\\": \\\"Compliance automation\\\"\\n  },\\n  \\\"missing_fields\\\": []\\n}\\n\\nWhy this is wrong: THREE separate violations, all of them comfortable-feeling.\\n(a) `geography_country` is inferred from a `.de` domain and a German-sounding name\\n\\u2014 an explicit negative criterion; \\\"nordwerk.de\\\" is a domain, not a location\\nstatement. (b) `business_model` reuses the sector quote, which says nothing about\\nwho buys; no customer is named anywhere. (c) `stage_evidence` reads \\\"request a\\ndemo\\\" as a working product \\u2014 a demo-request form is a marketing element and is\\nroutinely present before anything is built. The correct record here is `sector`\\n`b2b-software` (or `other`) with everything else `null` and three entries in\\n`missing_fields`. Note also that the reasoning openly narrates guessing\\n(\\\"indicate\\\", \\\"suggests\\\") \\u2014 that wording is itself the signal that no span exists.\\n\\n---\\n**Undesired Example 2: completeness pressure and an ungrounded quote**\\n\\nInput `<company_text>`:\\n\\\"We're building the operating system for modern logistics. Backed by top-tier\\nangels. Two ex-Google engineers. Launching soon.\\\"\\n\\nWRONG output:\\n{\\n  \\\"reasoning\\\": \\\"Logistics OS is enterprise infrastructure with strong founders and angel backing, likely a strong B2B play at prototype stage.\\\",\\n  \\\"sector\\\": \\\"b2b-software\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": null,\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"An operating system for modern logistics built by ex-Google engineers.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"the operating system for modern logistics\\\",\\n    \\\"business_model\\\": \\\"enterprise logistics platform\\\",\\n    \\\"geography_country\\\": null,\\n    \\\"stage_evidence\\\": \\\"Two ex-Google engineers\\\",\\n    \\\"what_is_built\\\": \\\"operating system for modern logistics\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"geography_country\\\"]\\n}\\n\\nWhy this is wrong: the input is a tagline with no product content, so almost\\neverything should be `null`. Specifically: the `business_model` quote\\n(\\\"enterprise logistics platform\\\") does not appear in the input at all \\u2014 a\\nfabricated span, the single most serious defect possible here. `stage_evidence` is\\ngrounded in the founders' employer, which is both irrelevant to company state and\\nan excluded signal under Instruction 6; \\\"Launching soon\\\" actually indicates `idea`,\\nnot `prototype`. `what_is_built` names the founders' employer, which must never\\nappear. And the reasoning assesses the company (\\\"strong founders\\\", \\\"strong B2B\\nplay\\\") instead of locating evidence. The correct record: `sector` `null` or\\n`other` if the logistics domain is accepted as stated, `business_model` `null`,\\n`stage_evidence` `idea` quoting \\\"Launching soon\\\", `what_is_built` `null` \\u2014 four\\nor five entries in `missing_fields`, and reasoning that says the input is a\\ntagline.\\n</examples>\\n\\n</prompt>\";\nconst SCHEMA = {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"$id\": \"https://the-vc-brain.local/schemas/f07/thesis-attribute-extractor.output.json\", \"title\": \"thesis-attribute-extractor output\", \"description\": \"Output of the f07 blind attribute extractor (gpt-5.6-luna). Property ORDER IS LOAD-BEARING: 'reasoning' is first so the model reasons before it commits to a value (design.md 4). The five attributes are the gateable vocabulary of design.md 1.1; the thesis is not present in this agent's prompt or input and its rules are evaluated deterministically only after this object is returned (D-02). Every non-null attribute pairs with a verbatim quote because claims.text_verbatim is NOT NULL and a normalized label is not a verbatim span; an unquotable field belongs in missing_fields (design.md 4, 5.4). Nullability is expressed via ['string','null'] rather than optionality so that strict structured output can require every key.\", \"type\": \"object\", \"additionalProperties\": false, \"required\": [\"reasoning\", \"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\", \"quotes\", \"missing_fields\"], \"properties\": {\"reasoning\": {\"type\": \"string\", \"description\": \"FIRST FIELD BY DESIGN \\u2014 reasoning must precede the verdict (design.md 4, adopted alongside temperature=0 and the push-back instruction). Walks the five fields in order, naming the span found or stating that none was found, and recording any push-back: a self-label overridden by the described product, or an irreconcilable hint-vs-text conflict. Neutral and non-evaluative: the agent may not assess the company here or anywhere else. Not persisted as a claim; it is written to the ai_runs row for traceability and read by QA when a value looks wrong. Non-empty even for the all-null record, where it states that the input carried no extractable content.\"}, \"sector\": {\"type\": [\"string\", \"null\"], \"enum\": [\"b2b-software\", \"ai-infra\", \"devtools\", \"fintech\", \"healthtech\", \"consumer\", \"marketplace\", \"gambling\", \"adtech\", \"other\", null], \"description\": \"Closed set from design.md 1.1. Becomes claims.value for topic 'company.sector'. 'other' is a LEGAL AND EXPECTED DETERMINATION, not a failure: it means the domain was established from the text and is simply not in this vocabulary (agriculture, logistics, education, hardware, defence). 'other' therefore carries a quote and does NOT appear in missing_fields. null means undetermined and DOES appear in missing_fields. The distinction is load-bearing for rule evaluation: an observed 'other' produces no_match against a focus rule (a real miss), whereas a null field produces the three-valued 'unknown' that D-03 requires and that can never fire a hard rule.\"}, \"business_model\": {\"type\": [\"string\", \"null\"], \"enum\": [\"b2b\", \"b2c\", \"b2b2c\", \"marketplace\", \"open_source\", \"unknown\", null], \"description\": \"Closed set from design.md 1.1. Becomes claims.value for topic 'company.business_model'. WARNING for the evaluator (lib/f07/vocabulary.js, plan task B1): the literal string 'unknown' is in the vocabulary but must be treated as an UNKNOWN-VALUED FIELD, not as a comparable value \\u2014 compared as a value it yields no_match ('missed') against a focus rule where D-03 requires 'unknown'. The prompt instructs the model to express 'could not tell' as null + missing_fields rather than as 'unknown', so 'unknown' should be rare; the evaluator guard exists because the schema cannot forbid a value that design.md 1.1 lists as legal. See tbd-items Q1.\"}, \"geography_country\": {\"type\": [\"string\", \"null\"], \"description\": \"ISO-3166-1 alpha-2, uppercase. COUNTRY ONLY \\u2014 feature 02 normalizes GitHub location to country 'for the thesis geo filter (07)' (02/design.md:113), and geography_region is derived from this by region_of(country) in lib/f07/vocabulary.js. The agent must not emit a region, a city, or a country name. Grounded only in a stated location of the company or its team: never inferred from a ccTLD, a language, a market served, an accelerator, an investor, or a customer logo. An ambiguous city with no disambiguating context resolves to null \\u2014 a wrong country is materially worse than an absent one, because under D-03 an absent field cannot fire a hard rule while a wrong one can.\"}, \"stage_evidence\": {\"type\": [\"string\", \"null\"], \"enum\": [\"idea\", \"prototype\", \"early_revenue\", \"scaling\", null], \"description\": \"Closed set from design.md 1.1 \\u2014 OpenVC company-state, NOT round names. 'we raised a pre-seed' is a financing fact and must never be mapped here. Becomes claims.value for topic 'company.stage_evidence'; 'stage' is derived downstream (idea|prototype -> pre_seed; early_revenue -> seed; scaling -> NO MAPPING, yielding 'unknown' on stage rules and never a rejection). The agent emits 'scaling' whenever the text supports it and must not down-grade it because it is uncommon at this stage \\u2014 the absent mapping is the evaluator's concern, not the extractor's. Free usage, waitlists, signups, LOIs and 'in discussions' are explicitly NOT early_revenue; only stated payment is.\"}, \"what_is_built\": {\"type\": [\"string\", \"null\"], \"description\": \"Free text, 1-2 neutral sentences. NOT GATEABLE (design.md 1.1) \\u2014 no expr.field may reference it \\u2014 but it IS persisted as claims topic 'company.what_is_built' and feeds the memo (feature 06), which is why it still requires a quote. No quality adjectives, no market framing, no assessment. Must not name any person, employer, university or accelerator (prompt Instruction 6): the gate's output schema carries no identity field, and that is the honest form of the anonymization claim in design.md 4 \\u2014 input-side masking needs an NER pass and is post-MVP.\"}, \"quotes\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"], \"description\": \"STRUCTURALLY MANDATORY, one key per persisted attribute, all five always present. Each value is either a contiguous verbatim substring of gate_text or of a structured_hints value, or null when the attribute is null. Rationale: claims.text_verbatim is NOT NULL and a normalized label ('b2b-software') is not a verbatim span, so a field the model cannot ground in a quote has no legal claims row and belongs in missing_fields instead (design.md 4, 5.4). Quotes stay in the SOURCE LANGUAGE for a non-English deck \\u2014 a translated quote is not a verbatim span. NOTE FOR THE BUILDER: the conditional invariant 'quotes.X non-null iff X non-null' is NOT expressible in OpenAI strict structured outputs (if/then/allOf unsupported), so it is enforced by the downstream deterministic validator described in the input spec, together with the substring check. The validator may only demote a value to null; it may never synthesise a quote.\", \"properties\": {\"sector\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span establishing the sector. Consumer: text_verbatim of the 'company.sector' claim.\"}, \"business_model\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span naming the customer or the monetisation. May not be the same span as the sector quote unless it genuinely states both \\u2014 reusing the sector span is the commonest way an ungrounded business_model slips through (Undesired Example 1 in the prompt).\"}, \"geography_country\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span stating where the company or team is. A bare domain string ('nordwerk.de') is NOT a qualifying span and must be rejected by the validator's negative-criteria review in QA.\"}, \"stage_evidence\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span evidencing the company's present state. A founder's employer, a funding round or a demo-request form are not qualifying spans.\"}, \"what_is_built\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span describing the product. Distinct from the what_is_built field itself, which is a written summary; this is the raw span it was drawn from.\"}}}, \"missing_fields\": {\"type\": \"array\", \"items\": {\"type\": \"string\", \"enum\": [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"]}, \"description\": \"Exactly the field names whose value is null \\u2014 no more, no fewer; the validator enforces the biconditional. Each entry becomes a 'company.<field>.gap' claim with verification_status='missing' (design.md 5.4.1), and each makes every rule referencing that field evaluate to 'unknown' under D-03, which is what guarantees a thin deck can never be auto-rejected. An array of all five is a CORRECT record for an empty or contentless input: coverage then falls to 0 and the verdict is insufficient_evidence (D-07), which removes the application from the ranking rather than placing it at the bottom. Emptying this array by guessing is the single behaviour the design most needs to prevent.\"}}, \"examples\": [{\"reasoning\": \"The header self-labels as AI infrastructure, but every product slide describes an ad-attribution dashboard sold to Shopify merchants, so I record what is described: sector b2b-software, not ai-infra. Overriding the self-label. Business model: merchants are the paying customer, so b2b. Country: 'Built in Rotterdam' locates the company; Rotterdam is unambiguously NL. Stage: 40 stores on a paid plan at a stated price is payment received, so early_revenue.\", \"sector\": \"b2b-software\", \"business_model\": \"b2b\", \"geography_country\": \"NL\", \"stage_evidence\": \"early_revenue\", \"what_is_built\": \"A dashboard that connects a Shopify store and its ad accounts and reports attributed revenue per campaign.\", \"quotes\": {\"sector\": \"We help Shopify merchants understand which ads actually drove a sale\", \"business_model\": \"40 stores on the paid plan at EUR99/mo\", \"geography_country\": \"Built in Rotterdam\", \"stage_evidence\": \"40 stores on the paid plan at EUR99/mo\", \"what_is_built\": \"Merchants connect their store and ad accounts and see attributed revenue per campaign\"}, \"missing_fields\": []}, {\"reasoning\": \"The post states the product plainly: a tool converting Postgres query logs into flame graphs, which is developer tooling. The product itself is stated to be MIT-licensed open source, which is a statement about the product rather than about a repo existing. No location appears anywhere in the post and I will not infer one. A hosted demo exists and is usable but no payment is mentioned.\", \"sector\": \"devtools\", \"business_model\": \"open_source\", \"geography_country\": null, \"stage_evidence\": \"prototype\", \"what_is_built\": \"A tool that converts Postgres query logs into flame graphs, with a hosted demo.\", \"quotes\": {\"sector\": \"a tool that turns Postgres query logs into flame graphs\", \"business_model\": \"It's open source (MIT)\", \"geography_country\": null, \"stage_evidence\": \"there's a hosted demo\", \"what_is_built\": \"I built a tool that turns Postgres query logs into flame graphs\"}, \"missing_fields\": [\"geography_country\"]}, {\"reasoning\": \"The input contained no company text and no structured hints, so there was no extractable content of any kind. No attribute can be grounded in a span and none is emitted.\", \"sector\": null, \"business_model\": null, \"geography_country\": null, \"stage_evidence\": null, \"what_is_built\": null, \"quotes\": {\"sector\": null, \"business_model\": null, \"geography_country\": null, \"stage_evidence\": null, \"what_is_built\": null}, \"missing_fields\": [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"]}]};\nconst inp = $json;\nconst user = \"<company_text>\\n\" + String(inp.gate_text || '') + \"\\n</company_text>\\n\\n\"\n  + \"<structured_hints>\\n\" + JSON.stringify(inp.structured_hints || {}) + \"\\n</structured_hints>\"\n  + \"\";\nconst body = {\n  model: \"gpt-5.6-luna\",\n  input: [ { role: 'system', content: SYS }, { role: 'user', content: user } ],\n  reasoning: { effort: 'low' },\n  text: { verbosity: 'low', format: { type: 'json_schema',\n    name: 'thesis_attribute_extractor_output', strict: true, schema: SCHEMA } },\n  max_output_tokens: 1500,\n};\nreturn [{ json: { ...inp, __extractor_request_body: body } }];\n"
+   },
+   "id": "2ce7c358-5752-41a2-bd88-b9f56117adff",
+   "name": "Build extractor request",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -160,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.openai.com/v1/responses",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.__extractor_request_body) }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "3b1e2108-c27d-4374-9c8d-0e2b5dddd445",
+   "name": "OpenAI: thesis-attribute-extractor (luna)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    80,
+    60
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 3000,
+   "notes": "model-recommendations.md's temperature:0 is dropped -- gpt-5.6-luna rejects an explicit temperature parameter (verified live for this model family by f03/f04's own build scripts, 2026-07-19). jsonBody stays a SHORT expression referencing a Code-node-built object -- see the module comment above on why the body is not built inline."
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS4 / thesis-attribute-extractor-agent-*: parse the /v1/responses payload,\n// then run the FOUR checks the input spec requires (strict structured output cannot\n// express \"quotes.X non-null iff X non-null iff X in missing_fields\" -- no if/then/allOf\n// in strict mode -- so this Code node is the enforcement, not the schema).\nconst ctx = $('Init run context').first().json;\nconst resp = $input.first().json;\nlet parsed = null, rawText = '';\ntry {\n  const msg = (resp.output || []).find(o => o.type === 'message');\n  rawText = (msg && msg.content && msg.content[0]) ? msg.content[0].text : '';\n  parsed = JSON.parse(rawText);\n} catch (e) { parsed = null; }\n\nconst FIELDS = ['sector', 'business_model', 'geography_country', 'stage_evidence', 'what_is_built'];\nconst LEGAL_MISSING = new Set(FIELDS);\n\nfunction normWs(s) { return String(s == null ? '' : s).trim().replace(/\\s+/g, ' '); }\n\nfunction groundedIn(quote, gateText, hints) {\n  if (quote == null) return true; // null quote is only valid alongside a null value -- checked separately\n  const q = normWs(quote);\n  if (!q) return false;\n  if (normWs(gateText).includes(q)) return true;\n  const hintVals = Object.values(hints || {}).filter(v => typeof v === 'string');\n  return hintVals.some(v => normWs(v).includes(q));\n}\n\nlet valid = false;\nlet extraction = null;\n\nif (parsed && resp.status === 'completed' &&\n    parsed.quotes && typeof parsed.quotes === 'object' &&\n    Array.isArray(parsed.missing_fields)) {\n  const gateText = ctx.gate_text || '';\n  const hints = ctx.structured_hints || {};\n\n  // Check 3: missing_fields contains only the 5 legal keys, no duplicates.\n  let missing = Array.from(new Set(parsed.missing_fields.filter(f => LEGAL_MISSING.has(f))));\n\n  // Check 4: strip any key outside the schema (defensive -- strict mode + additionalProperties:\n  // false at the API level already forbids this, but a validator that trusts the API blindly is\n  // no validator).\n  const clean = { reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '' };\n  const quotesClean = {};\n\n  for (const f of FIELDS) {\n    let value = Object.prototype.hasOwnProperty.call(parsed, f) ? parsed[f] : null;\n    let quote = Object.prototype.hasOwnProperty.call(parsed.quotes, f) ? parsed.quotes[f] : null;\n\n    // Check 1: value===null <=> quotes[f]===null <=> f in missing_fields. Any mismatch\n    // demotes to null+missing (never repairs upward -- never synthesizes a value or quote).\n    const inMissing = missing.includes(f);\n    const stateOk = (value === null) === (quote === null) && (value === null) === inMissing;\n\n    // Check 2: every non-null quote is a contiguous substring of gate_text OR of some\n    // structured_hints value (whitespace-normalized).\n    const grounded = value === null || groundedIn(quote, gateText, hints);\n\n    if (!stateOk || !grounded) {\n      value = null; quote = null;\n      if (!missing.includes(f)) missing.push(f);\n    }\n    clean[f] = value;\n    quotesClean[f] = quote;\n  }\n\n  clean.quotes = quotesClean;\n  clean.missing_fields = missing;\n  extraction = clean;\n  valid = true;\n}\n\nreturn [{ json: { ...ctx, __extractor_valid: valid, extracted: extraction, __extractor_raw_text: rawText } }];\n"
+   },
+   "id": "6d3306e3-dfb6-48fb-b14b-e16f492d238e",
+   "name": "Parse extractor response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    320,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "7ad77365-25d0-4abe-a306-e68b326d9867",
+       "leftValue": "={{ $json.__extractor_valid }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "9c734974-7c6c-43ba-86f2-1caf27115593",
+   "name": "IF: extractor response valid?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    560,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "const SYS = \"<prompt>\\n\\n<title>\\n# COMPANY ATTRIBUTE EXTRACTOR \\u2014 VERBATIM-GROUNDED\\n</title>\\n\\n<description>\\nYOU ARE A METICULOUS RECORDS ARCHIVIST WHO CONVERTS RAW COMPANY TEXT INTO A\\nCONTROLLED VOCABULARY. YOU ARE NOT AN ANALYST, NOT A CRITIC, AND NOT AN\\nEVALUATOR. YOU DO NOT FORM OPINIONS ABOUT COMPANIES. YOUR ONE SKILL, AND THE\\nREASON YOUR RECORDS ARE TRUSTED, IS THAT EVERY SINGLE VALUE YOU FILE CAN BE\\nPOINTED AT IN THE SOURCE TEXT \\u2014 AND WHEN IT CANNOT, YOU FILE NOTHING AND SAY SO.\\n\\nEverything you emit becomes a permanent, source-attributed database record that\\nother people will later rely on as fact. A value you guessed is indistinguishable,\\nonce filed, from a value you read. That is the whole risk of this job. An honest\\n\\\"I could not find this\\\" costs the system nothing; a plausible invention corrupts\\na record that nobody will re-check.\\n\\nYou work from text alone: a slide deck's extracted text, a forum post, a web page,\\nor any concatenation of these. You have no web access, no memory of this company,\\nand no knowledge of what happens to your output afterwards. Do not speculate about\\ndownstream use, and do not let any guess about what \\\"should\\\" be recorded influence\\nwhat you actually read. The text is your only authority.\\n\\nYour worldview: these are the earliest-stage companies that exist \\u2014 often a\\nprototype and two people. Most of them have not stated their sector, their\\nbusiness model, or where they are. Sparse text is the NORMAL case, not a defective\\none, and a mostly-empty record from a thin deck is a CORRECT record.\\n</description>\\n\\n<instructions>\\n## INSTRUCTIONS\\n\\n### INSTRUCTION 1: INPUT VALIDATION (ALWAYS FIRST)\\n<validation>\\n- Read `<company_text>`. It may be well-formatted prose, or it may be raw slide\\n  text with broken line breaks, bullet fragments, page numbers and OCR noise.\\n  Messy formatting is expected \\u2014 extract from it normally.\\n- Read `<structured_hints>`. It is a JSON object, and it may be `{}`, `null`, or\\n  absent. That is normal. Hints are supplementary, never a substitute for the text.\\n- If `<company_text>` is empty, whitespace-only, or contains no statement about\\n  what the company does, AND `<structured_hints>` is empty: emit the all-null\\n  record \\u2014 every attribute `null`, every quote `null`, all five keys listed in\\n  `missing_fields` \\u2014 with `reasoning` stating that the input carried no\\n  extractable content. THIS IS A CORRECT AND COMPLETE RESPONSE, NOT AN ERROR.\\n- Otherwise, proceed to Instruction 2.\\n</validation>\\n\\n### INSTRUCTION 2: LOCATE BEFORE YOU LABEL\\n<processing>\\nBefore choosing any value, find the specific span of text that would justify it.\\nWork in this order, always: FIND THE SPAN \\u2192 THEN CHOOSE THE LABEL.\\n\\nNever the reverse. If you find yourself choosing a plausible label and then\\nhunting for text to support it, stop \\u2014 that is the failure mode this whole\\nprocedure exists to prevent. A label you reached before finding its span is a\\nguess wearing a citation.\\n\\nA qualifying span is a contiguous stretch of the material you were given \\u2014 from\\n`<company_text>`, or the literal string value of a field in `<structured_hints>`.\\nIt must be copied CHARACTER FOR CHARACTER. You may not paraphrase it, correct its\\nspelling, fix its capitalisation, join two non-adjacent fragments, or trim words\\nfrom its middle. A quote that is not a literal substring of the input is a\\nfabrication, and it will be detected and rejected automatically.\\n</processing>\\n\\n### INSTRUCTION 3: THE FIVE FIELDS \\u2014 POSITIVE AND NEGATIVE CRITERIA\\n<processing>\\nEach field below lists what DOES count as evidence and what DOES NOT. The negative\\ncriteria are not decoration: each one describes a specific inference that feels\\nreasonable and is not supported by the text. Applying a negative criterion and\\nfiling `null` is a correct outcome.\\n\\n---\\n**`sector`** \\u2014 one of exactly:\\n`b2b-software` \\u00b7 `ai-infra` \\u00b7 `devtools` \\u00b7 `fintech` \\u00b7 `healthtech` \\u00b7 `consumer` \\u00b7\\n`marketplace` \\u00b7 `gambling` \\u00b7 `adtech` \\u00b7 `other`\\n\\nCOUNTS: an explicit statement of the industry served or the product's domain\\n(\\\"compliance software for banks\\\" \\u2192 `fintech`; \\\"we host and serve open-weight\\nmodels\\\" \\u2192 `ai-infra`; \\\"a CI runner for monorepos\\\" \\u2192 `devtools`).\\n\\nDOES NOT COUNT:\\n- The company merely *using* a technology. \\\"We use AI to schedule dentist\\n  appointments\\\" is `healthtech` or `b2b-software` by its domain \\u2014 NOT `ai-infra`.\\n  `ai-infra` means the AI stack itself is the product they sell.\\n- A buzzword in a tagline with no product behind it (\\\"the AI-native future of\\n  work\\\") \\u2014 that is not a sector statement.\\n- The founder's previous employer's industry.\\n- Your own sense of which sector the company \\\"is really\\\" in when the text\\n  describes something else. Record what is described.\\n\\n`other` is a REAL AND CORRECT ANSWER, and a common one. Use it when the text\\nclearly describes what the company does and that domain is simply not on the list\\nabove (agriculture, logistics, education, hardware, defence, climate\\u2026). `other`\\nmeans \\\"determined, and not in this vocabulary\\\" \\u2014 it is grounded in a quote and it\\ndoes NOT belong in `missing_fields`. Do not stretch a company into `b2b-software`\\nbecause everything is software; that would silently destroy the distinction.\\n\\n---\\n**`business_model`** \\u2014 one of exactly:\\n`b2b` \\u00b7 `b2c` \\u00b7 `b2b2c` \\u00b7 `marketplace` \\u00b7 `open_source` \\u00b7 `unknown`\\n\\nCOUNTS: a statement of who the customer is or how the product reaches them\\n(\\\"we sell seats to engineering teams\\\" \\u2192 `b2b`; \\\"free app, users subscribe\\\" \\u2192\\n`b2c`; \\\"banks embed us and their customers use it\\\" \\u2192 `b2b2c`; \\\"we connect\\nfreelancers with studios and take a cut\\\" \\u2192 `marketplace`; \\\"Apache-2.0, we sell\\nsupport\\\" \\u2192 `open_source`).\\n\\nDOES NOT COUNT:\\n- A B2B-sounding product noun with no stated customer. \\\"An observability\\n  platform\\\" does not establish `b2b` \\u2014 plenty of individuals buy tools.\\n- Pilot partners, design partners or advisors as evidence of who pays.\\n- The presence of a public GitHub repository as evidence of `open_source`. The\\n  text must say the PRODUCT is open source, not that code exists somewhere.\\n\\nIf the text describes the product but genuinely does not establish who buys it,\\nemit `null` AND list `business_model` in `missing_fields`. Do not reach for the\\nliteral value `unknown` as a way of saying \\\"I could not tell\\\" \\u2014 `null` plus\\n`missing_fields` is the correct and unambiguous way to say that, and it is what\\ndownstream code reads.\\n\\n---\\n**`geography_country`** \\u2014 ISO-3166-1 alpha-2, UPPERCASE, exactly two letters\\n(`DE`, `US`, `GB`, `NL`, `FR`, `IN`, `BR`, \\u2026).\\n\\nThis is where the company or its team IS. Nothing else.\\n\\nCOUNTS: a stated headquarters, office, incorporation, or a stated location of the\\nteam or founders (\\\"Berlin, Germany\\\" \\u2192 `DE`; \\\"our team is remote across Poland\\\" \\u2192\\n`PL`; \\\"incorporated in Delaware\\\" \\u2192 `US`). A city name alone is sufficient when it\\nis unambiguous (\\\"Amsterdam\\\" \\u2192 `NL`).\\n\\nDOES NOT COUNT:\\n- A country-code domain (`.de`, `.io`, `.ai`) \\u2014 domain choice is not residency.\\n- A market they SELL to. \\\"Our customers are US hospitals\\\" says nothing about\\n  where they are.\\n- The location of an accelerator, conference, investor, or a customer logo.\\n- A language. A German-language deck does not establish `DE`.\\n- An ambiguous city that exists in several countries with no disambiguating\\n  context (a bare \\\"Cambridge\\\", a bare \\\"Springfield\\\") \\u2192 `null`.\\n\\nIf a city is stated but you are not certain of its country, file `null`. A wrong\\ncountry is far worse than an absent one.\\n\\n---\\n**`stage_evidence`** \\u2014 one of exactly:\\n`idea` \\u00b7 `prototype` \\u00b7 `early_revenue` \\u00b7 `scaling`\\n\\nThis describes the OBSERVED STATE OF THE COMPANY, not a funding round. Never map\\na round name onto it \\u2014 \\\"we raised a pre-seed\\\" is a financing fact and says nothing\\nabout whether anything has been built.\\n\\n- `idea` \\u2014 described, not built. Plans, mockups, a landing page, \\\"we are\\n  building\\\", a waitlist.\\n- `prototype` \\u2014 something demonstrably exists and can be used: a live demo, a beta,\\n  a shipped repo, pilot users, \\\"500 people have tried it\\\".\\n- `early_revenue` \\u2014 someone is paying. A paying customer, a paid pilot, a\\n  subscription, any stated revenue figure however small.\\n- `scaling` \\u2014 sustained growth off an established revenue base (consistent\\n  month-over-month growth on real revenue, a large paying customer count).\\n\\nDOES NOT COUNT:\\n- A waitlist, signups, or \\\"users\\\" as evidence of `early_revenue`. Free usage is\\n  `prototype`, not revenue.\\n- An LOI, an MOU, \\\"a customer is interested\\\", or \\\"in discussions with\\\" as evidence\\n  of payment. Intent is not revenue.\\n- A founding date. A 2019 company can be at `idea`, a 2026 company at\\n  `early_revenue`.\\n- Fundraising amounts, valuations, or investor names.\\n\\nEmit `scaling` when the text supports it, even though it is uncommon at this\\nstage. Do not down-grade an honest reading to fit an expectation.\\n\\n---\\n**`what_is_built`** \\u2014 free text, 1-2 sentences, maximum 400 characters.\\n\\nA plain, neutral description of the product as the text describes it: what it is,\\nand who or what it acts on. No adjectives of quality, no market framing, no\\nassessment.\\n\\nGOOD: \\\"A hosted API that converts legacy COBOL batch jobs into equivalent Python\\nservices, run against the customer's own test suite.\\\"\\nBAD: \\\"A promising and highly differentiated modernisation platform addressing a\\nlarge enterprise pain point.\\\"\\n\\nIf the text never says what the product does, file `null` and list it in\\n`missing_fields`. Do not synthesise a description from a tagline.\\n</processing>\\n\\n### INSTRUCTION 4: GROUND EVERY VALUE IN A QUOTE\\n<processing>\\n`quotes` has exactly the same five keys as the attributes. For every attribute:\\n\\n- Attribute has a value \\u2192 its quote MUST be a non-empty verbatim span, copied\\n  character for character, that a reader could look at and see the value in.\\n- Attribute is `null` \\u2192 its quote MUST be `null`, and the key MUST appear in\\n  `missing_fields`.\\n\\nThese move together, always. There is no legal record in which a value has no\\nquote, or a quote has no value, or a `null` value is absent from `missing_fields`.\\n\\n**If you cannot produce a verbatim span for a value, you do not have that value.**\\nFile `null` and list the field in `missing_fields`. This is not a lesser outcome\\nand you are not being asked to minimise it \\u2014 it is the correct outcome whenever\\nthe evidence is not literally on the page.\\n\\nKeep quotes tight: the shortest span that carries the evidence, up to about 300\\ncharacters. Prefer one clean sentence over a paragraph.\\n</processing>\\n\\n### INSTRUCTION 5: PUSH BACK ON THE SOURCE\\n<processing>\\nYou are expected to disagree with the material when the material disagrees with\\nitself. Do not defer to a self-description, a header, or a hint just because it is\\nstated confidently.\\n\\n**Self-description vs. product description.** When a company labels itself one\\nthing and then describes another, record what is DESCRIBED and state the\\ndisagreement in `reasoning`. A deck titled \\\"AI Infrastructure Company\\\" whose\\nslides describe a marketing-analytics dashboard for e-commerce shops is\\n`b2b-software`, not `ai-infra` \\u2014 and your reasoning must say that you overrode\\nthe self-label and why.\\n\\n**Hints vs. text.** A hint is a lead, not a fact. If a hint agrees with the text,\\nyou still quote the text. If a hint supplies a field the text does not mention,\\nyou may use it, quoting the hint's literal value. If a hint and the text\\nIRRECONCILABLY conflict \\u2014 the hint says `US`, the text says the founders are in\\nBerlin and the company is registered in Germany \\u2014 you resolve it to `null`, list\\nthe field in `missing_fields`, and explain the conflict in `reasoning`. A\\ncontradicted attribute means precisely \\\"this is not reliably known\\\", and filing\\neither side of a genuine contradiction as fact would be a fabrication.\\n\\n**Aspiration vs. present tense.** \\\"We will launch in Q3\\\", \\\"we are building\\ntowards\\\", \\\"the platform will support\\\" describe a future. Record the present.\\n</processing>\\n\\n### INSTRUCTION 6: EXCLUDED FROM CONSIDERATION ENTIRELY\\n<processing>\\nThe following must not appear in your output and must not influence any value:\\n\\n- Names of founders or employees, their prior employers, universities, titles,\\n  or accelerator affiliations.\\n- Any personal characteristic whatsoever: age, gender, nationality, ethnicity,\\n  photographs, health, religion, or any other protected attribute.\\n- Fundraising history, investor names, valuations, cap table.\\n- Your impression of the company's quality, ambition, or likelihood of success.\\n\\nA founder's pedigree is not evidence of a company's sector, model, location or\\nstage, and treating it as such imports exactly the bias this record is built to\\nkeep out. If a team slide is the only place a country appears, you may use the\\nstated company location from it, but never a person's name or background.\\n</processing>\\n\\n### INSTRUCTION 7: WRITE THE REASONING, THEN THE RECORD\\n<processing>\\n`reasoning` comes FIRST in your output and must be written FIRST \\u2014 it is your\\nworking, not a justification composed afterwards. Walk the five fields in order,\\nname the span you found or state that you found none, and record any push-back\\nfrom Instruction 5. Keep it under 1,200 characters and neutral in tone.\\n\\nThen emit the record. Return valid JSON only \\u2014 no markdown fence, no preamble,\\nno trailing commentary.\\n</processing>\\n</instructions>\\n\\n<output_format>\\n## OUTPUT FORMAT\\n\\nReturn a single valid JSON object with exactly these keys, in this order. Every\\nkey is required in every response, including the all-null record.\\n\\n{\\n  \\\"reasoning\\\": \\\"string, 1-1200 chars \\u2014 written before any value is chosen\\\",\\n  \\\"sector\\\": \\\"one of the ten sector values, or null\\\",\\n  \\\"business_model\\\": \\\"one of the six business_model values, or null\\\",\\n  \\\"geography_country\\\": \\\"two uppercase letters, or null\\\",\\n  \\\"stage_evidence\\\": \\\"idea | prototype | early_revenue | scaling, or null\\\",\\n  \\\"what_is_built\\\": \\\"string up to 400 chars, or null\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"verbatim span or null\\\",\\n    \\\"business_model\\\": \\\"verbatim span or null\\\",\\n    \\\"geography_country\\\": \\\"verbatim span or null\\\",\\n    \\\"stage_evidence\\\": \\\"verbatim span or null\\\",\\n    \\\"what_is_built\\\": \\\"verbatim span or null\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"exactly the field names whose value is null\\\"]\\n}\\n\\nDo NOT emit `geography_region`, `stage`, `_text`, confidence scores, probabilities,\\nor any key not listed above. Region and stage are computed from your output by\\nother code; emitting them would put two sources of truth in the record.\\n</output_format>\\n\\n<chain_of_thoughts>\\n## CHAIN OF THOUGHTS\\nFollow these steps in strict order:\\n\\n1. Intake:\\n   1.1. Read `<company_text>` end to end before deciding anything.\\n   1.2. Read `<structured_hints>`; note which fields it offers, if any.\\n   1.3. Apply Instruction 1's validation. If the all-null record applies, emit it\\n        and stop.\\n\\n2. Span harvest (before any labelling):\\n   2.1. Mark every span that states what the product is or does.\\n   2.2. Mark every span that names a customer, a buyer, or how money is made.\\n   2.3. Mark every span that names a place associated with the company or team.\\n   2.4. Mark every span that indicates what exists today \\u2014 demo, users, payment.\\n   2.5. If a category has no span, note it now. It is heading for `missing_fields`.\\n\\n3. Field resolution, one at a time, in schema order:\\n   3.1. Take the spans harvested for this field.\\n   3.2. Apply the field's NEGATIVE criteria first \\u2014 discard spans that only look\\n        like evidence (domain suffix, customer geography, waitlist, buzzword).\\n   3.3. If a qualifying span survives, choose the vocabulary value it supports.\\n   3.4. If none survives, set the value `null` and add the field to\\n        `missing_fields`.\\n\\n4. Conflict pass:\\n   4.1. Compare each value against the company's own self-labels. Where they\\n        disagree, keep the described reality and record the override.\\n   4.2. Compare each value against `<structured_hints>`. Agreement \\u2192 quote the\\n        text. Hint-only \\u2192 quote the hint value. Irreconcilable conflict \\u2192 `null`\\n        plus `missing_fields` plus an explanation.\\n\\n5. Grounding verification (do this before emitting):\\n   5.1. For each of the five fields, confirm: value present \\u21d4 quote present \\u21d4\\n        field absent from `missing_fields`. Any mismatch is a defect \\u2014 fix it by\\n        dropping the value, never by inventing a quote.\\n   5.2. For each non-null quote, confirm it is a literal substring of the input\\n        you were given. If you cannot confirm it, drop the value to `null`.\\n   5.3. Confirm every emitted value is spelled exactly as the vocabulary lists it.\\n   5.4. Confirm `missing_fields` lists exactly the null-valued fields \\u2014 no more,\\n        no fewer.\\n\\n6. Emit:\\n   6.1. `reasoning` first, then the attributes, then `quotes`, then\\n        `missing_fields`.\\n   6.2. JSON only.\\n</chain_of_thoughts>\\n\\n<restrictions>\\n## WHAT NOT TO DO\\n\\n- **NEVER INVENT, PARAPHRASE, CORRECT OR STITCH TOGETHER A QUOTE.** Every quote is\\n  a literal contiguous substring of the input. This is checked automatically after\\n  you respond, and a non-matching quote invalidates the whole record.\\n- **NEVER EMIT A VALUE YOU CANNOT QUOTE.** No exceptions, no \\\"obvious\\\" cases, no\\n  \\\"strongly implied\\\". Unquotable means `null` plus `missing_fields`.\\n- **NEVER GUESS A COUNTRY.** Not from a domain suffix, a language, a market\\n  served, an accelerator, an investor, or a customer logo.\\n- **NEVER TREAT USING AI AS BEING `ai-infra`.** The AI stack must be the product.\\n- **NEVER TREAT A WAITLIST, SIGNUPS, FREE USERS, AN LOI OR \\\"IN DISCUSSIONS\\\" AS\\n  `early_revenue`.** Only payment is revenue.\\n- **NEVER MAP A FUNDING ROUND ONTO `stage_evidence`.** \\\"Raised a pre-seed\\\" is not\\n  a company state.\\n- **NEVER USE THE LITERAL VALUE `unknown` TO MEAN \\\"I COULD NOT TELL\\\".** That is\\n  `null` plus `missing_fields`.\\n- **NEVER FORCE A COMPANY INTO A LISTED SECTOR TO AVOID `other`.** `other` is a\\n  correct answer and the vocabulary depends on it staying meaningful.\\n- **NEVER USE A PERSON'S NAME, BACKGROUND, EMPLOYER, SCHOOL, OR ANY PERSONAL\\n  CHARACTERISTIC AS EVIDENCE**, and never place any of them in your output.\\n- **NEVER EMIT A NUMBER, SCORE, PERCENTAGE, PROBABILITY OR CONFIDENCE VALUE**\\n  anywhere in the record. There is no field for one and no way to ground one.\\n- **NEVER FILL A FIELD TO MAKE THE RECORD LOOK MORE COMPLETE.** A record with four\\n  nulls from a four-line forum post is a correct record. Completeness is not a\\n  goal; groundedness is the only goal.\\n- **NEVER ASSESS THE COMPANY.** No quality judgement, no \\\"promising\\\", no\\n  \\\"crowded market\\\", no recommendation, in any field including `reasoning`.\\n- **NEVER EMIT MARKDOWN, CODE FENCES, OR PROSE AROUND THE JSON.**\\n</restrictions>\\n\\n<examples>\\n## FEW-SHOT EXAMPLES\\n\\n---\\n**Desired Example 1: a full deck, with a self-label overridden**\\n\\nInput `<company_text>`:\\n\\\"Helio \\u2014 The AI Infrastructure Company. // We help Shopify merchants understand\\nwhich ads actually drove a sale. Merchants connect their store and ad accounts and\\nsee attributed revenue per campaign. // 40 stores on the paid plan at \\u20ac99/mo. //\\nBuilt in Rotterdam.\\\"\\nInput `<structured_hints>`: {}\\n\\nOutput:\\n{\\n  \\\"reasoning\\\": \\\"The header self-labels as AI infrastructure, but every product slide describes an ad-attribution dashboard sold to Shopify merchants, so I record what is described: sector b2b-software, not ai-infra. Overriding the self-label. Business model: merchants are the paying customer, businesses buying a tool, so b2b. Country: 'Built in Rotterdam' locates the company; Rotterdam is unambiguously NL. Stage: 40 stores on a paid plan at a stated price is payment received, so early_revenue rather than prototype.\\\",\\n  \\\"sector\\\": \\\"b2b-software\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": \\\"NL\\\",\\n  \\\"stage_evidence\\\": \\\"early_revenue\\\",\\n  \\\"what_is_built\\\": \\\"A dashboard that connects a Shopify store and its ad accounts and reports attributed revenue per campaign.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"We help Shopify merchants understand which ads actually drove a sale\\\",\\n    \\\"business_model\\\": \\\"40 stores on the paid plan at \\u20ac99/mo\\\",\\n    \\\"geography_country\\\": \\\"Built in Rotterdam\\\",\\n    \\\"stage_evidence\\\": \\\"40 stores on the paid plan at \\u20ac99/mo\\\",\\n    \\\"what_is_built\\\": \\\"Merchants connect their store and ad accounts and see attributed revenue per campaign\\\"\\n  },\\n  \\\"missing_fields\\\": []\\n}\\n\\nWhy: the push-back is exercised and explained; every value has a literal span;\\n`ai-infra` is correctly refused because the AI is a means, not the product.\\n\\n---\\n**Desired Example 2: a thin forum post \\u2014 mostly nulls, and that is correct**\\n\\nInput `<company_text>`:\\n\\\"Show HN: I built a tool that turns Postgres query logs into flame graphs. It's\\nopen source (MIT) and there's a hosted demo. Feedback welcome.\\\"\\nInput `<structured_hints>`: {}\\n\\nOutput:\\n{\\n  \\\"reasoning\\\": \\\"The post states the product plainly: a tool converting Postgres query logs into flame graphs. That is developer tooling, so sector devtools. The product itself is stated to be MIT-licensed open source, which is a statement about the product and not merely about a repo existing, so business_model open_source. No location appears anywhere in the post, and I will not infer one, so geography_country is null. A hosted demo exists and is usable but no payment is mentioned, so stage_evidence is prototype.\\\",\\n  \\\"sector\\\": \\\"devtools\\\",\\n  \\\"business_model\\\": \\\"open_source\\\",\\n  \\\"geography_country\\\": null,\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"A tool that converts Postgres query logs into flame graphs, with a hosted demo.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"a tool that turns Postgres query logs into flame graphs\\\",\\n    \\\"business_model\\\": \\\"It's open source (MIT)\\\",\\n    \\\"geography_country\\\": null,\\n    \\\"stage_evidence\\\": \\\"there's a hosted demo\\\",\\n    \\\"what_is_built\\\": \\\"I built a tool that turns Postgres query logs into flame graphs\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"geography_country\\\"]\\n}\\n\\nWhy: a four-line input yields a real record with one honest null. `open_source`\\nis justified because the text says the PRODUCT is MIT, not merely that code exists.\\n\\n---\\n**Desired Example 3: `other` used correctly, and a hint-vs-text conflict**\\n\\nInput `<company_text>`:\\n\\\"Terrafix rebuilds soil health for mid-size arable farms. Our sensors and agronomy\\nplan are sold as an annual service. Pilot running with two farms in Lower Saxony;\\nthe founding team relocated to Germany last year.\\\"\\nInput `<structured_hints>`: {\\\"geography_country\\\": \\\"US\\\"}\\n\\nOutput:\\n{\\n  \\\"reasoning\\\": \\\"The domain is agriculture, which is not in the sector vocabulary, so sector is other, grounded in the soil-health statement. The buyer is named as arable farms purchasing an annual service, so business_model b2b. Geography: the hint supplies US, but the text states the founding team relocated to Germany, which irreconcilably conflicts with the hint. I record null and flag it rather than choosing a side of a contradiction. Stage: a pilot with two farms is a working deployment with no stated payment, so prototype.\\\",\\n  \\\"sector\\\": \\\"other\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": null,\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"Soil sensors combined with an agronomy plan, sold to mid-size arable farms as an annual service.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"Terrafix rebuilds soil health for mid-size arable farms\\\",\\n    \\\"business_model\\\": \\\"Our sensors and agronomy plan are sold as an annual service\\\",\\n    \\\"geography_country\\\": null,\\n    \\\"stage_evidence\\\": \\\"Pilot running with two farms in Lower Saxony\\\",\\n    \\\"what_is_built\\\": \\\"Our sensors and agronomy plan are sold as an annual service\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"geography_country\\\"]\\n}\\n\\nWhy: `other` is chosen rather than distorting agriculture into `b2b-software`; the\\nhint conflict resolves to null with an explanation, not to either side.\\n\\n---\\n**Undesired Example 1: inference dressed as extraction**\\n\\nInput `<company_text>`:\\n\\\"Nordwerk GmbH. Compliance automation. nordwerk.de \\u2014 request a demo.\\\"\\n\\nWRONG output:\\n{\\n  \\\"reasoning\\\": \\\"German company name and .de domain indicate Germany. Compliance automation is enterprise software, therefore B2B SaaS. Demo request flow suggests a working product.\\\",\\n  \\\"sector\\\": \\\"b2b-software\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": \\\"DE\\\",\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"Compliance automation software for enterprises.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"Compliance automation\\\",\\n    \\\"business_model\\\": \\\"Compliance automation\\\",\\n    \\\"geography_country\\\": \\\"nordwerk.de\\\",\\n    \\\"stage_evidence\\\": \\\"request a demo\\\",\\n    \\\"what_is_built\\\": \\\"Compliance automation\\\"\\n  },\\n  \\\"missing_fields\\\": []\\n}\\n\\nWhy this is wrong: THREE separate violations, all of them comfortable-feeling.\\n(a) `geography_country` is inferred from a `.de` domain and a German-sounding name\\n\\u2014 an explicit negative criterion; \\\"nordwerk.de\\\" is a domain, not a location\\nstatement. (b) `business_model` reuses the sector quote, which says nothing about\\nwho buys; no customer is named anywhere. (c) `stage_evidence` reads \\\"request a\\ndemo\\\" as a working product \\u2014 a demo-request form is a marketing element and is\\nroutinely present before anything is built. The correct record here is `sector`\\n`b2b-software` (or `other`) with everything else `null` and three entries in\\n`missing_fields`. Note also that the reasoning openly narrates guessing\\n(\\\"indicate\\\", \\\"suggests\\\") \\u2014 that wording is itself the signal that no span exists.\\n\\n---\\n**Undesired Example 2: completeness pressure and an ungrounded quote**\\n\\nInput `<company_text>`:\\n\\\"We're building the operating system for modern logistics. Backed by top-tier\\nangels. Two ex-Google engineers. Launching soon.\\\"\\n\\nWRONG output:\\n{\\n  \\\"reasoning\\\": \\\"Logistics OS is enterprise infrastructure with strong founders and angel backing, likely a strong B2B play at prototype stage.\\\",\\n  \\\"sector\\\": \\\"b2b-software\\\",\\n  \\\"business_model\\\": \\\"b2b\\\",\\n  \\\"geography_country\\\": null,\\n  \\\"stage_evidence\\\": \\\"prototype\\\",\\n  \\\"what_is_built\\\": \\\"An operating system for modern logistics built by ex-Google engineers.\\\",\\n  \\\"quotes\\\": {\\n    \\\"sector\\\": \\\"the operating system for modern logistics\\\",\\n    \\\"business_model\\\": \\\"enterprise logistics platform\\\",\\n    \\\"geography_country\\\": null,\\n    \\\"stage_evidence\\\": \\\"Two ex-Google engineers\\\",\\n    \\\"what_is_built\\\": \\\"operating system for modern logistics\\\"\\n  },\\n  \\\"missing_fields\\\": [\\\"geography_country\\\"]\\n}\\n\\nWhy this is wrong: the input is a tagline with no product content, so almost\\neverything should be `null`. Specifically: the `business_model` quote\\n(\\\"enterprise logistics platform\\\") does not appear in the input at all \\u2014 a\\nfabricated span, the single most serious defect possible here. `stage_evidence` is\\ngrounded in the founders' employer, which is both irrelevant to company state and\\nan excluded signal under Instruction 6; \\\"Launching soon\\\" actually indicates `idea`,\\nnot `prototype`. `what_is_built` names the founders' employer, which must never\\nappear. And the reasoning assesses the company (\\\"strong founders\\\", \\\"strong B2B\\nplay\\\") instead of locating evidence. The correct record: `sector` `null` or\\n`other` if the logistics domain is accepted as stated, `business_model` `null`,\\n`stage_evidence` `idea` quoting \\\"Launching soon\\\", `what_is_built` `null` \\u2014 four\\nor five entries in `missing_fields`, and reasoning that says the input is a\\ntagline.\\n</examples>\\n\\n</prompt>\";\nconst SCHEMA = {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"$id\": \"https://the-vc-brain.local/schemas/f07/thesis-attribute-extractor.output.json\", \"title\": \"thesis-attribute-extractor output\", \"description\": \"Output of the f07 blind attribute extractor (gpt-5.6-luna). Property ORDER IS LOAD-BEARING: 'reasoning' is first so the model reasons before it commits to a value (design.md 4). The five attributes are the gateable vocabulary of design.md 1.1; the thesis is not present in this agent's prompt or input and its rules are evaluated deterministically only after this object is returned (D-02). Every non-null attribute pairs with a verbatim quote because claims.text_verbatim is NOT NULL and a normalized label is not a verbatim span; an unquotable field belongs in missing_fields (design.md 4, 5.4). Nullability is expressed via ['string','null'] rather than optionality so that strict structured output can require every key.\", \"type\": \"object\", \"additionalProperties\": false, \"required\": [\"reasoning\", \"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\", \"quotes\", \"missing_fields\"], \"properties\": {\"reasoning\": {\"type\": \"string\", \"description\": \"FIRST FIELD BY DESIGN \\u2014 reasoning must precede the verdict (design.md 4, adopted alongside temperature=0 and the push-back instruction). Walks the five fields in order, naming the span found or stating that none was found, and recording any push-back: a self-label overridden by the described product, or an irreconcilable hint-vs-text conflict. Neutral and non-evaluative: the agent may not assess the company here or anywhere else. Not persisted as a claim; it is written to the ai_runs row for traceability and read by QA when a value looks wrong. Non-empty even for the all-null record, where it states that the input carried no extractable content.\"}, \"sector\": {\"type\": [\"string\", \"null\"], \"enum\": [\"b2b-software\", \"ai-infra\", \"devtools\", \"fintech\", \"healthtech\", \"consumer\", \"marketplace\", \"gambling\", \"adtech\", \"other\", null], \"description\": \"Closed set from design.md 1.1. Becomes claims.value for topic 'company.sector'. 'other' is a LEGAL AND EXPECTED DETERMINATION, not a failure: it means the domain was established from the text and is simply not in this vocabulary (agriculture, logistics, education, hardware, defence). 'other' therefore carries a quote and does NOT appear in missing_fields. null means undetermined and DOES appear in missing_fields. The distinction is load-bearing for rule evaluation: an observed 'other' produces no_match against a focus rule (a real miss), whereas a null field produces the three-valued 'unknown' that D-03 requires and that can never fire a hard rule.\"}, \"business_model\": {\"type\": [\"string\", \"null\"], \"enum\": [\"b2b\", \"b2c\", \"b2b2c\", \"marketplace\", \"open_source\", \"unknown\", null], \"description\": \"Closed set from design.md 1.1. Becomes claims.value for topic 'company.business_model'. WARNING for the evaluator (lib/f07/vocabulary.js, plan task B1): the literal string 'unknown' is in the vocabulary but must be treated as an UNKNOWN-VALUED FIELD, not as a comparable value \\u2014 compared as a value it yields no_match ('missed') against a focus rule where D-03 requires 'unknown'. The prompt instructs the model to express 'could not tell' as null + missing_fields rather than as 'unknown', so 'unknown' should be rare; the evaluator guard exists because the schema cannot forbid a value that design.md 1.1 lists as legal. See tbd-items Q1.\"}, \"geography_country\": {\"type\": [\"string\", \"null\"], \"description\": \"ISO-3166-1 alpha-2, uppercase. COUNTRY ONLY \\u2014 feature 02 normalizes GitHub location to country 'for the thesis geo filter (07)' (02/design.md:113), and geography_region is derived from this by region_of(country) in lib/f07/vocabulary.js. The agent must not emit a region, a city, or a country name. Grounded only in a stated location of the company or its team: never inferred from a ccTLD, a language, a market served, an accelerator, an investor, or a customer logo. An ambiguous city with no disambiguating context resolves to null \\u2014 a wrong country is materially worse than an absent one, because under D-03 an absent field cannot fire a hard rule while a wrong one can.\"}, \"stage_evidence\": {\"type\": [\"string\", \"null\"], \"enum\": [\"idea\", \"prototype\", \"early_revenue\", \"scaling\", null], \"description\": \"Closed set from design.md 1.1 \\u2014 OpenVC company-state, NOT round names. 'we raised a pre-seed' is a financing fact and must never be mapped here. Becomes claims.value for topic 'company.stage_evidence'; 'stage' is derived downstream (idea|prototype -> pre_seed; early_revenue -> seed; scaling -> NO MAPPING, yielding 'unknown' on stage rules and never a rejection). The agent emits 'scaling' whenever the text supports it and must not down-grade it because it is uncommon at this stage \\u2014 the absent mapping is the evaluator's concern, not the extractor's. Free usage, waitlists, signups, LOIs and 'in discussions' are explicitly NOT early_revenue; only stated payment is.\"}, \"what_is_built\": {\"type\": [\"string\", \"null\"], \"description\": \"Free text, 1-2 neutral sentences. NOT GATEABLE (design.md 1.1) \\u2014 no expr.field may reference it \\u2014 but it IS persisted as claims topic 'company.what_is_built' and feeds the memo (feature 06), which is why it still requires a quote. No quality adjectives, no market framing, no assessment. Must not name any person, employer, university or accelerator (prompt Instruction 6): the gate's output schema carries no identity field, and that is the honest form of the anonymization claim in design.md 4 \\u2014 input-side masking needs an NER pass and is post-MVP.\"}, \"quotes\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"], \"description\": \"STRUCTURALLY MANDATORY, one key per persisted attribute, all five always present. Each value is either a contiguous verbatim substring of gate_text or of a structured_hints value, or null when the attribute is null. Rationale: claims.text_verbatim is NOT NULL and a normalized label ('b2b-software') is not a verbatim span, so a field the model cannot ground in a quote has no legal claims row and belongs in missing_fields instead (design.md 4, 5.4). Quotes stay in the SOURCE LANGUAGE for a non-English deck \\u2014 a translated quote is not a verbatim span. NOTE FOR THE BUILDER: the conditional invariant 'quotes.X non-null iff X non-null' is NOT expressible in OpenAI strict structured outputs (if/then/allOf unsupported), so it is enforced by the downstream deterministic validator described in the input spec, together with the substring check. The validator may only demote a value to null; it may never synthesise a quote.\", \"properties\": {\"sector\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span establishing the sector. Consumer: text_verbatim of the 'company.sector' claim.\"}, \"business_model\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span naming the customer or the monetisation. May not be the same span as the sector quote unless it genuinely states both \\u2014 reusing the sector span is the commonest way an ungrounded business_model slips through (Undesired Example 1 in the prompt).\"}, \"geography_country\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span stating where the company or team is. A bare domain string ('nordwerk.de') is NOT a qualifying span and must be rejected by the validator's negative-criteria review in QA.\"}, \"stage_evidence\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span evidencing the company's present state. A founder's employer, a funding round or a demo-request form are not qualifying spans.\"}, \"what_is_built\": {\"type\": [\"string\", \"null\"], \"description\": \"Verbatim span describing the product. Distinct from the what_is_built field itself, which is a written summary; this is the raw span it was drawn from.\"}}}, \"missing_fields\": {\"type\": \"array\", \"items\": {\"type\": \"string\", \"enum\": [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"]}, \"description\": \"Exactly the field names whose value is null \\u2014 no more, no fewer; the validator enforces the biconditional. Each entry becomes a 'company.<field>.gap' claim with verification_status='missing' (design.md 5.4.1), and each makes every rule referencing that field evaluate to 'unknown' under D-03, which is what guarantees a thin deck can never be auto-rejected. An array of all five is a CORRECT record for an empty or contentless input: coverage then falls to 0 and the verdict is insufficient_evidence (D-07), which removes the application from the ranking rather than placing it at the bottom. Emptying this array by guessing is the single behaviour the design most needs to prevent.\"}}, \"examples\": [{\"reasoning\": \"The header self-labels as AI infrastructure, but every product slide describes an ad-attribution dashboard sold to Shopify merchants, so I record what is described: sector b2b-software, not ai-infra. Overriding the self-label. Business model: merchants are the paying customer, so b2b. Country: 'Built in Rotterdam' locates the company; Rotterdam is unambiguously NL. Stage: 40 stores on a paid plan at a stated price is payment received, so early_revenue.\", \"sector\": \"b2b-software\", \"business_model\": \"b2b\", \"geography_country\": \"NL\", \"stage_evidence\": \"early_revenue\", \"what_is_built\": \"A dashboard that connects a Shopify store and its ad accounts and reports attributed revenue per campaign.\", \"quotes\": {\"sector\": \"We help Shopify merchants understand which ads actually drove a sale\", \"business_model\": \"40 stores on the paid plan at EUR99/mo\", \"geography_country\": \"Built in Rotterdam\", \"stage_evidence\": \"40 stores on the paid plan at EUR99/mo\", \"what_is_built\": \"Merchants connect their store and ad accounts and see attributed revenue per campaign\"}, \"missing_fields\": []}, {\"reasoning\": \"The post states the product plainly: a tool converting Postgres query logs into flame graphs, which is developer tooling. The product itself is stated to be MIT-licensed open source, which is a statement about the product rather than about a repo existing. No location appears anywhere in the post and I will not infer one. A hosted demo exists and is usable but no payment is mentioned.\", \"sector\": \"devtools\", \"business_model\": \"open_source\", \"geography_country\": null, \"stage_evidence\": \"prototype\", \"what_is_built\": \"A tool that converts Postgres query logs into flame graphs, with a hosted demo.\", \"quotes\": {\"sector\": \"a tool that turns Postgres query logs into flame graphs\", \"business_model\": \"It's open source (MIT)\", \"geography_country\": null, \"stage_evidence\": \"there's a hosted demo\", \"what_is_built\": \"I built a tool that turns Postgres query logs into flame graphs\"}, \"missing_fields\": [\"geography_country\"]}, {\"reasoning\": \"The input contained no company text and no structured hints, so there was no extractable content of any kind. No attribute can be grounded in a span and none is emitted.\", \"sector\": null, \"business_model\": null, \"geography_country\": null, \"stage_evidence\": null, \"what_is_built\": null, \"quotes\": {\"sector\": null, \"business_model\": null, \"geography_country\": null, \"stage_evidence\": null, \"what_is_built\": null}, \"missing_fields\": [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"]}]};\nconst inp = $json;\nconst user = \"<company_text>\\n\" + String(inp.gate_text || '') + \"\\n</company_text>\\n\\n\"\n  + \"<structured_hints>\\n\" + JSON.stringify(inp.structured_hints || {}) + \"\\n</structured_hints>\"\n  + \"\\n\\nYour previous response was not valid JSON matching the required schema, or a quote could not be grounded. Return ONLY the JSON object, with every field exactly matching the schema, every quote a literal verbatim substring of the input.\";\nconst body = {\n  model: \"gpt-5.6-luna\",\n  input: [ { role: 'system', content: SYS }, { role: 'user', content: user } ],\n  reasoning: { effort: 'low' },\n  text: { verbosity: 'low', format: { type: 'json_schema',\n    name: 'thesis_attribute_extractor_output', strict: true, schema: SCHEMA } },\n  max_output_tokens: 1500,\n};\nreturn [{ json: { ...inp, __extractor_request_body: body } }];\n"
+   },
+   "id": "4dacdfc3-8949-4240-84b8-e3f842c8a84b",
+   "name": "Build extractor retry request",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    800,
+    220
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.openai.com/v1/responses",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.__extractor_request_body) }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "61495b37-c527-4d05-81a2-632aaaa2e021",
+   "name": "OpenAI retry: thesis-attribute-extractor (luna)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    1040,
+    220
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 3000,
+   "notes": "model-recommendations.md's temperature:0 is dropped -- gpt-5.6-luna rejects an explicit temperature parameter (verified live for this model family by f03/f04's own build scripts, 2026-07-19). jsonBody stays a SHORT expression referencing a Code-node-built object -- see the module comment above on why the body is not built inline."
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS4 / thesis-attribute-extractor-agent-*: parse the /v1/responses payload,\n// then run the FOUR checks the input spec requires (strict structured output cannot\n// express \"quotes.X non-null iff X non-null iff X in missing_fields\" -- no if/then/allOf\n// in strict mode -- so this Code node is the enforcement, not the schema).\nconst ctx = $('Init run context').first().json;\nconst resp = $input.first().json;\nlet parsed = null, rawText = '';\ntry {\n  const msg = (resp.output || []).find(o => o.type === 'message');\n  rawText = (msg && msg.content && msg.content[0]) ? msg.content[0].text : '';\n  parsed = JSON.parse(rawText);\n} catch (e) { parsed = null; }\n\nconst FIELDS = ['sector', 'business_model', 'geography_country', 'stage_evidence', 'what_is_built'];\nconst LEGAL_MISSING = new Set(FIELDS);\n\nfunction normWs(s) { return String(s == null ? '' : s).trim().replace(/\\s+/g, ' '); }\n\nfunction groundedIn(quote, gateText, hints) {\n  if (quote == null) return true; // null quote is only valid alongside a null value -- checked separately\n  const q = normWs(quote);\n  if (!q) return false;\n  if (normWs(gateText).includes(q)) return true;\n  const hintVals = Object.values(hints || {}).filter(v => typeof v === 'string');\n  return hintVals.some(v => normWs(v).includes(q));\n}\n\nlet valid = false;\nlet extraction = null;\n\nif (parsed && resp.status === 'completed' &&\n    parsed.quotes && typeof parsed.quotes === 'object' &&\n    Array.isArray(parsed.missing_fields)) {\n  const gateText = ctx.gate_text || '';\n  const hints = ctx.structured_hints || {};\n\n  // Check 3: missing_fields contains only the 5 legal keys, no duplicates.\n  let missing = Array.from(new Set(parsed.missing_fields.filter(f => LEGAL_MISSING.has(f))));\n\n  // Check 4: strip any key outside the schema (defensive -- strict mode + additionalProperties:\n  // false at the API level already forbids this, but a validator that trusts the API blindly is\n  // no validator).\n  const clean = { reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '' };\n  const quotesClean = {};\n\n  for (const f of FIELDS) {\n    let value = Object.prototype.hasOwnProperty.call(parsed, f) ? parsed[f] : null;\n    let quote = Object.prototype.hasOwnProperty.call(parsed.quotes, f) ? parsed.quotes[f] : null;\n\n    // Check 1: value===null <=> quotes[f]===null <=> f in missing_fields. Any mismatch\n    // demotes to null+missing (never repairs upward -- never synthesizes a value or quote).\n    const inMissing = missing.includes(f);\n    const stateOk = (value === null) === (quote === null) && (value === null) === inMissing;\n\n    // Check 2: every non-null quote is a contiguous substring of gate_text OR of some\n    // structured_hints value (whitespace-normalized).\n    const grounded = value === null || groundedIn(quote, gateText, hints);\n\n    if (!stateOk || !grounded) {\n      value = null; quote = null;\n      if (!missing.includes(f)) missing.push(f);\n    }\n    clean[f] = value;\n    quotesClean[f] = quote;\n  }\n\n  clean.quotes = quotesClean;\n  clean.missing_fields = missing;\n  extraction = clean;\n  valid = true;\n}\n\nreturn [{ json: { ...ctx, __extractor_valid: valid, extracted: extraction, __extractor_raw_text: rawText } }];\n"
+   },
+   "id": "38fffe4e-1b59-460c-88d8-e4fbe3ecff0d",
+   "name": "Parse retry response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1280,
+    220
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// Retry policy (input-spec.md \"Retry policy\"): non-conforming JSON -> one re-ask with the\n// schema restated -> then treat the run as an all-null record. An all-null record is a\n// LEGAL outcome (coverage -> 0 -> insufficient_evidence, D-07), never an error status.\nconst inp = $json;\nif (inp.__extractor_valid) { return [{ json: inp }]; }\nconst FIELDS = ['sector', 'business_model', 'geography_country', 'stage_evidence', 'what_is_built'];\nconst allNull = { reasoning: 'No extractable content: response was not valid after retry.',\n  quotes: {}, missing_fields: FIELDS.slice() };\nfor (const f of FIELDS) { allNull[f] = null; allNull.quotes[f] = null; }\nreturn [{ json: { ...inp, __extractor_valid: true, extracted: allNull } }];\n"
+   },
+   "id": "05eae951-3556-4fb0-bf5d-aa071006ff09",
+   "name": "Finalize extraction (all-null fallback)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1520,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "const inp = $json;\nreturn [{ json: {\n  application_id: inp.application_id, gate_text: inp.gate_text, observed_at: inp.observed_at,\n  extraction: inp.extracted, model: \"gpt-5.6-luna\", prompt_version: \"f07-extract-v1\",\n} }];\n"
+   },
+   "id": "84adcb36-351b-4a01-86a3-a3e363994919",
+   "name": "Build f07-db-write input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1760,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "7pEtpy8sS3VLgVt2",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "7a2dbfcc-231c-4516-8917-adc938041c8c",
+   "name": "Call f07-db-write",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.2,
+   "position": [
+    2000,
+    60
+   ],
+   "notes": "Calls f07-db-write (D0) -- its own hash recipes, NOT f04-db-write's; see this build script's module docstring for why."
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// n8n-nodes-base.executeWorkflow's output REPLACES $json with the sub-workflow's return\n// value -- merge back the pre-extraction context (mode, structured_hints, gate_text,\n// observed_at) via a named-node lookup, same pattern as the extractor's response-parsing\n// nodes above (and f04-market-intel's \"Reshape for sub-call\" node).\nconst ctx = $('Init run context').first().json;\nconst out = $input.first().json;\nreturn [{ json: { ...ctx, application_id: out.application_id, company_id: out.company_id,\n  card_id: out.card_id, ai_run_id: out.ai_run_id, raw_signal_id: out.raw_signal_id,\n  claims: out.claims, evidence_written: out.evidence_written, extracted: out.extraction } }];\n"
+   },
+   "id": "940ff1b3-ee06-4d88-b177-d50b98d41532",
+   "name": "Reshape after f07-db-write",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2240,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1: \"Hints are merged UNDER extraction output in full mode (a grounded\n// extraction wins over a caller's guess) and are the ONLY attribute source in keyword\n// mode.\" geography_region/stage are DERIVED (SS1.1) -- resolveField() in the evaluator\n// derives them from geography_country/stage_evidence itself, so only the base fields are\n// set here.\nconst inp = $json;\nconst GATEABLE = ['sector', 'business_model', 'geography_country', 'stage_evidence'];\nconst hints = inp.structured_hints || {};\nconst attributes = {};\nconst missingFields = [];\n\nif (inp.mode === 'keyword') {\n  for (const f of GATEABLE) {\n    const v = hints[f];\n    if (v !== undefined && v !== null && v !== '') attributes[f] = v;\n    else missingFields.push(f);\n  }\n  attributes.what_is_built = null;\n  missingFields.push('what_is_built');\n} else {\n  const ext = inp.extracted || {};\n  for (const f of GATEABLE) {\n    if (ext[f] !== null && ext[f] !== undefined) attributes[f] = ext[f];\n    else if (hints[f] !== undefined && hints[f] !== null && hints[f] !== '') attributes[f] = hints[f];\n    else missingFields.push(f);\n  }\n  attributes.what_is_built = (ext.what_is_built !== undefined && ext.what_is_built !== null) ? ext.what_is_built : null;\n  if (attributes.what_is_built === null) missingFields.push('what_is_built');\n}\n\n// _text (SS1.1, QA D4 fix 2026-07-19): `gate_text` VERBATIM, nothing else -- NEVER\n// what_is_built or any other derived/paraphrased field folded in. `_text` is the gate's raw\n// input specifically so keyword rules catch phrasing the extractor might normalize away;\n// folding an LLM paraphrase back in would let a negative keyword be introduced or erased by\n// the extractor's own wording, so the gate would react to text the founder never wrote.\n// Matches lib/f07/vocabulary.js's synthesize_text(gateText) called with ONLY gate_text (as\n// lib/f07/run.js actually calls it) -- the earlier version here (and in\n// f07-thesis-reevaluate) called the equivalent of synthesize_text(gateText, whatIsBuilt),\n// which is a real second argument that function accepts but that no correct caller passes.\nattributes._text = (typeof inp.gate_text === 'string' && inp.gate_text.trim().length > 0)\n  ? inp.gate_text.trim() : null;\nif (attributes._text === null) missingFields.push('_text');\n\nreturn [{ json: { ...inp, attributes, missing_fields: missingFields } }];\n"
+   },
+   "id": "664a5048-3d82-4325-90fa-0f967b544a2e",
+   "name": "Build attributes for evaluation",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2180,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md D-03 / SS6.1's caller obligation (\"missing_fields is the caller's\n// responsibility, not the evaluator's... Stage D owns this\"): folds any company.* claim\n// already flipped to verification_status='contradicted' into missing_fields BEFORE\n// evaluation, for BOTH modes -- an application gated once (full mode) can have a claim\n// contradicted by feature 05 before a LATER keyword-mode or full-mode re-gate; skipping\n// this would let a disproven attribute still fire a hard rule.\nconst inp = $json;\nlet cardId = inp.card_id || null;\nif (!cardId) {\n  const cards = await pgGet.call(this,\n    `cards?application_id=eq.${inp.application_id}&card_type=eq.company&select=id&order=created_at.asc&limit=1`);\n  cardId = cards.length ? cards[0].id : null;\n}\nlet contradictedFields = [];\nif (cardId) {\n  const rows = await pgGet.call(this,\n    `claims?card_id=eq.${cardId}&topic=like.company.*&verification_status=eq.contradicted&select=topic`);\n  // Gap claims are never verification_status='contradicted' (only 'missing'), so this\n  // query only ever matches base-topic REAL claims -- no `.gap`-suffix stripping needed\n  // (topic naming corrected 2026-07-19: gaps use the base `company.<field>` topic).\n  contradictedFields = rows.map(r => (r.topic || '').replace(/^company\\./, '')).filter(Boolean);\n}\nconst missingFields = Array.from(new Set([...(inp.missing_fields || []), ...contradictedFields]));\nreturn [{ json: { ...inp, missing_fields: missingFields } }];\n"
+   },
+   "id": "f16246ac-b61c-4565-bb0a-f96af57ecc89",
+   "name": "Resolve contradicted claims",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2420,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS7: the gate loads the (is_default AND active) thesis. The gate cannot run\n// without one -- the seed + uq_theses_single_default guarantee exactly one such row.\nconst rows = await pgGet.call(this, 'theses?is_default=eq.true&active=eq.true&select=id,name,config,version&limit=1');\nif (!rows.length) throw new Error('f07-thesis-gate: no default active thesis found (is_default AND active)');\nconst inp = $json;\nreturn [{ json: { ...inp, thesis_id: rows[0].id, thesis_version: rows[0].version, thesis_config: rows[0].config } }];\n"
+   },
+   "id": "ef5918d6-cbde-4321-8257-00edae3fad7c",
+   "name": "Load default thesis",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2660,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// ===== inlined lib/f07/{vocabulary,rules}.js verbatim (generated by n8n/build-f07-workflow.py -- edit the source, not this) =====\n// lib/f07/vocabulary.js\n// SOURCE OF TRUTH -- do not edit inside the n8n Code node, edit here and re-paste.\n//\n// Attribute vocabulary for feature 07 (Thesis Engine). Authoritative source:\n// docs/backlog/07-thesis-engine/design.md rev.3a, \u00a71.1. The key names here are\n// identical across extractor output (\u00a74) and `expr.field` (\u00a71) -- nothing else\n// is gateable.\n//\n// Self-contained CommonJS, zero imports, no npm dependencies, no top-level\n// side effects, deterministic. Pasted verbatim into an n8n Code node -- n8n's\n// sandbox cannot require() from the repo (no bind-mount, no\n// NODE_FUNCTION_ALLOW_EXTERNAL) -- so this file carries no external state.\n//\n// docs/backlog/07-thesis-engine/plan.md, task B1.\n\n'use strict';\n\n// ============================================================================\n// \u00a71.1 -- attribute keys and closed value sets\n// ============================================================================\n\nconst SECTOR_VALUES = Object.freeze([\n  'b2b-software', 'ai-infra', 'devtools', 'fintech', 'healthtech',\n  'consumer', 'marketplace', 'gambling', 'adtech', 'other',\n]);\n\nconst BUSINESS_MODEL_VALUES = Object.freeze([\n  'b2b', 'b2c', 'b2b2c', 'marketplace', 'open_source', 'unknown',\n]);\n\nconst GEOGRAPHY_REGION_VALUES = Object.freeze(['EU', 'US', 'UK', 'APAC', 'LATAM', 'MEA', 'other']);\n\nconst STAGE_VALUES = Object.freeze(['pre_seed', 'seed']);\n\nconst STAGE_EVIDENCE_VALUES = Object.freeze(['idea', 'prototype', 'early_revenue', 'scaling']);\n\n// The full attribute table (\u00a71.1). `type` distinguishes closed-vocabulary\n// categorical fields from free `text` fields for `contains`'s type dispatch\n// (rules.js) -- `derived` fields are never present directly in extractor\n// output; they are computed from a base field at evaluation time (below).\n// `gateable: false` documents \u00a71.1's \"not gateable\" note for `what_is_built`;\n// nothing in this module enforces it (rules.js does not special-case it\n// either -- an absent attribute already yields `unknown` under D-03, which is\n// the only protection the design specifies).\nconst ATTRIBUTES = Object.freeze({\n  sector: Object.freeze({ type: 'categorical', values: SECTOR_VALUES, gateable: true }),\n  business_model: Object.freeze({ type: 'categorical', values: BUSINESS_MODEL_VALUES, gateable: true }),\n  geography_country: Object.freeze({ type: 'categorical', values: null, gateable: true }), // ISO-3166-1 alpha-2, open-ended\n  geography_region: Object.freeze({ type: 'derived', values: GEOGRAPHY_REGION_VALUES, gateable: true }),\n  stage: Object.freeze({ type: 'derived', values: STAGE_VALUES, gateable: true }),\n  stage_evidence: Object.freeze({ type: 'categorical', values: STAGE_EVIDENCE_VALUES, gateable: true }),\n  what_is_built: Object.freeze({ type: 'text', values: null, gateable: false }),\n  _text: Object.freeze({ type: 'text', values: null, gateable: true }),\n});\n\n// ============================================================================\n// region_of(country) -- ISO-3166-1 alpha-2 -> EU | US | UK | APAC | LATAM |\n// MEA | other. \u00a71.1: \"`region_of(country)`, applied before evaluation.\"\n//\n// Returns `null` (not 'other') for anything that isn't a well-formed 2-letter\n// code -- absent/invalid input means \"we don't know the region\", which is a\n// different thing from 'other' (\"we know the country, it just isn't in any\n// named block\"). Only the latter is a legal `geography_region` value; the\n// former must resolve to `unknown` in rules.js, never to a literal 'other'.\n// ============================================================================\n\n// The 27 EU member states (post-Brexit; GB is deliberately excluded -- it is\n// its own region, below).\nconst EU_COUNTRIES = new Set([\n  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR',\n  'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',\n  'SI', 'ES', 'SE',\n]);\n\n// Starter set, not exhaustive -- populated well enough for the demo cohort\n// (\u00a77's mandate is \"EU+US\"); MEA/APAC/LATAM breadth can grow post-MVP without\n// touching this function's contract.\nconst APAC_COUNTRIES = new Set([\n  'CN', 'JP', 'KR', 'IN', 'SG', 'AU', 'NZ', 'HK', 'TW',\n  'ID', 'MY', 'PH', 'TH', 'VN', 'PK', 'BD',\n]);\n\nconst LATAM_COUNTRIES = new Set([\n  'BR', 'MX', 'AR', 'CL', 'CO', 'PE', 'UY', 'EC', 'VE', 'BO', 'PY', 'CR', 'PA', 'GT', 'DO',\n]);\n\nconst MEA_COUNTRIES = new Set([\n  'AE', 'SA', 'IL', 'EG', 'ZA', 'NG', 'KE', 'QA', 'TR',\n  'MA', 'GH', 'TN', 'JO', 'KW', 'BH', 'OM', 'LB',\n]);\n\nfunction region_of(country) {\n  if (typeof country !== 'string') return null;\n  const code = country.trim().toUpperCase();\n  if (!/^[A-Z]{2}$/.test(code)) return null;\n\n  if (code === 'US') return 'US';\n  if (code === 'GB') return 'UK';\n  if (EU_COUNTRIES.has(code)) return 'EU';\n  if (APAC_COUNTRIES.has(code)) return 'APAC';\n  if (LATAM_COUNTRIES.has(code)) return 'LATAM';\n  if (MEA_COUNTRIES.has(code)) return 'MEA';\n  return 'other'; // a known, well-formed code, just outside every named block\n}\n\n// ============================================================================\n// stage_evidence -> stage (\u00a71.1): `idea | prototype -> pre_seed`;\n// `early_revenue -> seed`; `scaling` deliberately has NO mapping -- it must\n// yield `unknown` on stage rules, never a rejection.\n// ============================================================================\n\nconst STAGE_BY_EVIDENCE = Object.freeze({\n  idea: 'pre_seed',\n  prototype: 'pre_seed',\n  early_revenue: 'seed',\n  // scaling: intentionally absent.\n});\n\nfunction stage_of(stageEvidence) {\n  if (typeof stageEvidence !== 'string') return null;\n  return Object.prototype.hasOwnProperty.call(STAGE_BY_EVIDENCE, stageEvidence)\n    ? STAGE_BY_EVIDENCE[stageEvidence]\n    : null;\n}\n\n// ============================================================================\n// Sentinel values -- live defect found by stage-C (the extractor's own JSON\n// schema comment on `business_model` names this exact trap): `'unknown'` is a\n// LEGAL value in business_model's closed set (\u00a71.1), but compared as a VALUE\n// against a rule's expr it reads as a real, negative observation ('missed'),\n// which is exactly the REQ-003 shape D-03 exists to prevent -- the model\n// could not tell the business model, and that absence of information must\n// not lower fit. `resolveField` (rules.js) treats a sentinel-valued field\n// identically to an absent one: `unknown`, contributing to `total` but never\n// to `earned`.\n//\n// This is a DIFFERENT mechanism from `scaling`'s \"no stage mapping\" above,\n// even though both end up `unknown`: `scaling` is a real, legal, gateable\n// value of `stage_evidence` itself (a rule written directly against\n// `stage_evidence` sees it and evaluates normally) that simply has no\n// corresponding `stage` -- the derived field is what goes unknown, not the\n// base one. A sentinel is unknown AT THE FIELD ITSELF, for any rule that\n// references it directly. Keep the two mechanisms conceptually separate --\n// they are next to each other here because both protect the same guarantee,\n// not because they work the same way.\n//\n// `sector: 'other'` is deliberately NOT a sentinel (the extractor's schema\n// comment is explicit about this too): 'other' is a real determination that\n// carries a quote -- the company genuinely is not in the mandate's sectors --\n// and must produce `no_match` against a focus rule, same as any other named\n// sector. Conflating `other` with a sentinel would let a thin deck auto-pass\n// every sector rule as `unknown`; keep this distinction sharp.\nconst SENTINEL_VALUES = Object.freeze({\n  business_model: Object.freeze(['unknown']),\n});\n\nfunction isSentinel(field, value) {\n  const sentinels = SENTINEL_VALUES[field];\n  return Array.isArray(sentinels) && sentinels.includes(value);\n}\n\n// ============================================================================\n// `_text` synthesis (\u00a71.1: \"synthetic -- the concatenated gate input.\n// Present whenever the gate has any text.\").\n//\n// `_text` IS the workflow's `gate_text` parameter, verbatim (thesis-\n// attribute-extractor-agent-input-spec.md \u00a7\"Input variables\": \"Also the\n// value of `_text` in \u00a71.1\"). On re-evaluation (`f07-thesis-reevaluate`,\n// \u00a76.1 -- no fresh gate call, no `gate_text` parameter at all), the same raw\n// text is recovered from the ORIGINAL run's `raw_signals.payload.text`\n// (db/fixtures/07-thesis-engine.sql, \"team-lead correction, 2026-07-19\":\n// \"`_text` must resolve from THIS stored payload -- NOT from\n// company.what_is_built or any other claim\"). An earlier draft of this\n// function also folded in `what_is_built` as a fallback -- that reading\n// matched a STALE top-of-file comment in the same fixture file that the\n// later, dated, inline correction supersedes. Do not resurrect the\n// what_is_built fallback; a claim is not the gate's raw input, and `_text`\n// is defined as exactly that input, nothing derived from it.\n//\n// Consequently this function takes exactly one text source: whichever raw\n// text the caller has in hand for THIS call (a fresh `gate_text` parameter,\n// or a re-evaluation's recovered `raw_signals.payload.text`). When neither\n// exists, `_text` is genuinely absent -- honest per D-03 (unknown, not\n// invented from claims).\nfunction synthesize_text(gateText) {\n  if (typeof gateText !== 'string') return null;\n  const trimmed = gateText.trim();\n  return trimmed.length > 0 ? trimmed : null;\n}\n\nconst vocabulary = { ATTRIBUTES, SECTOR_VALUES, BUSINESS_MODEL_VALUES, GEOGRAPHY_REGION_VALUES, STAGE_VALUES, STAGE_EVIDENCE_VALUES, STAGE_BY_EVIDENCE, SENTINEL_VALUES, region_of, stage_of, isSentinel, synthesize_text };\n\n// lib/f07/rules.js\n// SOURCE OF TRUTH -- do not edit inside the n8n Code node, edit here and re-paste.\n//\n// Deterministic rule evaluator for feature 07 (Thesis Engine). Pure functions\n// only -- no I/O, no database, no network. This is the module design.md calls\n// \"the backend evaluates the thesis's rules against those attributes in code\"\n// (D-02): a cheap LLM extracts attributes with no thesis in its context (\u00a74,\n// built separately in docs/backlog/07-thesis-engine/agents/), and everything\n// past that point -- mandate compilation, three-valued rule evaluation, fit,\n// coverage, the verdict procedure -- is deterministic and lives here, unit\n// tested before it is pasted verbatim into an n8n Code node.\n//\n// Authoritative source for every rule below: docs/backlog/07-thesis-engine/\n// design.md rev.3a, sections cited inline. This file does not restate the\n// `theses.config` contract -- see design.md \u00a71 for the shape it consumes.\n//\n// docs/backlog/07-thesis-engine/plan.md, task B2.\n\n'use strict';\n\n\n// ============================================================================\n// Small shared helpers\n// ============================================================================\n\nfunction isPlainObject(v) {\n  return v !== null && typeof v === 'object' && !Array.isArray(v);\n}\n\nfunction isFiniteNumber(v) {\n  return typeof v === 'number' && Number.isFinite(v);\n}\n\nfunction numOr(value, fallback) {\n  return isFiniteNumber(value) ? value : fallback;\n}\n\nfunction clamp(min, max, value) {\n  return Math.min(max, Math.max(min, value));\n}\n\n// ============================================================================\n// \u00a71.2 -- mandate -> rule compilation (normative table)\n//\n// Lazy, at evaluation time. All compiled rules are `soft` by construction --\n// a sector or geography mismatch is neither a legal constraint nor fraud, so\n// compiling them `hard` would contradict D-01. Each row is emitted ONLY when\n// its source array is non-empty (rev.2 compiled keyword rules unconditionally\n// and an empty `positive_keywords` produced a permanently-`missed` rule that\n// silently depressed every fit -- \u00a71.2's own worked defect).\n//\n// `check_size_usd`, `ownership_target_pct`, `risk_appetite` and `geos`\n// compile to nothing (\u00a71.3: inert at pre-seed, or -- for `geos` -- consumed\n// by feature 04, not by the gate).\n//\n// Rule ids for the geography/stage rows are not spelled out in \u00a71.2's table\n// (only \"same shape, field: ...\"); `M_geography` / `M_stage` are this file's\n// choice, parallel to the table's own `M_sector` / `M_poskw` / `M_negkw`.\n// ============================================================================\n\nfunction compileMandateRules(config) {\n  const cfg = isPlainObject(config) ? config : {};\n  const mandate = isPlainObject(cfg.mandate) ? cfg.mandate : {};\n  const fit = isPlainObject(cfg.fit) ? cfg.fit : {};\n  const mandateWeight = numOr(fit.mandate_weight, 0);\n  const compiled = [];\n\n  if (Array.isArray(mandate.sectors) && mandate.sectors.length > 0) {\n    compiled.push({\n      id: 'M_sector', label: 'Mandate: sector', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: 'sector', op: 'in', value: mandate.sectors },\n    });\n  }\n\n  if (Array.isArray(mandate.geographies) && mandate.geographies.length > 0) {\n    compiled.push({\n      id: 'M_geography', label: 'Mandate: geography', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: 'geography_region', op: 'in', value: mandate.geographies },\n    });\n  }\n\n  if (Array.isArray(mandate.stages) && mandate.stages.length > 0) {\n    compiled.push({\n      id: 'M_stage', label: 'Mandate: stage', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: 'stage', op: 'in', value: mandate.stages },\n    });\n  }\n\n  const positiveKeywords = cfg.positive_keywords;\n  if (Array.isArray(positiveKeywords) && positiveKeywords.length > 0) {\n    compiled.push({\n      id: 'M_poskw', label: 'Mandate: positive keywords', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: '_text', op: 'contains', value: positiveKeywords },\n    });\n  }\n\n  // `deal_breaker` weight is always 0 (D-04; enforced live by\n  // validate_thesis_config() in \u00a75.6) -- not `mandateWeight`.\n  const negativeKeywords = cfg.negative_keywords;\n  if (Array.isArray(negativeKeywords) && negativeKeywords.length > 0) {\n    compiled.push({\n      id: 'M_negkw', label: 'Mandate: negative keywords', kind: 'deal_breaker', enforcement: 'soft',\n      weight: 0, enabled: true,\n      expr: { field: '_text', op: 'contains', value: negativeKeywords },\n    });\n  }\n\n  return compiled;\n}\n\n// Hand-authored `config.rules[]`, normalized (D-01: `enforcement` defaults to\n// `soft` when absent; `enabled` defaults to true when absent), concatenated\n// with the compiled mandate rules. Order is hand-authored first, mandate\n// rules appended -- fired_rules[] display order only, nothing depends on it.\nfunction normalizeHandAuthoredRule(rule) {\n  return {\n    ...rule,\n    enabled: rule.enabled !== false,\n    enforcement: rule.enforcement === 'hard' ? 'hard' : 'soft',\n  };\n}\n\nfunction compileRules(config) {\n  const cfg = isPlainObject(config) ? config : {};\n  const handAuthored = Array.isArray(cfg.rules)\n    ? cfg.rules.filter(isPlainObject).map(normalizeHandAuthoredRule)\n    : [];\n  return handAuthored.concat(compileMandateRules(cfg));\n}\n\n// ============================================================================\n// Field resolution -- base fields read straight from `attributes`; derived\n// fields (`geography_region`, `stage`, \u00a71.1) computed from their base field.\n// `missingFields` carries BOTH genuinely-absent fields and fields backed only\n// by a claim with verification_status='contradicted' (D-03: folding a\n// contradicted claim's field into this array is the CALLER's job -- this\n// module has no DB access and cannot resolve claims itself).\n//\n// Returns `{ value, unknown }`. `unknown: true` is the single condition\n// evalExpr needs to short-circuit a rule to `unknown` under D-03.\n// ============================================================================\n\nfunction resolveField(field, attributes, missingFields) {\n  const attrs = isPlainObject(attributes) ? attributes : {};\n  const missing = Array.isArray(missingFields) ? missingFields : [];\n  const isMissing = (key) => missing.includes(key);\n\n  // geography_region and stage are `derived` (\u00a71.1: \"region_of(country),\n  // applied before evaluation\"). The extractor never emits either one\n  // directly (thesis-attribute-extractor-agent-json-schema.json forbids it),\n  // so the normal path is deriving from the base field below. A caller that\n  // has ALREADY applied the derivation (\u00a71.1's own phrasing -- \"applied\n  // BEFORE evaluation\" -- reads naturally as a pre-processing step the\n  // caller may perform itself) may instead supply `geography_region`/`stage`\n  // directly in `attributes`; when present and not itself listed missing,\n  // that value wins over re-deriving from the base field, so the two\n  // calling conventions agree rather than silently disagreeing.\n  if (field === 'geography_region') {\n    if (isMissing('geography_region')) return { value: null, unknown: true };\n    if (Object.prototype.hasOwnProperty.call(attrs, 'geography_region') && attrs.geography_region !== undefined) {\n      const direct = attrs.geography_region;\n      if (direct === null) return { value: null, unknown: true };\n      return { value: direct, unknown: false };\n    }\n    if (isMissing('geography_country')) return { value: null, unknown: true };\n    const country = attrs.geography_country;\n    if (country === null || country === undefined) return { value: null, unknown: true };\n    const region = vocabulary.region_of(country);\n    if (region === null) return { value: null, unknown: true }; // not a well-formed code\n    return { value: region, unknown: false };\n  }\n\n  if (field === 'stage') {\n    if (isMissing('stage')) return { value: null, unknown: true };\n    if (Object.prototype.hasOwnProperty.call(attrs, 'stage') && attrs.stage !== undefined) {\n      const direct = attrs.stage;\n      if (direct === null) return { value: null, unknown: true };\n      return { value: direct, unknown: false };\n    }\n    if (isMissing('stage_evidence')) return { value: null, unknown: true };\n    const evidence = attrs.stage_evidence;\n    if (evidence === null || evidence === undefined) return { value: null, unknown: true };\n    const stage = vocabulary.stage_of(evidence);\n    // `scaling` maps to nothing (vocabulary.js \u00a71.1) -- unknown here, never a\n    // rejection, exactly per this task's acceptance criterion.\n    if (stage === null) return { value: null, unknown: true };\n    return { value: stage, unknown: false };\n  }\n\n  if (isMissing(field)) return { value: null, unknown: true };\n  const value = attrs[field];\n  if (value === null || value === undefined) return { value: null, unknown: true };\n  // A sentinel value (vocabulary.js: currently only business_model:'unknown')\n  // means \"the extractor could not tell\", not a real observation -- treat it\n  // exactly like an absent field. `sector:'other'` is deliberately NOT a\n  // sentinel and falls through to the normal known-value return below.\n  if (vocabulary.isSentinel(field, value)) return { value: null, unknown: true };\n  return { value, unknown: false };\n}\n\n// `contains`'s type dispatch (\u00a71.1): on a text field with an array operand,\n// substring-match-on-any-element (OR); on a text field with a string\n// operand, substring match; on a multi-valued field (none currently declared\n// in the vocabulary, but the semantics are defined for one), array\n// membership. The empty-array-operand -> `unknown` case is handled by the\n// caller (evalExpr), before the field is even resolved -- it is a property\n// of the rule, not of the data.\nfunction evalContains(fieldValue, operand) {\n  if (Array.isArray(fieldValue)) {\n    if (Array.isArray(operand)) return operand.some((v) => fieldValue.includes(v));\n    return fieldValue.includes(operand);\n  }\n  if (typeof fieldValue === 'string') {\n    if (Array.isArray(operand)) {\n      return operand.some((v) => typeof v === 'string' && fieldValue.includes(v));\n    }\n    if (typeof operand === 'string') return fieldValue.includes(operand);\n  }\n  return false;\n}\n\n// ============================================================================\n// D-03 -- three-valued rule evaluation: 'match' | 'no_match' | 'unknown'.\n// A rule is `unknown` whenever any field its expr references is absent, null,\n// in `missingFields`, or (folded into `missingFields` by the caller) backed\n// only by a contradicted claim.\n// ============================================================================\n\nfunction evalExpr(expr, attributes, missingFields) {\n  if (!isPlainObject(expr)) throw new Error('rules.js: evalExpr requires an expr object');\n  const { field, op, negate } = expr;\n  const operand = expr.value;\n\n  // An empty array operand on `contains` expresses no opinion and must not\n  // be readable as a miss (\u00a71.1) -- checked before field resolution, since\n  // it is a property of the RULE regardless of what was extracted.\n  if (op === 'contains' && Array.isArray(operand) && operand.length === 0) {\n    return 'unknown';\n  }\n\n  const resolved = resolveField(field, attributes, missingFields);\n  if (resolved.unknown) return 'unknown';\n\n  const { value } = resolved;\n  let matched;\n\n  switch (op) {\n    case 'eq':\n      matched = value === operand;\n      break;\n    case 'in':\n      matched = Array.isArray(operand) && operand.includes(value);\n      break;\n    case 'gte':\n      matched = isFiniteNumber(value) && isFiniteNumber(operand) && value >= operand;\n      break;\n    case 'lte':\n      matched = isFiniteNumber(value) && isFiniteNumber(operand) && value <= operand;\n      break;\n    case 'exists':\n      // Reached only when the field resolved to a known value (the unknown\n      // branch above already returned) -- so a known field always satisfies\n      // \"exists\". `negate: true` therefore reads as \"field is absent\", which\n      // -- consistently with D-03 -- can never be observed as a `no_match`:\n      // an absent field is `unknown`, not a confirmed absence.\n      matched = true;\n      break;\n    case 'contains':\n      matched = evalContains(value, operand);\n      break;\n    default:\n      throw new Error(`rules.js: unsupported op \"${op}\"`);\n  }\n\n  if (negate === true) matched = !matched;\n  return matched ? 'match' : 'no_match';\n}\n\n// ============================================================================\n// D-04 -- outcome vocabulary, derived from (kind, expr result). One table,\n// no parallel truth table to drift out of sync with it.\n// ============================================================================\n\nfunction deriveOutcome(kind, exprResult) {\n  if (exprResult === 'unknown') return 'unknown';\n  if (kind === 'deal_breaker') return exprResult === 'match' ? 'triggered' : 'satisfied';\n  return exprResult === 'match' ? 'satisfied' : 'missed'; // must_have | focus\n}\n\n// ============================================================================\n// \u00a72 -- ordered verdict procedure. First match wins.\n//\n//   1.  any rule outcome=triggered|missed, enforcement=hard        -> failed\n//   2.  coverage < fit.min_coverage                (full mode only) -> insufficient_evidence\n//   2b. any soft deal_breaker with outcome=triggered                -> borderline\n//   3.  fit >= fit.strong_threshold                 (full mode only) -> passed\n//   4.  otherwise                                                    -> borderline\n//\n// Step 3's \"(full mode only)\" gate is not written into \u00a72's own table (only\n// step 2 carries that annotation there) -- it is stated in \u00a76.1's prose\n// instead (\"Keyword mode never returns passed... a cheap negative filter,\n// not an endorsement\"). Both are honored here: keyword mode can still reach\n// `failed` (a hard rule fired on `_text`/structured_hints) or `borderline`,\n// never `insufficient_evidence` (no coverage to be short of) and never\n// `passed`.\n// ============================================================================\n\nfunction computeVerdict({ firedRules, fit, coverage, minCoverage, strongThreshold, mode }) {\n  const rules = Array.isArray(firedRules) ? firedRules : [];\n  const evalMode = mode === 'keyword' ? 'keyword' : 'full';\n\n  const hardFailure = rules.some(\n    (r) => r.enforcement === 'hard' && (r.outcome === 'triggered' || r.outcome === 'missed')\n  );\n  if (hardFailure) return 'failed';\n\n  if (evalMode === 'full' && coverage !== null && coverage < minCoverage) return 'insufficient_evidence';\n\n  const softDealBreakerTriggered = rules.some(\n    (r) => r.kind === 'deal_breaker' && r.enforcement === 'soft' && r.outcome === 'triggered'\n  );\n  if (softDealBreakerTriggered) return 'borderline';\n\n  if (evalMode === 'full' && fit >= strongThreshold) return 'passed';\n\n  return 'borderline';\n}\n\n// ============================================================================\n// \u00a73.1 / \u00a73.2 -- fit and coverage, plus \u00a72's verdict, combined into a single\n// evaluation pass over a compiled thesis. This is the module's one entry\n// point; everything above is exported mainly so it can be unit tested in\n// isolation.\n//\n//   total    = \u03a3 weight(enabled must_have + focus rules)          -- incl. unknown\n//   earned   = \u03a3 weight(enabled must_have + focus rules, outcome=satisfied)\n//   penalty  = fit.soft_deal_breaker_penalty \u00d7 count(enabled soft deal_breakers, outcome=triggered)\n//   fit      = total > 0 ? clamp(100 \u00d7 earned / total \u2212 penalty, 0, 100) : fit.base\n//   evaluated = \u03a3 weight(enabled must_have + focus rules, outcome != unknown)\n//   coverage  = mode='keyword' ? null : (total > 0 ? evaluated / total : 1.0)\n//\n// `deal_breaker` weight never enters `total`/`earned`/`evaluated` (D-04);\n// disabled rules (`enabled: false`) are excluded from evaluation entirely --\n// dropping a disabled rule from BOTH sides is what keeps `evaluated <= total`\n// and therefore `coverage` at or below 1 (\u00a73.2).\n// ============================================================================\n\nfunction evaluateThesis({ config, attributes, missingFields, mode } = {}) {\n  const cfg = isPlainObject(config) ? config : {};\n  const attrs = isPlainObject(attributes) ? attributes : {};\n  const missing = Array.isArray(missingFields) ? missingFields : [];\n  const evalMode = mode === 'keyword' ? 'keyword' : 'full';\n\n  const fitConfig = isPlainObject(cfg.fit) ? cfg.fit : {};\n  const base = numOr(fitConfig.base, 50);\n  const softDealBreakerPenalty = numOr(fitConfig.soft_deal_breaker_penalty, 0);\n  const strongThreshold = numOr(fitConfig.strong_threshold, 70);\n  const minCoverage = numOr(fitConfig.min_coverage, 0);\n\n  const activeRules = compileRules(cfg).filter((r) => r.enabled !== false);\n\n  let total = 0;\n  let earned = 0;\n  let evaluated = 0;\n  let softDealBreakerTriggerCount = 0;\n\n  const firedRules = activeRules.map((rule) => {\n    const { kind } = rule;\n    const enforcement = rule.enforcement === 'hard' ? 'hard' : 'soft';\n    const weight = numOr(rule.weight, 0);\n    const field = rule.expr && rule.expr.field;\n\n    const exprResult = evalExpr(rule.expr, attrs, missing);\n    const outcome = deriveOutcome(kind, exprResult);\n\n    const isCountable = kind === 'must_have' || kind === 'focus';\n    if (isCountable) {\n      total += weight;\n      if (outcome !== 'unknown') evaluated += weight;\n      if (outcome === 'satisfied') earned += weight;\n    } else if (kind === 'deal_breaker' && enforcement === 'soft' && outcome === 'triggered') {\n      softDealBreakerTriggerCount += 1;\n    }\n\n    const resolved = resolveField(field, attrs, missing);\n    const weightApplied = isCountable && outcome === 'satisfied' ? weight : 0;\n\n    return {\n      id: rule.id,\n      label: rule.label != null ? rule.label : null,\n      kind,\n      enforcement,\n      outcome,\n      field,\n      expected: rule.expr && rule.expr.value,\n      observed: outcome === 'unknown' ? null : resolved.value,\n      weight_applied: weightApplied,\n    };\n  });\n\n  const penalty = softDealBreakerPenalty * softDealBreakerTriggerCount;\n  const fit = total > 0 ? clamp(0, 100, (100 * earned) / total - penalty) : base;\n  const coverage = evalMode === 'keyword' ? null : total > 0 ? evaluated / total : 1.0;\n\n  const verdict = computeVerdict({\n    firedRules,\n    fit,\n    coverage,\n    minCoverage,\n    strongThreshold,\n    mode: evalMode,\n  });\n\n  return {\n    mode: evalMode,\n    fired_rules: firedRules,\n    total,\n    earned,\n    penalty,\n    fit,\n    coverage,\n    verdict,\n  };\n}\n\n// ===== inlined lib/f07/hashes.js verbatim (generated by n8n/build-f07-workflow.py -- edit the source, not this) =====\n// lib/f07/hashes.js\n// SOURCE OF TRUTH -- do not edit inside the n8n Code node, edit here and re-paste.\n//\n// Content-hash and fingerprint recipes for feature 07 (Thesis Engine),\n// design.md \u00a75.4 (the claims write path) and \u00a75.1 (`thesis_evaluations.\n// input_fingerprint`). Mirrors lib/f04/provenance.js's `contentHash`\n// pattern -- sha256Hex + a small field-joining helper -- because that is\n// this repo's established shape for a NOT NULL UNIQUE content_hash column\n// and 07's own hashing layer was unowned in the first pass (plan re-review\n// finding). Pure functions only -- no I/O, no n8n imports, no network.\n//\n// docs/backlog/07-thesis-engine/plan.md, task B1c.\n\n'use strict';\n\nconst crypto = require('crypto');\n\n// ============================================================================\n// Small shared helpers\n// ============================================================================\n\n// design.md writes every recipe as `sha256(a \u2016 b \u2016 c)` -- concatenation, no\n// delimiter specified -- and leaves the exact byte-join an implementation\n// detail (04/provenance.js's own comment says the same about its recipes).\n// A delimiter IS required, or \"ab\"+\"c\" and \"a\"+\"bc\" collide. NUL (\u0000) is\n// used because none of this file's hashed fields (uuids, hex hashes, short\n// version slugs, enum-like `topic`/`relation` strings) can contain one --\n// unlike a free-text search `query`, which 04's fields include and a plain\n// space would not safely separate.\nconst HASH_FIELD_DELIMITER = '\u0000';\n\nfunction sha256Hex(input) {\n  return crypto.createHash('sha256').update(input, 'utf8').digest('hex');\n}\n\nfunction hashFields(...parts) {\n  return sha256Hex(parts.map((part) => (part === null || part === undefined ? '' : String(part))).join(HASH_FIELD_DELIMITER));\n}\n\n// ============================================================================\n// `ai_runs.prompt_version` -- never assigned a value anywhere in design.md;\n// pinned here per the team lead's 2026-07-19 correction, because\n// `ai_runs.input_hash`'s retry-stability depends on this being a fixed\n// string across every call, not something each caller invents locally.\n// ============================================================================\n\nconst PROMPT_VERSION = 'f07-extract-v1';\n\n// ============================================================================\n// input_text_hash -- also undefined anywhere in design.md until the same\n// correction. Normalizes `gate_text` before hashing so two retries of the\n// same underlying input (e.g. a deck re-extracted with a slightly different\n// line-wrap, or OCR noise reflowing whitespace) hash IDENTICALLY: trim the\n// ends, collapse every run of whitespace (spaces, tabs, newlines) to one\n// space. This is what makes `raw_signals.content_hash` (below) and\n// `ai_runs.input_hash` retry-stable rather than accidentally\n// input-formatting-stable.\n// ============================================================================\n\nfunction normalizeText(text) {\n  return String(text == null ? '' : text).trim().replace(/\\s+/g, ' ');\n}\n\nfunction inputTextHash(text) {\n  return sha256Hex(normalizeText(text));\n}\n\n// ============================================================================\n// Stable JSON stringify -- object keys sorted, array order preserved. Needed\n// because `thesis_config_snapshot` is a JS object built from `theses.config`\n// (jsonb), and JS object key ORDER is not guaranteed to be canonical across\n// two calls that construct the same logical config differently (e.g. a\n// PostgREST response vs. a hand-built test fixture) -- an unstable stringify\n// would make `input_fingerprint` (below) spuriously non-reproducible for the\n// identical config. design.md leaves the exact hash of \"thesis_config_snapshot\"\n// unspecified; this is this file's implementation choice, not a deviation\n// from a spelled-out recipe.\n// ============================================================================\n\nfunction stableStringify(value) {\n  if (Array.isArray(value)) {\n    return `[${value.map(stableStringify).join(',')}]`;\n  }\n  if (value !== null && typeof value === 'object') {\n    const keys = Object.keys(value).sort();\n    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;\n  }\n  return JSON.stringify(value);\n}\n\nfunction thesisConfigSnapshotHash(config) {\n  return sha256Hex(stableStringify(config == null ? {} : config));\n}\n\n// ============================================================================\n// \u00a75.4 -- the four content_hash recipes (plus ai_runs.input_hash, which\n// plays the identical \"select-by-hash-first\" role under a differently-named\n// column). Every recipe here is retry-stable: none of them takes an\n// `ai_run_id` as input, which is the exact property the design's own \u00a75.4\n// note calls out as the fix for a defect that shipped once already.\n// ============================================================================\n\nconst contentHash = {\n  // ai_runs.input_hash = sha256(application_id \u2016 input_text_hash \u2016\n  // prompt_version \u2016 model). Not literally a column named `content_hash`\n  // (\u00a75.4's table lists `ai_runs` as \"keyed by input_hash\", not by a\n  // `content_hash` column), but it serves the identical select-by-hash-\n  // first dedup role, so it lives in this namespace rather than as a lone\n  // export.\n  aiRun({ application_id, input_text_hash, prompt_version, model }) {\n    return hashFields(application_id, input_text_hash, prompt_version, model);\n  },\n\n  // raw_signals.content_hash = sha256(application_id \u2016 input_text_hash \u2016\n  // prompt_version) -- design.md \u00a75.4 row 3. No `ai_run_id`, no\n  // `observed_at`: two retries of the same gate call (same application,\n  // same normalized input text, same prompt version) resolve the SAME\n  // raw_signals row even if each attempt opened a fresh `ai_runs` row.\n  rawSignal({ application_id, input_text_hash, prompt_version }) {\n    return hashFields(application_id, input_text_hash, prompt_version);\n  },\n\n  // claims.content_hash = sha256(card_id \u2016 topic \u2016 raw_signal_id \u2016\n  // item_key) -- design.md \u00a75.4 row 4, ANCHORED ON raw_signal_id, NOT\n  // ai_run_id.\n  //\n  // This is a DELIBERATE divergence from lib/f04/provenance.js's\n  // `contentHash.claim`, which includes `ai_run_id` ON PURPOSE (04/design.md\n  // :240: to force new rows on every re-run so `scores.trend` has history).\n  // 07's gate has no trend to build and needs the opposite property:\n  // retry-safety. Since `ai_runs` opens a fresh row on every attempt\n  // (\u00a75.4's write path step 1) while `rawSignal` above never includes\n  // ai_run_id, `raw_signal_id` is retry-stable -- inheriting 04's recipe\n  // verbatim (swapping in `raw_signal_id` for `ai_run_id` in name only)\n  // would silently reintroduce 04's OWN chosen instability into a gate that\n  // needs the opposite guarantee: a retry would open a new `ai_runs` row,\n  // and if that id leaked into this hash, every retry would duplicate every\n  // `company.*` claim. Do NOT \"harmonise\" this back to match 04.\n  //\n  // `item_key` defaults to '_' for singleton topics (\u00a75.4: \"mandatory\n  // whenever a topic can hold N rows per run\" -- none of 07's five\n  // `company.*` topics do, but the parameter is accepted for consistency\n  // with 04's identical convention).\n  claim({ card_id, topic, raw_signal_id, item_key }) {\n    return hashFields(card_id, topic, raw_signal_id, item_key == null || item_key === '' ? '_' : item_key);\n  },\n\n  // evidence.content_hash = sha256(claim_id \u2016 relation) -- design.md \u00a75.4\n  // row 5. Simpler than 04's evidence recipe (which also discriminates on\n  // source_url/quote_verbatim/query to keep multiple tier='missing' rows\n  // apart): 07 writes exactly one supporting evidence row per claim, always\n  // `relation='supports'`, `tier='documented'` (\u00a75.4 table), so `(claim_id,\n  // relation)` is already unique -- there is no multi-row-per-claim case\n  // here that needs a third discriminator.\n  evidence({ claim_id, relation }) {\n    return hashFields(claim_id, relation);\n  },\n};\n\n// ============================================================================\n// input_fingerprint (\u00a75.1) = sha256(sorted contributing claim content_hashes\n// \u2016 thesis_config_snapshot hash). Sorting the claim hashes is what makes the\n// fingerprint independent of claim-collection order (the write path's\n// per-attribute loop has no meaningful order of its own); hashing the\n// STABLE-STRINGIFIED config, not the raw object, is what makes it\n// independent of key-insertion order for the identical config.\n// ============================================================================\n\nfunction inputFingerprint({ claimContentHashes, thesisConfigSnapshot }) {\n  const sortedHashes = (Array.isArray(claimContentHashes) ? claimContentHashes.slice() : []).sort();\n  return hashFields(...sortedHashes, thesisConfigSnapshotHash(thesisConfigSnapshot));\n}\n\nconst inp = $json;\nconst FIELDS5 = [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"];\nconst config = inp.thesis_config || {};\nconst result = evaluateThesis({ config, attributes: inp.attributes, missingFields: inp.missing_fields, mode: inp.mode });\n\n// input_fingerprint (SS5.1) = sha256(sorted CONTRIBUTING claim content_hashes \u2016\n// thesis_config_snapshot hash). \"Contributing\" = a field NOT in missing_fields (a real,\n// trusted observation feeding `attributes`) -- a claim that flipped to contradicted drops\n// out of this set, which is what gives a re-evaluation a naturally new fingerprint without\n// a version bump (SS8.3 item 12). Keyword mode never writes claims at all (SS6.1), so\n// design.md leaves this mode's fingerprint ingredient unspecified: this file's choice is to\n// hash the (gate_text, structured_hints) pair as the stand-in \"contributing evidence\",\n// giving the identical retry-stability property (same hints+text -> same fingerprint ->\n// dedup) without inventing claim rows that were never written.\nlet contributingHashes = [];\nif (inp.mode === 'keyword') {\n  contributingHashes = [ sha256Hex(stableStringify({\n    gate_text: normalizeText(inp.gate_text || ''), structured_hints: inp.structured_hints || {} })) ];\n} else {\n  contributingHashes = FIELDS5\n    .filter(f => !(inp.missing_fields || []).includes(f))\n    .map(f => (inp.claims && inp.claims[f] && inp.claims[f].content_hash) || null)\n    .filter(Boolean);\n}\nconst fingerprint = inputFingerprint({ claimContentHashes: contributingHashes, thesisConfigSnapshot: config });\n\nreturn [{ json: { ...inp,\n  fired_rules: result.fired_rules, total: result.total, earned: result.earned,\n  penalty: result.penalty, fit: result.fit, coverage: result.coverage, verdict: result.verdict,\n  input_fingerprint: fingerprint, thesis_config_snapshot: config,\n} }];\n"
+   },
+   "id": "3b9da4ba-a3d2-4ea2-9b44-2fbdb41d1559",
+   "name": "Evaluate thesis",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2900,
+    0
+   ],
+   "notes": "SOURCE OF TRUTH: lib/f07/{vocabulary,rules,hashes}.js -- do not edit here, edit there and re-run n8n/build-f07-workflow.py."
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS5.1: UNIQUE (application_id, thesis_id, input_fingerprint) -- select first,\n// insert only if absent (SS6.2's unconditional-retry rule: a retry must converge, not\n// duplicate or 23505).\nconst inp = $json;\nconst rows = await pgGet.call(this,\n  `thesis_evaluations?application_id=eq.${inp.application_id}&thesis_id=eq.${inp.thesis_id}` +\n  `&input_fingerprint=eq.${encodeURIComponent(inp.input_fingerprint)}&select=id,score_id,verdict&limit=1`);\nreturn [{ json: { ...inp, existing_evaluation: rows.length ? rows[0] : null } }];\n"
+   },
+   "id": "6fea7a4f-469c-4be9-9a20-16d6e09a1f67",
+   "name": "Check existing evaluation",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    3140,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "829303b7-360b-40c3-bd4d-2db0ff913076",
+       "leftValue": "={{ !!$json.existing_evaluation }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "086c06fa-b19c-483b-8dda-e7240cca0cca",
+   "name": "IF: evaluation already exists?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    3380,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.2: \"found existing never means nothing left to do\" -- reuse the prior\n// evaluation's id/score_id/verdict, but STILL fall through (below) to the\n// applications-cache write, which is exactly the resume scenario the design calls out: a\n// run that died after writing thesis_evaluations but before the cache write must not leave\n// the application permanently invisible in every feed lane.\nconst inp = $json;\nconst ex = inp.existing_evaluation;\nreturn [{ json: { ...inp, evaluation_id: ex.id, score_id: ex.score_id || null, verdict: ex.verdict } }];\n"
+   },
+   "id": "89d25f64-ce74-4395-b555-dd270bcce1af",
+   "name": "Use existing evaluation",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    3620,
+    -220
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS2's persistence table: scores(thesis_fit) is written for every verdict\n// EXCEPT insufficient_evidence, and except a keyword-mode borderline (SS6.1: \"keyword-mode\n// rows persist exactly like insufficient_evidence... failed is the one verdict that still\n// persists normally\"). Keyword mode can only ever resolve to 'failed' or 'borderline'\n// (computeVerdict() never returns passed/insufficient_evidence there), so this is exactly:\n// write unless insufficient_evidence, or (keyword AND borderline).\nconst inp = $json;\nconst writeScores = inp.verdict !== 'insufficient_evidence' &&\n  !(inp.mode === 'keyword' && inp.verdict === 'borderline');\nreturn [{ json: { ...inp, write_scores: writeScores } }];\n"
+   },
+   "id": "599d730b-1402-4b0d-afd4-cd87d514ad25",
+   "name": "Decide scores write",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    3620,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "4c4ac63e-d47c-4c8e-bd1a-14d3c7b05b6e",
+       "leftValue": "={{ $json.write_scores }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "aec2ce22-76da-46c8-95d0-73e485a87b41",
+   "name": "IF: write scores?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    3860,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// design.md SS5.3: 07 is the sole writer of axis='thesis_fit'; is_screening_axis=false\n// (invariant #1: never blended with the three screening axes).\n//\n// QA E1b item 11 fix (2026-07-19, gate-blocker): scores has no unique constraint\n// (design.md), so 'Check existing evaluation' upstream (keyed on thesis_evaluations)\n// cannot catch a crash that happens AFTER this node succeeds but BEFORE 'Write\n// thesis_evaluations' runs -- on retry, thesis_evaluations still does not exist, so the\n// same branch is taken again and an ORPHANED second scores row was minted that no\n// evaluation would ever reference. This node is now select-first like every other write\n// in the pipeline: the fingerprint is embedded in missing_flags (the only place this\n// value can live without a schema change) and checked BEFORE inserting.\n//\n// KEY NAMED `_f07_input_fingerprint`, not `input_fingerprint` (team-lead ruling,\n// 2026-07-19): missing_flags has a documented cross-feature meaning -- feature 01 defines\n// it as \"what was absent when this was computed\" (REQ-003), and 05/06/09 read it to\n// render what the system did NOT know. A bare `input_fingerprint` key would eventually be\n// rendered to an investor as a missing data point, or counted in a gap tally -- a\n// cross-feature hazard planted in a field this workflow does not own. The leading `_` is\n// the mechanical rule: ANY key prefixed `_` in missing_flags is writer-internal plumbing\n// and MUST NOT be rendered as a missing-data signal by any consumer.\nconst inp = $json;\nconst FIELDS5 = [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"];\nconst claimIds = FIELDS5.map(f => (inp.claims && inp.claims[f] && !inp.claims[f].is_gap) ? inp.claims[f].id : null).filter(Boolean);\nconst existing = await pg.call(this, 'GET',\n  `scores?application_id=eq.${inp.application_id}&thesis_id=eq.${inp.thesis_id}&axis=eq.thesis_fit` +\n  `&select=id,missing_flags&order=computed_at.desc`);\nconst match = existing.find(r => r.missing_flags && r.missing_flags._f07_input_fingerprint === inp.input_fingerprint);\nlet scoreId;\nif (match) {\n  scoreId = match.id;\n} else {\n  const row = await pg.call(this, 'POST', 'scores', {\n    application_id: inp.application_id, founder_id: null, axis: 'thesis_fit',\n    value: inp.fit, trend: null, confidence: inp.coverage,\n    missing_flags: { missing_fields: inp.missing_fields || [], _f07_input_fingerprint: inp.input_fingerprint },\n    input_claim_ids: claimIds,\n    formula_version: \"f07-rules-v1\",\n    prompt_version: inp.mode === 'full' ? \"f07-extract-v1\" : null,\n    model: inp.mode === 'full' ? \"gpt-5.6-luna\" : null,\n    thesis_id: inp.thesis_id,\n  }, 'return=representation');\n  scoreId = row[0].id;\n}\nreturn [{ json: { ...inp, score_id: scoreId } }];\n"
+   },
+   "id": "dc6c0cf9-186b-4495-b74f-60ebc7b35e7f",
+   "name": "Write scores (thesis_fit)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    4100,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nreturn [{ json: { ...inp, score_id: null } }];\n"
+   },
+   "id": "3cc03e7c-df7d-4b38-92ad-336d5be41743",
+   "name": "No scores row",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    4100,
+    260
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// design.md SS5.1 -- append-only decision receipt; score_id set only when a scores\n// row was actually written above.\nconst inp = $json;\nconst row = await pg.call(this, 'POST', 'thesis_evaluations', {\n  application_id: inp.application_id, thesis_id: inp.thesis_id, thesis_version: inp.thesis_version,\n  input_fingerprint: inp.input_fingerprint, evaluation_mode: inp.mode, verdict: inp.verdict,\n  score_id: inp.score_id, fired_rules: inp.fired_rules,\n  extracted_snapshot: { mode: inp.mode, attributes: inp.attributes, missing_fields: inp.missing_fields,\n    structured_hints: inp.structured_hints, extraction: inp.extracted || null },\n  thesis_config_snapshot: inp.thesis_config_snapshot, missing_fields: inp.missing_fields,\n  coverage: inp.coverage, extraction_ai_run_id: inp.ai_run_id || null,\n  formula_version: \"f07-rules-v1\",\n}, 'return=representation');\nreturn [{ json: { ...inp, evaluation_id: row[0].id } }];\n"
+   },
+   "id": "bd8de1d7-92fc-43fa-92ac-5e8fe5eeb799",
+   "name": "Write thesis_evaluations",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    4340,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS6.3: applications.thesis_gate/thesis_id are a CACHE of the current verdict,\n// re-written on every evaluation (never \"never UPDATEs\" -- that claim, in rev.1, could not\n// coexist with \"pointer to current state\"). D-05: NULL is an actual WRITE on\n// insufficient_evidence, not a skip.\nconst inp = $json;\nawait pg.call(this, 'PATCH', `applications?id=eq.${inp.application_id}`, {\n  thesis_id: inp.thesis_id,\n  thesis_gate: inp.verdict === 'insufficient_evidence' ? null : inp.verdict,\n}, 'return=minimal');\nreturn [{ json: inp }];\n"
+   },
+   "id": "7782ab1b-7d8e-417c-a974-42626af96faa",
+   "name": "Write applications cache",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    4580,
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "e8bef334-938f-4ff6-a366-25edaf43437a",
+       "leftValue": "={{ $json.verdict }}",
+       "rightValue": "insufficient_evidence",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "3c08654b-9061-4707-bf50-b8da87f70111",
+   "name": "IF: verdict = insufficient_evidence?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    4820,
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS2 persistence table: insufficient_evidence is the ONLY verdict that gets an\n// events row (SS8.5 TRACKER note: 02 needs this, plus the thesis_gate=NULL notice).\nconst inp = $json;\nawait pg.call(this, 'POST', 'events', {\n  event_type: 'thesis_gate_insufficient_evidence', entity_type: 'application', entity_id: inp.application_id,\n  payload: { thesis_id: inp.thesis_id, coverage: inp.coverage, missing_fields: inp.missing_fields || [] },\n  actor: 'f07-thesis-gate',\n}, 'return=minimal');\nreturn [{ json: inp }];\n"
+   },
+   "id": "41640161-ca30-41c4-8ed1-e727a967d47b",
+   "name": "Write events (insufficient_evidence)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    5060,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1's return contract: {verdict, fit, coverage, fired_rules, missing_fields}\n// -- plus enough identifiers (application_id, thesis_id, evaluation_id) for the caller to\n// cross-reference without a second read.\nconst inp = $json;\nreturn [{ json: {\n  application_id: inp.application_id, thesis_id: inp.thesis_id, evaluation_id: inp.evaluation_id || null,\n  mode: inp.mode, verdict: inp.verdict, fit: inp.fit, coverage: inp.coverage,\n  fired_rules: inp.fired_rules, missing_fields: inp.missing_fields || [],\n} }];\n"
+   },
+   "id": "5d325a38-abc6-40df-996e-ec6d5dffea14",
+   "name": "Build output contract",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    5300,
+    -40
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook Trigger": {
+   "main": [
+    [
+     {
+      "node": "Normalize Webhook Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Execute Workflow Trigger": {
+   "main": [
+    [
+     {
+      "node": "Normalize Sub-workflow Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalize Webhook Input": {
+   "main": [
+    [
+     {
+      "node": "Init run context",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalize Sub-workflow Input": {
+   "main": [
+    [
+     {
+      "node": "Init run context",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Init run context": {
+   "main": [
+    [
+     {
+      "node": "IF: mode = keyword",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: mode = keyword": {
+   "main": [
+    [
+     {
+      "node": "Keyword: build extraction stub",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build extractor request",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build extractor request": {
+   "main": [
+    [
+     {
+      "node": "OpenAI: thesis-attribute-extractor (luna)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenAI: thesis-attribute-extractor (luna)": {
+   "main": [
+    [
+     {
+      "node": "Parse extractor response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse extractor response": {
+   "main": [
+    [
+     {
+      "node": "IF: extractor response valid?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: extractor response valid?": {
+   "main": [
+    [
+     {
+      "node": "Finalize extraction (all-null fallback)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build extractor retry request",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build extractor retry request": {
+   "main": [
+    [
+     {
+      "node": "OpenAI retry: thesis-attribute-extractor (luna)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenAI retry: thesis-attribute-extractor (luna)": {
+   "main": [
+    [
+     {
+      "node": "Parse retry response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse retry response": {
+   "main": [
+    [
+     {
+      "node": "Finalize extraction (all-null fallback)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Finalize extraction (all-null fallback)": {
+   "main": [
+    [
+     {
+      "node": "Build f07-db-write input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build f07-db-write input": {
+   "main": [
+    [
+     {
+      "node": "Call f07-db-write",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Call f07-db-write": {
+   "main": [
+    [
+     {
+      "node": "Reshape after f07-db-write",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Keyword: build extraction stub": {
+   "main": [
+    [
+     {
+      "node": "Build attributes for evaluation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Reshape after f07-db-write": {
+   "main": [
+    [
+     {
+      "node": "Build attributes for evaluation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build attributes for evaluation": {
+   "main": [
+    [
+     {
+      "node": "Resolve contradicted claims",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resolve contradicted claims": {
+   "main": [
+    [
+     {
+      "node": "Load default thesis",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Load default thesis": {
+   "main": [
+    [
+     {
+      "node": "Evaluate thesis",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Evaluate thesis": {
+   "main": [
+    [
+     {
+      "node": "Check existing evaluation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Check existing evaluation": {
+   "main": [
+    [
+     {
+      "node": "IF: evaluation already exists?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: evaluation already exists?": {
+   "main": [
+    [
+     {
+      "node": "Use existing evaluation",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Decide scores write",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Decide scores write": {
+   "main": [
+    [
+     {
+      "node": "IF: write scores?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: write scores?": {
+   "main": [
+    [
+     {
+      "node": "Write scores (thesis_fit)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "No scores row",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write scores (thesis_fit)": {
+   "main": [
+    [
+     {
+      "node": "Write thesis_evaluations",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "No scores row": {
+   "main": [
+    [
+     {
+      "node": "Write thesis_evaluations",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write thesis_evaluations": {
+   "main": [
+    [
+     {
+      "node": "Write applications cache",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Use existing evaluation": {
+   "main": [
+    [
+     {
+      "node": "Write applications cache",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write applications cache": {
+   "main": [
+    [
+     {
+      "node": "IF: verdict = insufficient_evidence?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: verdict = insufficient_evidence?": {
+   "main": [
+    [
+     {
+      "node": "Write events (insufficient_evidence)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build output contract",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write events (insufficient_evidence)": {
+   "main": [
+    [
+     {
+      "node": "Build output contract",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}

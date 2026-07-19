@@ -1,0 +1,782 @@
+{
+ "name": "f07-thesis-reevaluate",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "f07-thesis-reevaluate",
+    "responseMode": "lastNode",
+    "options": {}
+   },
+   "id": "8a75bfe5-6292-4f71-86a8-4c7e13e975ad",
+   "name": "Webhook Trigger",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1120,
+    -140
+   ],
+   "webhookId": "d1d92287-08b1-432f-87cc-9e9874d873de"
+  },
+  {
+   "parameters": {},
+   "id": "10f3d6a7-4545-4931-8a40-ee813952732a",
+   "name": "Execute Workflow Trigger",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    -1120,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1: f07-thesis-reevaluate does NOT re-extract; reads current claims,\n// evaluates against a GIVEN thesis version. thesis_id is optional -- absent means \"the\n// current default thesis\" (NotebookLM's named workflow: \"resurface deals we qualified out\n// in the past\" most naturally re-runs against the fund's current mandate).\nconst item = $input.first().json;\nconst body = item.body || {};\nconst application_id = body.application_id;\nif (!application_id) throw new Error('f07-thesis-reevaluate: application_id is required');\nreturn [{ json: { application_id, thesis_id: body.thesis_id || null } }];\n"
+   },
+   "id": "82b15e01-de99-412e-9097-4756bc5793a0",
+   "name": "Normalize Webhook Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -880,
+    -140
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst item = $input.first().json || {};\nconst application_id = item.application_id;\nif (!application_id) throw new Error('f07-thesis-reevaluate: application_id is required');\nreturn [{ json: { application_id, thesis_id: item.thesis_id || null } }];\n"
+   },
+   "id": "a097613d-f005-4f51-b57d-6f6bbaaba544",
+   "name": "Normalize Sub-workflow Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -880,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "df5e2529-795b-472e-aa04-874a9a0e4fde",
+       "leftValue": "={{ !!$json.thesis_id }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "a568688f-c8d3-495a-8544-266c96ea8856",
+   "name": "IF: thesis_id provided?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -640,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst rows = await pgGet.call(this, `theses?id=eq.${inp.thesis_id}&select=id,name,config,version,active`);\nreturn [{ json: { ...inp, __thesis_rows: rows } }];\n"
+   },
+   "id": "9c099009-b9dc-4cb8-9d80-5c3cc016a76c",
+   "name": "Load specified thesis",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS7: falls back to the (is_default AND active) thesis when the caller supplied\n// none.\nconst inp = $json;\nconst rows = await pgGet.call(this, 'theses?is_default=eq.true&active=eq.true&select=id,name,config,version&limit=1');\nreturn [{ json: { ...inp, __thesis_rows: rows } }];\n"
+   },
+   "id": "ac6d1420-9b71-474f-8ca3-29b5b6d33a7a",
+   "name": "Load default thesis",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nconst rows = inp.__thesis_rows || [];\nif (!rows.length) {\n  throw new Error('f07-thesis-reevaluate: thesis not found' +\n    (inp.thesis_id ? ` (id=${inp.thesis_id})` : ' (no default active thesis)'));\n}\nreturn [{ json: { application_id: inp.application_id, thesis_id: rows[0].id,\n  thesis_version: rows[0].version, thesis_config: rows[0].config } }];\n"
+   },
+   "id": "825e3eb2-4ac6-49cc-9278-45e1a4b1d459",
+   "name": "Require thesis found",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -160,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst cards = await pgGet.call(this,\n  `cards?application_id=eq.${inp.application_id}&card_type=eq.company&select=id&order=created_at.asc&limit=1`);\nreturn [{ json: { ...inp, card_id: cards.length ? cards[0].id : null } }];\n"
+   },
+   "id": "1c9dbdcb-6668-4ebd-a983-dc38580672da",
+   "name": "Resolve card",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    80,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "e5c1766e-d28e-49cc-a35c-bc1c1017c4b3",
+       "leftValue": "={{ !!$json.card_id }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "35983e89-0ca6-48ba-b43a-d9bed492fd02",
+   "name": "IF: card exists?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    320,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS6.1: reads CURRENT claims (embedding evidence -> raw_signals so `_text` can\n// resolve from the ORIGINAL gate input, per SS1.1 -- never a concatenation of claims).\nconst inp = $json;\nconst rows = await pgGet.call(this,\n  `claims?card_id=eq.${inp.card_id}&topic=like.company.*` +\n  `&select=id,topic,value,verification_status,source_kind,content_hash,created_at,` +\n  `evidence(raw_signal_id,raw_signals(payload,created_at))`);\nreturn [{ json: { ...inp, current_claims: rows } }];\n"
+   },
+   "id": "a951f28c-a1e2-477c-a9c1-9540425780ab",
+   "name": "Fetch current claims",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    560,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// This application was never gated (no card exists) -- a legitimate degenerate case, not\n// an error: every attribute is unknown, coverage -> 0 -> insufficient_evidence (D-07).\nconst inp = $json;\nreturn [{ json: { ...inp, current_claims: [] } }];\n"
+   },
+   "id": "e40e8f6b-85b9-4972-9021-356aa4ec63eb",
+   "name": "No claims (never gated)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    560,
+    160
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1: re-evaluation reads CURRENT claims, never a frozen snapshot --\n// corrections arrive via feature 05's contradicts/supersedes mechanism, and reflecting\n// what we now know is the point. A `contradicted` claim is treated as `unknown` (D-03),\n// identically to a `missing` gap claim -- \"a contradicted attribute is precisely 'we do\n// not reliably know this'\".\nconst inp = $json;\nconst FIELDS = ['sector', 'business_model', 'geography_country', 'stage_evidence', 'what_is_built'];\nconst GATEABLE = ['sector', 'business_model', 'geography_country', 'stage_evidence'];\n// Topic is the BASE `company.<field>` for BOTH a present claim and a gap claim (topic\n// naming corrected 2026-07-19 -- no `.gap` suffix ever existed to key off). A present row\n// and a gap row can therefore share the identical topic string across different runs (a\n// field extracted once, missing on a later re-extraction, or vice versa) -- gap-ness is\n// read from `verification_status`/`source_kind`, never from the topic string, matching\n// lib/f07/run.js's writeClaimsAndEvidence() convention.\nconst byField = {};\nfor (const c of (inp.current_claims || [])) {\n  const field = (c.topic || '').startsWith('company.') ? (c.topic || '').slice('company.'.length) : null;\n  if (!field || !FIELDS.includes(field)) continue;\n  const existing = byField[field];\n  if (!existing || new Date(c.created_at) > new Date(existing.created_at)) {\n    byField[field] = c;\n  }\n}\n\nconst attributes = {};\nconst missingFields = [];\nconst claims = {};\nfunction isUsable(c) {\n  return c && c.verification_status !== 'missing' && c.verification_status !== 'contradicted' && c.source_kind !== 'derived';\n}\nfor (const f of GATEABLE) {\n  const c = byField[f];\n  if (isUsable(c)) attributes[f] = c.value; else missingFields.push(f);\n  claims[f] = c ? { content_hash: c.content_hash || null } : null;\n}\nconst wib = byField.what_is_built;\nattributes.what_is_built = isUsable(wib) ? wib.value : null;\nif (attributes.what_is_built === null) missingFields.push('what_is_built');\nclaims.what_is_built = wib ? { content_hash: wib.content_hash || null } : null;\n\n// _text (SS1.1, corrected 2026-07-19): resolves from the MOST RECENT raw_signals row for\n// this application that actually CARRIES a `text` key in its payload -- not just \"the\n// stored payload\", which assumed a single row. Multiple raw_signals rows legitimately\n// accumulate per application (one per gate call with different input text), including\n// legacy rows from before this fix that carry only {mode}, no text at all. A row without\n// a `text` key is SKIPPED, never treated as empty text: an empty _text would make every\n// keyword rule evaluate `no_match` -- \"no negative keyword found\" -- which is a conclusion\n// drawn from text this re-evaluation never actually saw. If no row anywhere carries text,\n// _text stays absent -> every _text rule evaluates `unknown` (D-03), never a miss.\nconst rawSignalsById = new Map();\nfor (const c of (inp.current_claims || [])) {\n  for (const ev of (c.evidence || [])) {\n    const rs = ev.raw_signals;\n    if (rs && ev.raw_signal_id && !rawSignalsById.has(ev.raw_signal_id)) {\n      rawSignalsById.set(ev.raw_signal_id, rs);\n    }\n  }\n}\nconst rawSignalsWithText = Array.from(rawSignalsById.values())\n  .filter(rs => rs.payload && Object.prototype.hasOwnProperty.call(rs.payload, 'text'))\n  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\nconst gateText = rawSignalsWithText.length ? rawSignalsWithText[0].payload.text : null;\n// QA D4 fix, 2026-07-19: _text is gate_text VERBATIM, never what_is_built folded in (see\n// f07-thesis-gate's identical fix for the full rationale -- the same defect existed here).\nattributes._text = (typeof gateText === 'string' && gateText.trim().length > 0) ? gateText.trim() : null;\nif (attributes._text === null) missingFields.push('_text');\n\nreturn [{ json: { application_id: inp.application_id, thesis_id: inp.thesis_id,\n  thesis_version: inp.thesis_version, thesis_config: inp.thesis_config, mode: 'full',\n  attributes, missing_fields: missingFields, claims, ai_run_id: null, extracted: null,\n  structured_hints: {}, gate_text: gateText } }];\n"
+   },
+   "id": "b32256c5-c525-42cb-9abf-ff5389e9a6d3",
+   "name": "Build attributes from current claims",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    800,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// ===== inlined lib/f07/{vocabulary,rules}.js verbatim (generated by n8n/build-f07-workflow.py -- edit the source, not this) =====\n// lib/f07/vocabulary.js\n// SOURCE OF TRUTH -- do not edit inside the n8n Code node, edit here and re-paste.\n//\n// Attribute vocabulary for feature 07 (Thesis Engine). Authoritative source:\n// docs/backlog/07-thesis-engine/design.md rev.3a, \u00a71.1. The key names here are\n// identical across extractor output (\u00a74) and `expr.field` (\u00a71) -- nothing else\n// is gateable.\n//\n// Self-contained CommonJS, zero imports, no npm dependencies, no top-level\n// side effects, deterministic. Pasted verbatim into an n8n Code node -- n8n's\n// sandbox cannot require() from the repo (no bind-mount, no\n// NODE_FUNCTION_ALLOW_EXTERNAL) -- so this file carries no external state.\n//\n// docs/backlog/07-thesis-engine/plan.md, task B1.\n\n'use strict';\n\n// ============================================================================\n// \u00a71.1 -- attribute keys and closed value sets\n// ============================================================================\n\nconst SECTOR_VALUES = Object.freeze([\n  'b2b-software', 'ai-infra', 'devtools', 'fintech', 'healthtech',\n  'consumer', 'marketplace', 'gambling', 'adtech', 'other',\n]);\n\nconst BUSINESS_MODEL_VALUES = Object.freeze([\n  'b2b', 'b2c', 'b2b2c', 'marketplace', 'open_source', 'unknown',\n]);\n\nconst GEOGRAPHY_REGION_VALUES = Object.freeze(['EU', 'US', 'UK', 'APAC', 'LATAM', 'MEA', 'other']);\n\nconst STAGE_VALUES = Object.freeze(['pre_seed', 'seed']);\n\nconst STAGE_EVIDENCE_VALUES = Object.freeze(['idea', 'prototype', 'early_revenue', 'scaling']);\n\n// The full attribute table (\u00a71.1). `type` distinguishes closed-vocabulary\n// categorical fields from free `text` fields for `contains`'s type dispatch\n// (rules.js) -- `derived` fields are never present directly in extractor\n// output; they are computed from a base field at evaluation time (below).\n// `gateable: false` documents \u00a71.1's \"not gateable\" note for `what_is_built`;\n// nothing in this module enforces it (rules.js does not special-case it\n// either -- an absent attribute already yields `unknown` under D-03, which is\n// the only protection the design specifies).\nconst ATTRIBUTES = Object.freeze({\n  sector: Object.freeze({ type: 'categorical', values: SECTOR_VALUES, gateable: true }),\n  business_model: Object.freeze({ type: 'categorical', values: BUSINESS_MODEL_VALUES, gateable: true }),\n  geography_country: Object.freeze({ type: 'categorical', values: null, gateable: true }), // ISO-3166-1 alpha-2, open-ended\n  geography_region: Object.freeze({ type: 'derived', values: GEOGRAPHY_REGION_VALUES, gateable: true }),\n  stage: Object.freeze({ type: 'derived', values: STAGE_VALUES, gateable: true }),\n  stage_evidence: Object.freeze({ type: 'categorical', values: STAGE_EVIDENCE_VALUES, gateable: true }),\n  what_is_built: Object.freeze({ type: 'text', values: null, gateable: false }),\n  _text: Object.freeze({ type: 'text', values: null, gateable: true }),\n});\n\n// ============================================================================\n// region_of(country) -- ISO-3166-1 alpha-2 -> EU | US | UK | APAC | LATAM |\n// MEA | other. \u00a71.1: \"`region_of(country)`, applied before evaluation.\"\n//\n// Returns `null` (not 'other') for anything that isn't a well-formed 2-letter\n// code -- absent/invalid input means \"we don't know the region\", which is a\n// different thing from 'other' (\"we know the country, it just isn't in any\n// named block\"). Only the latter is a legal `geography_region` value; the\n// former must resolve to `unknown` in rules.js, never to a literal 'other'.\n// ============================================================================\n\n// The 27 EU member states (post-Brexit; GB is deliberately excluded -- it is\n// its own region, below).\nconst EU_COUNTRIES = new Set([\n  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR',\n  'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',\n  'SI', 'ES', 'SE',\n]);\n\n// Starter set, not exhaustive -- populated well enough for the demo cohort\n// (\u00a77's mandate is \"EU+US\"); MEA/APAC/LATAM breadth can grow post-MVP without\n// touching this function's contract.\nconst APAC_COUNTRIES = new Set([\n  'CN', 'JP', 'KR', 'IN', 'SG', 'AU', 'NZ', 'HK', 'TW',\n  'ID', 'MY', 'PH', 'TH', 'VN', 'PK', 'BD',\n]);\n\nconst LATAM_COUNTRIES = new Set([\n  'BR', 'MX', 'AR', 'CL', 'CO', 'PE', 'UY', 'EC', 'VE', 'BO', 'PY', 'CR', 'PA', 'GT', 'DO',\n]);\n\nconst MEA_COUNTRIES = new Set([\n  'AE', 'SA', 'IL', 'EG', 'ZA', 'NG', 'KE', 'QA', 'TR',\n  'MA', 'GH', 'TN', 'JO', 'KW', 'BH', 'OM', 'LB',\n]);\n\nfunction region_of(country) {\n  if (typeof country !== 'string') return null;\n  const code = country.trim().toUpperCase();\n  if (!/^[A-Z]{2}$/.test(code)) return null;\n\n  if (code === 'US') return 'US';\n  if (code === 'GB') return 'UK';\n  if (EU_COUNTRIES.has(code)) return 'EU';\n  if (APAC_COUNTRIES.has(code)) return 'APAC';\n  if (LATAM_COUNTRIES.has(code)) return 'LATAM';\n  if (MEA_COUNTRIES.has(code)) return 'MEA';\n  return 'other'; // a known, well-formed code, just outside every named block\n}\n\n// ============================================================================\n// stage_evidence -> stage (\u00a71.1): `idea | prototype -> pre_seed`;\n// `early_revenue -> seed`; `scaling` deliberately has NO mapping -- it must\n// yield `unknown` on stage rules, never a rejection.\n// ============================================================================\n\nconst STAGE_BY_EVIDENCE = Object.freeze({\n  idea: 'pre_seed',\n  prototype: 'pre_seed',\n  early_revenue: 'seed',\n  // scaling: intentionally absent.\n});\n\nfunction stage_of(stageEvidence) {\n  if (typeof stageEvidence !== 'string') return null;\n  return Object.prototype.hasOwnProperty.call(STAGE_BY_EVIDENCE, stageEvidence)\n    ? STAGE_BY_EVIDENCE[stageEvidence]\n    : null;\n}\n\n// ============================================================================\n// Sentinel values -- live defect found by stage-C (the extractor's own JSON\n// schema comment on `business_model` names this exact trap): `'unknown'` is a\n// LEGAL value in business_model's closed set (\u00a71.1), but compared as a VALUE\n// against a rule's expr it reads as a real, negative observation ('missed'),\n// which is exactly the REQ-003 shape D-03 exists to prevent -- the model\n// could not tell the business model, and that absence of information must\n// not lower fit. `resolveField` (rules.js) treats a sentinel-valued field\n// identically to an absent one: `unknown`, contributing to `total` but never\n// to `earned`.\n//\n// This is a DIFFERENT mechanism from `scaling`'s \"no stage mapping\" above,\n// even though both end up `unknown`: `scaling` is a real, legal, gateable\n// value of `stage_evidence` itself (a rule written directly against\n// `stage_evidence` sees it and evaluates normally) that simply has no\n// corresponding `stage` -- the derived field is what goes unknown, not the\n// base one. A sentinel is unknown AT THE FIELD ITSELF, for any rule that\n// references it directly. Keep the two mechanisms conceptually separate --\n// they are next to each other here because both protect the same guarantee,\n// not because they work the same way.\n//\n// `sector: 'other'` is deliberately NOT a sentinel (the extractor's schema\n// comment is explicit about this too): 'other' is a real determination that\n// carries a quote -- the company genuinely is not in the mandate's sectors --\n// and must produce `no_match` against a focus rule, same as any other named\n// sector. Conflating `other` with a sentinel would let a thin deck auto-pass\n// every sector rule as `unknown`; keep this distinction sharp.\nconst SENTINEL_VALUES = Object.freeze({\n  business_model: Object.freeze(['unknown']),\n});\n\nfunction isSentinel(field, value) {\n  const sentinels = SENTINEL_VALUES[field];\n  return Array.isArray(sentinels) && sentinels.includes(value);\n}\n\n// ============================================================================\n// `_text` synthesis (\u00a71.1: \"synthetic -- the concatenated gate input.\n// Present whenever the gate has any text.\").\n//\n// `_text` IS the workflow's `gate_text` parameter, verbatim (thesis-\n// attribute-extractor-agent-input-spec.md \u00a7\"Input variables\": \"Also the\n// value of `_text` in \u00a71.1\"). On re-evaluation (`f07-thesis-reevaluate`,\n// \u00a76.1 -- no fresh gate call, no `gate_text` parameter at all), the same raw\n// text is recovered from the ORIGINAL run's `raw_signals.payload.text`\n// (db/fixtures/07-thesis-engine.sql, \"team-lead correction, 2026-07-19\":\n// \"`_text` must resolve from THIS stored payload -- NOT from\n// company.what_is_built or any other claim\"). An earlier draft of this\n// function also folded in `what_is_built` as a fallback -- that reading\n// matched a STALE top-of-file comment in the same fixture file that the\n// later, dated, inline correction supersedes. Do not resurrect the\n// what_is_built fallback; a claim is not the gate's raw input, and `_text`\n// is defined as exactly that input, nothing derived from it.\n//\n// Consequently this function takes exactly one text source: whichever raw\n// text the caller has in hand for THIS call (a fresh `gate_text` parameter,\n// or a re-evaluation's recovered `raw_signals.payload.text`). When neither\n// exists, `_text` is genuinely absent -- honest per D-03 (unknown, not\n// invented from claims).\nfunction synthesize_text(gateText) {\n  if (typeof gateText !== 'string') return null;\n  const trimmed = gateText.trim();\n  return trimmed.length > 0 ? trimmed : null;\n}\n\nconst vocabulary = { ATTRIBUTES, SECTOR_VALUES, BUSINESS_MODEL_VALUES, GEOGRAPHY_REGION_VALUES, STAGE_VALUES, STAGE_EVIDENCE_VALUES, STAGE_BY_EVIDENCE, SENTINEL_VALUES, region_of, stage_of, isSentinel, synthesize_text };\n\n// lib/f07/rules.js\n// SOURCE OF TRUTH -- do not edit inside the n8n Code node, edit here and re-paste.\n//\n// Deterministic rule evaluator for feature 07 (Thesis Engine). Pure functions\n// only -- no I/O, no database, no network. This is the module design.md calls\n// \"the backend evaluates the thesis's rules against those attributes in code\"\n// (D-02): a cheap LLM extracts attributes with no thesis in its context (\u00a74,\n// built separately in docs/backlog/07-thesis-engine/agents/), and everything\n// past that point -- mandate compilation, three-valued rule evaluation, fit,\n// coverage, the verdict procedure -- is deterministic and lives here, unit\n// tested before it is pasted verbatim into an n8n Code node.\n//\n// Authoritative source for every rule below: docs/backlog/07-thesis-engine/\n// design.md rev.3a, sections cited inline. This file does not restate the\n// `theses.config` contract -- see design.md \u00a71 for the shape it consumes.\n//\n// docs/backlog/07-thesis-engine/plan.md, task B2.\n\n'use strict';\n\n\n// ============================================================================\n// Small shared helpers\n// ============================================================================\n\nfunction isPlainObject(v) {\n  return v !== null && typeof v === 'object' && !Array.isArray(v);\n}\n\nfunction isFiniteNumber(v) {\n  return typeof v === 'number' && Number.isFinite(v);\n}\n\nfunction numOr(value, fallback) {\n  return isFiniteNumber(value) ? value : fallback;\n}\n\nfunction clamp(min, max, value) {\n  return Math.min(max, Math.max(min, value));\n}\n\n// ============================================================================\n// \u00a71.2 -- mandate -> rule compilation (normative table)\n//\n// Lazy, at evaluation time. All compiled rules are `soft` by construction --\n// a sector or geography mismatch is neither a legal constraint nor fraud, so\n// compiling them `hard` would contradict D-01. Each row is emitted ONLY when\n// its source array is non-empty (rev.2 compiled keyword rules unconditionally\n// and an empty `positive_keywords` produced a permanently-`missed` rule that\n// silently depressed every fit -- \u00a71.2's own worked defect).\n//\n// `check_size_usd`, `ownership_target_pct`, `risk_appetite` and `geos`\n// compile to nothing (\u00a71.3: inert at pre-seed, or -- for `geos` -- consumed\n// by feature 04, not by the gate).\n//\n// Rule ids for the geography/stage rows are not spelled out in \u00a71.2's table\n// (only \"same shape, field: ...\"); `M_geography` / `M_stage` are this file's\n// choice, parallel to the table's own `M_sector` / `M_poskw` / `M_negkw`.\n// ============================================================================\n\nfunction compileMandateRules(config) {\n  const cfg = isPlainObject(config) ? config : {};\n  const mandate = isPlainObject(cfg.mandate) ? cfg.mandate : {};\n  const fit = isPlainObject(cfg.fit) ? cfg.fit : {};\n  const mandateWeight = numOr(fit.mandate_weight, 0);\n  const compiled = [];\n\n  if (Array.isArray(mandate.sectors) && mandate.sectors.length > 0) {\n    compiled.push({\n      id: 'M_sector', label: 'Mandate: sector', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: 'sector', op: 'in', value: mandate.sectors },\n    });\n  }\n\n  if (Array.isArray(mandate.geographies) && mandate.geographies.length > 0) {\n    compiled.push({\n      id: 'M_geography', label: 'Mandate: geography', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: 'geography_region', op: 'in', value: mandate.geographies },\n    });\n  }\n\n  if (Array.isArray(mandate.stages) && mandate.stages.length > 0) {\n    compiled.push({\n      id: 'M_stage', label: 'Mandate: stage', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: 'stage', op: 'in', value: mandate.stages },\n    });\n  }\n\n  const positiveKeywords = cfg.positive_keywords;\n  if (Array.isArray(positiveKeywords) && positiveKeywords.length > 0) {\n    compiled.push({\n      id: 'M_poskw', label: 'Mandate: positive keywords', kind: 'focus', enforcement: 'soft',\n      weight: mandateWeight, enabled: true,\n      expr: { field: '_text', op: 'contains', value: positiveKeywords },\n    });\n  }\n\n  // `deal_breaker` weight is always 0 (D-04; enforced live by\n  // validate_thesis_config() in \u00a75.6) -- not `mandateWeight`.\n  const negativeKeywords = cfg.negative_keywords;\n  if (Array.isArray(negativeKeywords) && negativeKeywords.length > 0) {\n    compiled.push({\n      id: 'M_negkw', label: 'Mandate: negative keywords', kind: 'deal_breaker', enforcement: 'soft',\n      weight: 0, enabled: true,\n      expr: { field: '_text', op: 'contains', value: negativeKeywords },\n    });\n  }\n\n  return compiled;\n}\n\n// Hand-authored `config.rules[]`, normalized (D-01: `enforcement` defaults to\n// `soft` when absent; `enabled` defaults to true when absent), concatenated\n// with the compiled mandate rules. Order is hand-authored first, mandate\n// rules appended -- fired_rules[] display order only, nothing depends on it.\nfunction normalizeHandAuthoredRule(rule) {\n  return {\n    ...rule,\n    enabled: rule.enabled !== false,\n    enforcement: rule.enforcement === 'hard' ? 'hard' : 'soft',\n  };\n}\n\nfunction compileRules(config) {\n  const cfg = isPlainObject(config) ? config : {};\n  const handAuthored = Array.isArray(cfg.rules)\n    ? cfg.rules.filter(isPlainObject).map(normalizeHandAuthoredRule)\n    : [];\n  return handAuthored.concat(compileMandateRules(cfg));\n}\n\n// ============================================================================\n// Field resolution -- base fields read straight from `attributes`; derived\n// fields (`geography_region`, `stage`, \u00a71.1) computed from their base field.\n// `missingFields` carries BOTH genuinely-absent fields and fields backed only\n// by a claim with verification_status='contradicted' (D-03: folding a\n// contradicted claim's field into this array is the CALLER's job -- this\n// module has no DB access and cannot resolve claims itself).\n//\n// Returns `{ value, unknown }`. `unknown: true` is the single condition\n// evalExpr needs to short-circuit a rule to `unknown` under D-03.\n// ============================================================================\n\nfunction resolveField(field, attributes, missingFields) {\n  const attrs = isPlainObject(attributes) ? attributes : {};\n  const missing = Array.isArray(missingFields) ? missingFields : [];\n  const isMissing = (key) => missing.includes(key);\n\n  // geography_region and stage are `derived` (\u00a71.1: \"region_of(country),\n  // applied before evaluation\"). The extractor never emits either one\n  // directly (thesis-attribute-extractor-agent-json-schema.json forbids it),\n  // so the normal path is deriving from the base field below. A caller that\n  // has ALREADY applied the derivation (\u00a71.1's own phrasing -- \"applied\n  // BEFORE evaluation\" -- reads naturally as a pre-processing step the\n  // caller may perform itself) may instead supply `geography_region`/`stage`\n  // directly in `attributes`; when present and not itself listed missing,\n  // that value wins over re-deriving from the base field, so the two\n  // calling conventions agree rather than silently disagreeing.\n  if (field === 'geography_region') {\n    if (isMissing('geography_region')) return { value: null, unknown: true };\n    if (Object.prototype.hasOwnProperty.call(attrs, 'geography_region') && attrs.geography_region !== undefined) {\n      const direct = attrs.geography_region;\n      if (direct === null) return { value: null, unknown: true };\n      return { value: direct, unknown: false };\n    }\n    if (isMissing('geography_country')) return { value: null, unknown: true };\n    const country = attrs.geography_country;\n    if (country === null || country === undefined) return { value: null, unknown: true };\n    const region = vocabulary.region_of(country);\n    if (region === null) return { value: null, unknown: true }; // not a well-formed code\n    return { value: region, unknown: false };\n  }\n\n  if (field === 'stage') {\n    if (isMissing('stage')) return { value: null, unknown: true };\n    if (Object.prototype.hasOwnProperty.call(attrs, 'stage') && attrs.stage !== undefined) {\n      const direct = attrs.stage;\n      if (direct === null) return { value: null, unknown: true };\n      return { value: direct, unknown: false };\n    }\n    if (isMissing('stage_evidence')) return { value: null, unknown: true };\n    const evidence = attrs.stage_evidence;\n    if (evidence === null || evidence === undefined) return { value: null, unknown: true };\n    const stage = vocabulary.stage_of(evidence);\n    // `scaling` maps to nothing (vocabulary.js \u00a71.1) -- unknown here, never a\n    // rejection, exactly per this task's acceptance criterion.\n    if (stage === null) return { value: null, unknown: true };\n    return { value: stage, unknown: false };\n  }\n\n  if (isMissing(field)) return { value: null, unknown: true };\n  const value = attrs[field];\n  if (value === null || value === undefined) return { value: null, unknown: true };\n  // A sentinel value (vocabulary.js: currently only business_model:'unknown')\n  // means \"the extractor could not tell\", not a real observation -- treat it\n  // exactly like an absent field. `sector:'other'` is deliberately NOT a\n  // sentinel and falls through to the normal known-value return below.\n  if (vocabulary.isSentinel(field, value)) return { value: null, unknown: true };\n  return { value, unknown: false };\n}\n\n// `contains`'s type dispatch (\u00a71.1): on a text field with an array operand,\n// substring-match-on-any-element (OR); on a text field with a string\n// operand, substring match; on a multi-valued field (none currently declared\n// in the vocabulary, but the semantics are defined for one), array\n// membership. The empty-array-operand -> `unknown` case is handled by the\n// caller (evalExpr), before the field is even resolved -- it is a property\n// of the rule, not of the data.\nfunction evalContains(fieldValue, operand) {\n  if (Array.isArray(fieldValue)) {\n    if (Array.isArray(operand)) return operand.some((v) => fieldValue.includes(v));\n    return fieldValue.includes(operand);\n  }\n  if (typeof fieldValue === 'string') {\n    if (Array.isArray(operand)) {\n      return operand.some((v) => typeof v === 'string' && fieldValue.includes(v));\n    }\n    if (typeof operand === 'string') return fieldValue.includes(operand);\n  }\n  return false;\n}\n\n// ============================================================================\n// D-03 -- three-valued rule evaluation: 'match' | 'no_match' | 'unknown'.\n// A rule is `unknown` whenever any field its expr references is absent, null,\n// in `missingFields`, or (folded into `missingFields` by the caller) backed\n// only by a contradicted claim.\n// ============================================================================\n\nfunction evalExpr(expr, attributes, missingFields) {\n  if (!isPlainObject(expr)) throw new Error('rules.js: evalExpr requires an expr object');\n  const { field, op, negate } = expr;\n  const operand = expr.value;\n\n  // An empty array operand on `contains` expresses no opinion and must not\n  // be readable as a miss (\u00a71.1) -- checked before field resolution, since\n  // it is a property of the RULE regardless of what was extracted.\n  if (op === 'contains' && Array.isArray(operand) && operand.length === 0) {\n    return 'unknown';\n  }\n\n  const resolved = resolveField(field, attributes, missingFields);\n  if (resolved.unknown) return 'unknown';\n\n  const { value } = resolved;\n  let matched;\n\n  switch (op) {\n    case 'eq':\n      matched = value === operand;\n      break;\n    case 'in':\n      matched = Array.isArray(operand) && operand.includes(value);\n      break;\n    case 'gte':\n      matched = isFiniteNumber(value) && isFiniteNumber(operand) && value >= operand;\n      break;\n    case 'lte':\n      matched = isFiniteNumber(value) && isFiniteNumber(operand) && value <= operand;\n      break;\n    case 'exists':\n      // Reached only when the field resolved to a known value (the unknown\n      // branch above already returned) -- so a known field always satisfies\n      // \"exists\". `negate: true` therefore reads as \"field is absent\", which\n      // -- consistently with D-03 -- can never be observed as a `no_match`:\n      // an absent field is `unknown`, not a confirmed absence.\n      matched = true;\n      break;\n    case 'contains':\n      matched = evalContains(value, operand);\n      break;\n    default:\n      throw new Error(`rules.js: unsupported op \"${op}\"`);\n  }\n\n  if (negate === true) matched = !matched;\n  return matched ? 'match' : 'no_match';\n}\n\n// ============================================================================\n// D-04 -- outcome vocabulary, derived from (kind, expr result). One table,\n// no parallel truth table to drift out of sync with it.\n// ============================================================================\n\nfunction deriveOutcome(kind, exprResult) {\n  if (exprResult === 'unknown') return 'unknown';\n  if (kind === 'deal_breaker') return exprResult === 'match' ? 'triggered' : 'satisfied';\n  return exprResult === 'match' ? 'satisfied' : 'missed'; // must_have | focus\n}\n\n// ============================================================================\n// \u00a72 -- ordered verdict procedure. First match wins.\n//\n//   1.  any rule outcome=triggered|missed, enforcement=hard        -> failed\n//   2.  coverage < fit.min_coverage                (full mode only) -> insufficient_evidence\n//   2b. any soft deal_breaker with outcome=triggered                -> borderline\n//   3.  fit >= fit.strong_threshold                 (full mode only) -> passed\n//   4.  otherwise                                                    -> borderline\n//\n// Step 3's \"(full mode only)\" gate is not written into \u00a72's own table (only\n// step 2 carries that annotation there) -- it is stated in \u00a76.1's prose\n// instead (\"Keyword mode never returns passed... a cheap negative filter,\n// not an endorsement\"). Both are honored here: keyword mode can still reach\n// `failed` (a hard rule fired on `_text`/structured_hints) or `borderline`,\n// never `insufficient_evidence` (no coverage to be short of) and never\n// `passed`.\n// ============================================================================\n\nfunction computeVerdict({ firedRules, fit, coverage, minCoverage, strongThreshold, mode }) {\n  const rules = Array.isArray(firedRules) ? firedRules : [];\n  const evalMode = mode === 'keyword' ? 'keyword' : 'full';\n\n  const hardFailure = rules.some(\n    (r) => r.enforcement === 'hard' && (r.outcome === 'triggered' || r.outcome === 'missed')\n  );\n  if (hardFailure) return 'failed';\n\n  if (evalMode === 'full' && coverage !== null && coverage < minCoverage) return 'insufficient_evidence';\n\n  const softDealBreakerTriggered = rules.some(\n    (r) => r.kind === 'deal_breaker' && r.enforcement === 'soft' && r.outcome === 'triggered'\n  );\n  if (softDealBreakerTriggered) return 'borderline';\n\n  if (evalMode === 'full' && fit >= strongThreshold) return 'passed';\n\n  return 'borderline';\n}\n\n// ============================================================================\n// \u00a73.1 / \u00a73.2 -- fit and coverage, plus \u00a72's verdict, combined into a single\n// evaluation pass over a compiled thesis. This is the module's one entry\n// point; everything above is exported mainly so it can be unit tested in\n// isolation.\n//\n//   total    = \u03a3 weight(enabled must_have + focus rules)          -- incl. unknown\n//   earned   = \u03a3 weight(enabled must_have + focus rules, outcome=satisfied)\n//   penalty  = fit.soft_deal_breaker_penalty \u00d7 count(enabled soft deal_breakers, outcome=triggered)\n//   fit      = total > 0 ? clamp(100 \u00d7 earned / total \u2212 penalty, 0, 100) : fit.base\n//   evaluated = \u03a3 weight(enabled must_have + focus rules, outcome != unknown)\n//   coverage  = mode='keyword' ? null : (total > 0 ? evaluated / total : 1.0)\n//\n// `deal_breaker` weight never enters `total`/`earned`/`evaluated` (D-04);\n// disabled rules (`enabled: false`) are excluded from evaluation entirely --\n// dropping a disabled rule from BOTH sides is what keeps `evaluated <= total`\n// and therefore `coverage` at or below 1 (\u00a73.2).\n// ============================================================================\n\nfunction evaluateThesis({ config, attributes, missingFields, mode } = {}) {\n  const cfg = isPlainObject(config) ? config : {};\n  const attrs = isPlainObject(attributes) ? attributes : {};\n  const missing = Array.isArray(missingFields) ? missingFields : [];\n  const evalMode = mode === 'keyword' ? 'keyword' : 'full';\n\n  const fitConfig = isPlainObject(cfg.fit) ? cfg.fit : {};\n  const base = numOr(fitConfig.base, 50);\n  const softDealBreakerPenalty = numOr(fitConfig.soft_deal_breaker_penalty, 0);\n  const strongThreshold = numOr(fitConfig.strong_threshold, 70);\n  const minCoverage = numOr(fitConfig.min_coverage, 0);\n\n  const activeRules = compileRules(cfg).filter((r) => r.enabled !== false);\n\n  let total = 0;\n  let earned = 0;\n  let evaluated = 0;\n  let softDealBreakerTriggerCount = 0;\n\n  const firedRules = activeRules.map((rule) => {\n    const { kind } = rule;\n    const enforcement = rule.enforcement === 'hard' ? 'hard' : 'soft';\n    const weight = numOr(rule.weight, 0);\n    const field = rule.expr && rule.expr.field;\n\n    const exprResult = evalExpr(rule.expr, attrs, missing);\n    const outcome = deriveOutcome(kind, exprResult);\n\n    const isCountable = kind === 'must_have' || kind === 'focus';\n    if (isCountable) {\n      total += weight;\n      if (outcome !== 'unknown') evaluated += weight;\n      if (outcome === 'satisfied') earned += weight;\n    } else if (kind === 'deal_breaker' && enforcement === 'soft' && outcome === 'triggered') {\n      softDealBreakerTriggerCount += 1;\n    }\n\n    const resolved = resolveField(field, attrs, missing);\n    const weightApplied = isCountable && outcome === 'satisfied' ? weight : 0;\n\n    return {\n      id: rule.id,\n      label: rule.label != null ? rule.label : null,\n      kind,\n      enforcement,\n      outcome,\n      field,\n      expected: rule.expr && rule.expr.value,\n      observed: outcome === 'unknown' ? null : resolved.value,\n      weight_applied: weightApplied,\n    };\n  });\n\n  const penalty = softDealBreakerPenalty * softDealBreakerTriggerCount;\n  const fit = total > 0 ? clamp(0, 100, (100 * earned) / total - penalty) : base;\n  const coverage = evalMode === 'keyword' ? null : total > 0 ? evaluated / total : 1.0;\n\n  const verdict = computeVerdict({\n    firedRules,\n    fit,\n    coverage,\n    minCoverage,\n    strongThreshold,\n    mode: evalMode,\n  });\n\n  return {\n    mode: evalMode,\n    fired_rules: firedRules,\n    total,\n    earned,\n    penalty,\n    fit,\n    coverage,\n    verdict,\n  };\n}\n\n// ===== inlined lib/f07/hashes.js verbatim (generated by n8n/build-f07-workflow.py -- edit the source, not this) =====\n// lib/f07/hashes.js\n// SOURCE OF TRUTH -- do not edit inside the n8n Code node, edit here and re-paste.\n//\n// Content-hash and fingerprint recipes for feature 07 (Thesis Engine),\n// design.md \u00a75.4 (the claims write path) and \u00a75.1 (`thesis_evaluations.\n// input_fingerprint`). Mirrors lib/f04/provenance.js's `contentHash`\n// pattern -- sha256Hex + a small field-joining helper -- because that is\n// this repo's established shape for a NOT NULL UNIQUE content_hash column\n// and 07's own hashing layer was unowned in the first pass (plan re-review\n// finding). Pure functions only -- no I/O, no n8n imports, no network.\n//\n// docs/backlog/07-thesis-engine/plan.md, task B1c.\n\n'use strict';\n\nconst crypto = require('crypto');\n\n// ============================================================================\n// Small shared helpers\n// ============================================================================\n\n// design.md writes every recipe as `sha256(a \u2016 b \u2016 c)` -- concatenation, no\n// delimiter specified -- and leaves the exact byte-join an implementation\n// detail (04/provenance.js's own comment says the same about its recipes).\n// A delimiter IS required, or \"ab\"+\"c\" and \"a\"+\"bc\" collide. NUL (\u0000) is\n// used because none of this file's hashed fields (uuids, hex hashes, short\n// version slugs, enum-like `topic`/`relation` strings) can contain one --\n// unlike a free-text search `query`, which 04's fields include and a plain\n// space would not safely separate.\nconst HASH_FIELD_DELIMITER = '\u0000';\n\nfunction sha256Hex(input) {\n  return crypto.createHash('sha256').update(input, 'utf8').digest('hex');\n}\n\nfunction hashFields(...parts) {\n  return sha256Hex(parts.map((part) => (part === null || part === undefined ? '' : String(part))).join(HASH_FIELD_DELIMITER));\n}\n\n// ============================================================================\n// `ai_runs.prompt_version` -- never assigned a value anywhere in design.md;\n// pinned here per the team lead's 2026-07-19 correction, because\n// `ai_runs.input_hash`'s retry-stability depends on this being a fixed\n// string across every call, not something each caller invents locally.\n// ============================================================================\n\nconst PROMPT_VERSION = 'f07-extract-v1';\n\n// ============================================================================\n// input_text_hash -- also undefined anywhere in design.md until the same\n// correction. Normalizes `gate_text` before hashing so two retries of the\n// same underlying input (e.g. a deck re-extracted with a slightly different\n// line-wrap, or OCR noise reflowing whitespace) hash IDENTICALLY: trim the\n// ends, collapse every run of whitespace (spaces, tabs, newlines) to one\n// space. This is what makes `raw_signals.content_hash` (below) and\n// `ai_runs.input_hash` retry-stable rather than accidentally\n// input-formatting-stable.\n// ============================================================================\n\nfunction normalizeText(text) {\n  return String(text == null ? '' : text).trim().replace(/\\s+/g, ' ');\n}\n\nfunction inputTextHash(text) {\n  return sha256Hex(normalizeText(text));\n}\n\n// ============================================================================\n// Stable JSON stringify -- object keys sorted, array order preserved. Needed\n// because `thesis_config_snapshot` is a JS object built from `theses.config`\n// (jsonb), and JS object key ORDER is not guaranteed to be canonical across\n// two calls that construct the same logical config differently (e.g. a\n// PostgREST response vs. a hand-built test fixture) -- an unstable stringify\n// would make `input_fingerprint` (below) spuriously non-reproducible for the\n// identical config. design.md leaves the exact hash of \"thesis_config_snapshot\"\n// unspecified; this is this file's implementation choice, not a deviation\n// from a spelled-out recipe.\n// ============================================================================\n\nfunction stableStringify(value) {\n  if (Array.isArray(value)) {\n    return `[${value.map(stableStringify).join(',')}]`;\n  }\n  if (value !== null && typeof value === 'object') {\n    const keys = Object.keys(value).sort();\n    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;\n  }\n  return JSON.stringify(value);\n}\n\nfunction thesisConfigSnapshotHash(config) {\n  return sha256Hex(stableStringify(config == null ? {} : config));\n}\n\n// ============================================================================\n// \u00a75.4 -- the four content_hash recipes (plus ai_runs.input_hash, which\n// plays the identical \"select-by-hash-first\" role under a differently-named\n// column). Every recipe here is retry-stable: none of them takes an\n// `ai_run_id` as input, which is the exact property the design's own \u00a75.4\n// note calls out as the fix for a defect that shipped once already.\n// ============================================================================\n\nconst contentHash = {\n  // ai_runs.input_hash = sha256(application_id \u2016 input_text_hash \u2016\n  // prompt_version \u2016 model). Not literally a column named `content_hash`\n  // (\u00a75.4's table lists `ai_runs` as \"keyed by input_hash\", not by a\n  // `content_hash` column), but it serves the identical select-by-hash-\n  // first dedup role, so it lives in this namespace rather than as a lone\n  // export.\n  aiRun({ application_id, input_text_hash, prompt_version, model }) {\n    return hashFields(application_id, input_text_hash, prompt_version, model);\n  },\n\n  // raw_signals.content_hash = sha256(application_id \u2016 input_text_hash \u2016\n  // prompt_version) -- design.md \u00a75.4 row 3. No `ai_run_id`, no\n  // `observed_at`: two retries of the same gate call (same application,\n  // same normalized input text, same prompt version) resolve the SAME\n  // raw_signals row even if each attempt opened a fresh `ai_runs` row.\n  rawSignal({ application_id, input_text_hash, prompt_version }) {\n    return hashFields(application_id, input_text_hash, prompt_version);\n  },\n\n  // claims.content_hash = sha256(card_id \u2016 topic \u2016 raw_signal_id \u2016\n  // item_key) -- design.md \u00a75.4 row 4, ANCHORED ON raw_signal_id, NOT\n  // ai_run_id.\n  //\n  // This is a DELIBERATE divergence from lib/f04/provenance.js's\n  // `contentHash.claim`, which includes `ai_run_id` ON PURPOSE (04/design.md\n  // :240: to force new rows on every re-run so `scores.trend` has history).\n  // 07's gate has no trend to build and needs the opposite property:\n  // retry-safety. Since `ai_runs` opens a fresh row on every attempt\n  // (\u00a75.4's write path step 1) while `rawSignal` above never includes\n  // ai_run_id, `raw_signal_id` is retry-stable -- inheriting 04's recipe\n  // verbatim (swapping in `raw_signal_id` for `ai_run_id` in name only)\n  // would silently reintroduce 04's OWN chosen instability into a gate that\n  // needs the opposite guarantee: a retry would open a new `ai_runs` row,\n  // and if that id leaked into this hash, every retry would duplicate every\n  // `company.*` claim. Do NOT \"harmonise\" this back to match 04.\n  //\n  // `item_key` defaults to '_' for singleton topics (\u00a75.4: \"mandatory\n  // whenever a topic can hold N rows per run\" -- none of 07's five\n  // `company.*` topics do, but the parameter is accepted for consistency\n  // with 04's identical convention).\n  claim({ card_id, topic, raw_signal_id, item_key }) {\n    return hashFields(card_id, topic, raw_signal_id, item_key == null || item_key === '' ? '_' : item_key);\n  },\n\n  // evidence.content_hash = sha256(claim_id \u2016 relation) -- design.md \u00a75.4\n  // row 5. Simpler than 04's evidence recipe (which also discriminates on\n  // source_url/quote_verbatim/query to keep multiple tier='missing' rows\n  // apart): 07 writes exactly one supporting evidence row per claim, always\n  // `relation='supports'`, `tier='documented'` (\u00a75.4 table), so `(claim_id,\n  // relation)` is already unique -- there is no multi-row-per-claim case\n  // here that needs a third discriminator.\n  evidence({ claim_id, relation }) {\n    return hashFields(claim_id, relation);\n  },\n};\n\n// ============================================================================\n// input_fingerprint (\u00a75.1) = sha256(sorted contributing claim content_hashes\n// \u2016 thesis_config_snapshot hash). Sorting the claim hashes is what makes the\n// fingerprint independent of claim-collection order (the write path's\n// per-attribute loop has no meaningful order of its own); hashing the\n// STABLE-STRINGIFIED config, not the raw object, is what makes it\n// independent of key-insertion order for the identical config.\n// ============================================================================\n\nfunction inputFingerprint({ claimContentHashes, thesisConfigSnapshot }) {\n  const sortedHashes = (Array.isArray(claimContentHashes) ? claimContentHashes.slice() : []).sort();\n  return hashFields(...sortedHashes, thesisConfigSnapshotHash(thesisConfigSnapshot));\n}\n\nconst inp = $json;\nconst FIELDS5 = [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"];\nconst config = inp.thesis_config || {};\nconst result = evaluateThesis({ config, attributes: inp.attributes, missingFields: inp.missing_fields, mode: inp.mode });\n\n// input_fingerprint (SS5.1) = sha256(sorted CONTRIBUTING claim content_hashes \u2016\n// thesis_config_snapshot hash). \"Contributing\" = a field NOT in missing_fields (a real,\n// trusted observation feeding `attributes`) -- a claim that flipped to contradicted drops\n// out of this set, which is what gives a re-evaluation a naturally new fingerprint without\n// a version bump (SS8.3 item 12). Keyword mode never writes claims at all (SS6.1), so\n// design.md leaves this mode's fingerprint ingredient unspecified: this file's choice is to\n// hash the (gate_text, structured_hints) pair as the stand-in \"contributing evidence\",\n// giving the identical retry-stability property (same hints+text -> same fingerprint ->\n// dedup) without inventing claim rows that were never written.\nlet contributingHashes = [];\nif (inp.mode === 'keyword') {\n  contributingHashes = [ sha256Hex(stableStringify({\n    gate_text: normalizeText(inp.gate_text || ''), structured_hints: inp.structured_hints || {} })) ];\n} else {\n  contributingHashes = FIELDS5\n    .filter(f => !(inp.missing_fields || []).includes(f))\n    .map(f => (inp.claims && inp.claims[f] && inp.claims[f].content_hash) || null)\n    .filter(Boolean);\n}\nconst fingerprint = inputFingerprint({ claimContentHashes: contributingHashes, thesisConfigSnapshot: config });\n\nreturn [{ json: { ...inp,\n  fired_rules: result.fired_rules, total: result.total, earned: result.earned,\n  penalty: result.penalty, fit: result.fit, coverage: result.coverage, verdict: result.verdict,\n  input_fingerprint: fingerprint, thesis_config_snapshot: config,\n} }];\n"
+   },
+   "id": "b82717ab-d8a9-447f-a333-de2a6db2053f",
+   "name": "Evaluate thesis",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1040,
+    0
+   ],
+   "notes": "SOURCE OF TRUTH: lib/f07/{vocabulary,rules,hashes}.js -- do not edit here, edit there and re-run n8n/build-f07-workflow.py."
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS5.1: UNIQUE (application_id, thesis_id, input_fingerprint) -- select first,\n// insert only if absent (SS6.2's unconditional-retry rule: a retry must converge, not\n// duplicate or 23505).\nconst inp = $json;\nconst rows = await pgGet.call(this,\n  `thesis_evaluations?application_id=eq.${inp.application_id}&thesis_id=eq.${inp.thesis_id}` +\n  `&input_fingerprint=eq.${encodeURIComponent(inp.input_fingerprint)}&select=id,score_id,verdict&limit=1`);\nreturn [{ json: { ...inp, existing_evaluation: rows.length ? rows[0] : null } }];\n"
+   },
+   "id": "ee2f4a30-e0f0-49dd-868d-cbc973eccf35",
+   "name": "Check existing evaluation",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1280,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "d7d4da09-38b8-4819-8302-4d18e9d2710e",
+       "leftValue": "={{ !!$json.existing_evaluation }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "21b62a75-d3bf-4d0f-a02e-165c50858163",
+   "name": "IF: evaluation already exists?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1520,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.2: \"found existing never means nothing left to do\" -- reuse the prior\n// evaluation's id/score_id/verdict, but STILL fall through (below) to the\n// applications-cache write, which is exactly the resume scenario the design calls out: a\n// run that died after writing thesis_evaluations but before the cache write must not leave\n// the application permanently invisible in every feed lane.\nconst inp = $json;\nconst ex = inp.existing_evaluation;\nreturn [{ json: { ...inp, evaluation_id: ex.id, score_id: ex.score_id || null, verdict: ex.verdict } }];\n"
+   },
+   "id": "112488e4-3a60-4e20-ad2f-4de3d32ef50c",
+   "name": "Use existing evaluation",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1760,
+    -220
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS2's persistence table: scores(thesis_fit) is written for every verdict\n// EXCEPT insufficient_evidence, and except a keyword-mode borderline (SS6.1: \"keyword-mode\n// rows persist exactly like insufficient_evidence... failed is the one verdict that still\n// persists normally\"). Keyword mode can only ever resolve to 'failed' or 'borderline'\n// (computeVerdict() never returns passed/insufficient_evidence there), so this is exactly:\n// write unless insufficient_evidence, or (keyword AND borderline).\nconst inp = $json;\nconst writeScores = inp.verdict !== 'insufficient_evidence' &&\n  !(inp.mode === 'keyword' && inp.verdict === 'borderline');\nreturn [{ json: { ...inp, write_scores: writeScores } }];\n"
+   },
+   "id": "29137afb-2227-4068-8fa2-5f7c90209514",
+   "name": "Decide scores write",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1760,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "fde8d809-fd27-41d1-8d9d-8db13b104c82",
+       "leftValue": "={{ $json.write_scores }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "893fb8a5-77f6-493c-9a5d-ec154ddc0ed4",
+   "name": "IF: write scores?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    2000,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// design.md SS5.3: 07 is the sole writer of axis='thesis_fit'; is_screening_axis=false\n// (invariant #1: never blended with the three screening axes).\n//\n// QA E1b item 11 fix (2026-07-19, gate-blocker): scores has no unique constraint\n// (design.md), so 'Check existing evaluation' upstream (keyed on thesis_evaluations)\n// cannot catch a crash that happens AFTER this node succeeds but BEFORE 'Write\n// thesis_evaluations' runs -- on retry, thesis_evaluations still does not exist, so the\n// same branch is taken again and an ORPHANED second scores row was minted that no\n// evaluation would ever reference. This node is now select-first like every other write\n// in the pipeline: the fingerprint is embedded in missing_flags (the only place this\n// value can live without a schema change) and checked BEFORE inserting.\n//\n// KEY NAMED `_f07_input_fingerprint`, not `input_fingerprint` (team-lead ruling,\n// 2026-07-19): missing_flags has a documented cross-feature meaning -- feature 01 defines\n// it as \"what was absent when this was computed\" (REQ-003), and 05/06/09 read it to\n// render what the system did NOT know. A bare `input_fingerprint` key would eventually be\n// rendered to an investor as a missing data point, or counted in a gap tally -- a\n// cross-feature hazard planted in a field this workflow does not own. The leading `_` is\n// the mechanical rule: ANY key prefixed `_` in missing_flags is writer-internal plumbing\n// and MUST NOT be rendered as a missing-data signal by any consumer.\nconst inp = $json;\nconst FIELDS5 = [\"sector\", \"business_model\", \"geography_country\", \"stage_evidence\", \"what_is_built\"];\nconst claimIds = FIELDS5.map(f => (inp.claims && inp.claims[f] && !inp.claims[f].is_gap) ? inp.claims[f].id : null).filter(Boolean);\nconst existing = await pg.call(this, 'GET',\n  `scores?application_id=eq.${inp.application_id}&thesis_id=eq.${inp.thesis_id}&axis=eq.thesis_fit` +\n  `&select=id,missing_flags&order=computed_at.desc`);\nconst match = existing.find(r => r.missing_flags && r.missing_flags._f07_input_fingerprint === inp.input_fingerprint);\nlet scoreId;\nif (match) {\n  scoreId = match.id;\n} else {\n  const row = await pg.call(this, 'POST', 'scores', {\n    application_id: inp.application_id, founder_id: null, axis: 'thesis_fit',\n    value: inp.fit, trend: null, confidence: inp.coverage,\n    missing_flags: { missing_fields: inp.missing_fields || [], _f07_input_fingerprint: inp.input_fingerprint },\n    input_claim_ids: claimIds,\n    formula_version: \"f07-rules-v1\",\n    prompt_version: inp.mode === 'full' ? \"f07-extract-v1\" : null,\n    model: inp.mode === 'full' ? \"gpt-5.6-luna\" : null,\n    thesis_id: inp.thesis_id,\n  }, 'return=representation');\n  scoreId = row[0].id;\n}\nreturn [{ json: { ...inp, score_id: scoreId } }];\n"
+   },
+   "id": "9056b8d7-d0d7-4cca-a221-12bf539b050f",
+   "name": "Write scores (thesis_fit)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2240,
+    20
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nreturn [{ json: { ...inp, score_id: null } }];\n"
+   },
+   "id": "f0779f44-3508-4be9-8ba3-9328c2496408",
+   "name": "No scores row",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2240,
+    260
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// design.md SS5.1 -- append-only decision receipt; score_id set only when a scores\n// row was actually written above.\nconst inp = $json;\nconst row = await pg.call(this, 'POST', 'thesis_evaluations', {\n  application_id: inp.application_id, thesis_id: inp.thesis_id, thesis_version: inp.thesis_version,\n  input_fingerprint: inp.input_fingerprint, evaluation_mode: inp.mode, verdict: inp.verdict,\n  score_id: inp.score_id, fired_rules: inp.fired_rules,\n  extracted_snapshot: { mode: inp.mode, attributes: inp.attributes, missing_fields: inp.missing_fields,\n    structured_hints: inp.structured_hints, extraction: inp.extracted || null },\n  thesis_config_snapshot: inp.thesis_config_snapshot, missing_fields: inp.missing_fields,\n  coverage: inp.coverage, extraction_ai_run_id: inp.ai_run_id || null,\n  formula_version: \"f07-rules-v1\",\n}, 'return=representation');\nreturn [{ json: { ...inp, evaluation_id: row[0].id } }];\n"
+   },
+   "id": "21fc3f3a-bbdb-48bc-9ada-c1c7174e3955",
+   "name": "Write thesis_evaluations",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2480,
+    140
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS6.3: applications.thesis_gate/thesis_id are a CACHE of the current verdict,\n// re-written on every evaluation (never \"never UPDATEs\" -- that claim, in rev.1, could not\n// coexist with \"pointer to current state\"). D-05: NULL is an actual WRITE on\n// insufficient_evidence, not a skip.\nconst inp = $json;\nawait pg.call(this, 'PATCH', `applications?id=eq.${inp.application_id}`, {\n  thesis_id: inp.thesis_id,\n  thesis_gate: inp.verdict === 'insufficient_evidence' ? null : inp.verdict,\n}, 'return=minimal');\nreturn [{ json: inp }];\n"
+   },
+   "id": "54b57127-b91c-40e2-9c0c-c82d99a10dbb",
+   "name": "Write applications cache",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2720,
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "e699b463-92ba-4bbc-adb0-e11a9a1c3fa7",
+       "leftValue": "={{ $json.verdict }}",
+       "rightValue": "insufficient_evidence",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "df83deac-a882-4fe9-ad52-2936b99b9f5c",
+   "name": "IF: verdict = insufficient_evidence?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    2960,
+    -40
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// design.md SS2 persistence table: insufficient_evidence is the ONLY verdict that gets an\n// events row (SS8.5 TRACKER note: 02 needs this, plus the thesis_gate=NULL notice).\nconst inp = $json;\nawait pg.call(this, 'POST', 'events', {\n  event_type: 'thesis_gate_insufficient_evidence', entity_type: 'application', entity_id: inp.application_id,\n  payload: { thesis_id: inp.thesis_id, coverage: inp.coverage, missing_fields: inp.missing_fields || [] },\n  actor: 'f07-thesis-gate',\n}, 'return=minimal');\nreturn [{ json: inp }];\n"
+   },
+   "id": "a88176b4-3bf3-4f35-950d-afffd9ac9d69",
+   "name": "Write events (insufficient_evidence)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    3200,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// design.md SS6.1's return contract: {verdict, fit, coverage, fired_rules, missing_fields}\n// -- plus enough identifiers (application_id, thesis_id, evaluation_id) for the caller to\n// cross-reference without a second read.\nconst inp = $json;\nreturn [{ json: {\n  application_id: inp.application_id, thesis_id: inp.thesis_id, evaluation_id: inp.evaluation_id || null,\n  mode: inp.mode, verdict: inp.verdict, fit: inp.fit, coverage: inp.coverage,\n  fired_rules: inp.fired_rules, missing_fields: inp.missing_fields || [],\n} }];\n"
+   },
+   "id": "2dd3ec3a-eccc-4c70-9a68-29b9e2fbbff2",
+   "name": "Build output contract",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    3440,
+    -40
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook Trigger": {
+   "main": [
+    [
+     {
+      "node": "Normalize Webhook Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Execute Workflow Trigger": {
+   "main": [
+    [
+     {
+      "node": "Normalize Sub-workflow Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalize Webhook Input": {
+   "main": [
+    [
+     {
+      "node": "IF: thesis_id provided?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalize Sub-workflow Input": {
+   "main": [
+    [
+     {
+      "node": "IF: thesis_id provided?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: thesis_id provided?": {
+   "main": [
+    [
+     {
+      "node": "Load specified thesis",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Load default thesis",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Load specified thesis": {
+   "main": [
+    [
+     {
+      "node": "Require thesis found",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Load default thesis": {
+   "main": [
+    [
+     {
+      "node": "Require thesis found",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Require thesis found": {
+   "main": [
+    [
+     {
+      "node": "Resolve card",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resolve card": {
+   "main": [
+    [
+     {
+      "node": "IF: card exists?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: card exists?": {
+   "main": [
+    [
+     {
+      "node": "Fetch current claims",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "No claims (never gated)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch current claims": {
+   "main": [
+    [
+     {
+      "node": "Build attributes from current claims",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "No claims (never gated)": {
+   "main": [
+    [
+     {
+      "node": "Build attributes from current claims",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build attributes from current claims": {
+   "main": [
+    [
+     {
+      "node": "Evaluate thesis",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Evaluate thesis": {
+   "main": [
+    [
+     {
+      "node": "Check existing evaluation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Check existing evaluation": {
+   "main": [
+    [
+     {
+      "node": "IF: evaluation already exists?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: evaluation already exists?": {
+   "main": [
+    [
+     {
+      "node": "Use existing evaluation",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Decide scores write",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Decide scores write": {
+   "main": [
+    [
+     {
+      "node": "IF: write scores?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: write scores?": {
+   "main": [
+    [
+     {
+      "node": "Write scores (thesis_fit)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "No scores row",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write scores (thesis_fit)": {
+   "main": [
+    [
+     {
+      "node": "Write thesis_evaluations",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "No scores row": {
+   "main": [
+    [
+     {
+      "node": "Write thesis_evaluations",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write thesis_evaluations": {
+   "main": [
+    [
+     {
+      "node": "Write applications cache",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Use existing evaluation": {
+   "main": [
+    [
+     {
+      "node": "Write applications cache",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write applications cache": {
+   "main": [
+    [
+     {
+      "node": "IF: verdict = insufficient_evidence?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: verdict = insufficient_evidence?": {
+   "main": [
+    [
+     {
+      "node": "Write events (insufficient_evidence)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build output contract",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write events (insufficient_evidence)": {
+   "main": [
+    [
+     {
+      "node": "Build output contract",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}

@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f07/thesis-attribute-extractor.output.json",
+  "title": "thesis-attribute-extractor output",
+  "description": "Output of the f07 blind attribute extractor (gpt-5.6-luna). Property ORDER IS LOAD-BEARING: 'reasoning' is first so the model reasons before it commits to a value (design.md 4). The five attributes are the gateable vocabulary of design.md 1.1; the thesis is not present in this agent's prompt or input and its rules are evaluated deterministically only after this object is returned (D-02). Every non-null attribute pairs with a verbatim quote because claims.text_verbatim is NOT NULL and a normalized label is not a verbatim span; an unquotable field belongs in missing_fields (design.md 4, 5.4). Nullability is expressed via ['string','null'] rather than optionality so that strict structured output can require every key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reasoning",
+    "sector",
+    "business_model",
+    "geography_country",
+    "stage_evidence",
+    "what_is_built",
+    "quotes",
+    "missing_fields"
+  ],
+  "properties": {
+    "reasoning": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1200,
+      "description": "FIRST FIELD BY DESIGN — reasoning must precede the verdict (design.md 4, adopted alongside temperature=0 and the push-back instruction). Walks the five fields in order, naming the span found or stating that none was found, and recording any push-back: a self-label overridden by the described product, or an irreconcilable hint-vs-text conflict. Neutral and non-evaluative: the agent may not assess the company here or anywhere else. Not persisted as a claim; it is written to the ai_runs row for traceability and read by QA when a value looks wrong. Non-empty even for the all-null record, where it states that the input carried no extractable content."
+    },
+    "sector": {
+      "type": ["string", "null"],
+      "enum": [
+        "b2b-software",
+        "ai-infra",
+        "devtools",
+        "fintech",
+        "healthtech",
+        "consumer",
+        "marketplace",
+        "gambling",
+        "adtech",
+        "other",
+        null
+      ],
+      "description": "Closed set from design.md 1.1. Becomes claims.value for topic 'company.sector'. 'other' is a LEGAL AND EXPECTED DETERMINATION, not a failure: it means the domain was established from the text and is simply not in this vocabulary (agriculture, logistics, education, hardware, defence). 'other' therefore carries a quote and does NOT appear in missing_fields. null means undetermined and DOES appear in missing_fields. The distinction is load-bearing for rule evaluation: an observed 'other' produces no_match against a focus rule (a real miss), whereas a null field produces the three-valued 'unknown' that D-03 requires and that can never fire a hard rule."
+    },
+    "business_model": {
+      "type": ["string", "null"],
+      "enum": ["b2b", "b2c", "b2b2c", "marketplace", "open_source", "unknown", null],
+      "description": "Closed set from design.md 1.1. Becomes claims.value for topic 'company.business_model'. WARNING for the evaluator (lib/f07/vocabulary.js, plan task B1): the literal string 'unknown' is in the vocabulary but must be treated as an UNKNOWN-VALUED FIELD, not as a comparable value — compared as a value it yields no_match ('missed') against a focus rule where D-03 requires 'unknown'. The prompt instructs the model to express 'could not tell' as null + missing_fields rather than as 'unknown', so 'unknown' should be rare; the evaluator guard exists because the schema cannot forbid a value that design.md 1.1 lists as legal. See tbd-items Q1."
+    },
+    "geography_country": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO-3166-1 alpha-2, uppercase. COUNTRY ONLY — feature 02 normalizes GitHub location to country 'for the thesis geo filter (07)' (02/design.md:113), and geography_region is derived from this by region_of(country) in lib/f07/vocabulary.js. The agent must not emit a region, a city, or a country name. Grounded only in a stated location of the company or its team: never inferred from a ccTLD, a language, a market served, an accelerator, an investor, or a customer logo. An ambiguous city with no disambiguating context resolves to null — a wrong country is materially worse than an absent one, because under D-03 an absent field cannot fire a hard rule while a wrong one can."
+    },
+    "stage_evidence": {
+      "type": ["string", "null"],
+      "enum": ["idea", "prototype", "early_revenue", "scaling", null],
+      "description": "Closed set from design.md 1.1 — OpenVC company-state, NOT round names. 'we raised a pre-seed' is a financing fact and must never be mapped here. Becomes claims.value for topic 'company.stage_evidence'; 'stage' is derived downstream (idea|prototype -> pre_seed; early_revenue -> seed; scaling -> NO MAPPING, yielding 'unknown' on stage rules and never a rejection). The agent emits 'scaling' whenever the text supports it and must not down-grade it because it is uncommon at this stage — the absent mapping is the evaluator's concern, not the extractor's. Free usage, waitlists, signups, LOIs and 'in discussions' are explicitly NOT early_revenue; only stated payment is."
+    },
+    "what_is_built": {
+      "type": ["string", "null"],
+      "minLength": 10,
+      "maxLength": 400,
+      "description": "Free text, 1-2 neutral sentences. NOT GATEABLE (design.md 1.1) — no expr.field may reference it — but it IS persisted as claims topic 'company.what_is_built' and feeds the memo (feature 06), which is why it still requires a quote. No quality adjectives, no market framing, no assessment. Must not name any person, employer, university or accelerator (prompt Instruction 6): the gate's output schema carries no identity field, and that is the honest form of the anonymization claim in design.md 4 — input-side masking needs an NER pass and is post-MVP."
+    },
+    "quotes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sector",
+        "business_model",
+        "geography_country",
+        "stage_evidence",
+        "what_is_built"
+      ],
+      "description": "STRUCTURALLY MANDATORY, one key per persisted attribute, all five always present. Each value is either a contiguous verbatim substring of gate_text or of a structured_hints value, or null when the attribute is null. Rationale: claims.text_verbatim is NOT NULL and a normalized label ('b2b-software') is not a verbatim span, so a field the model cannot ground in a quote has no legal claims row and belongs in missing_fields instead (design.md 4, 5.4). Quotes stay in the SOURCE LANGUAGE for a non-English deck — a translated quote is not a verbatim span. NOTE FOR THE BUILDER: the conditional invariant 'quotes.X non-null iff X non-null' is NOT expressible in OpenAI strict structured outputs (if/then/allOf unsupported), so it is enforced by the downstream deterministic validator described in the input spec, together with the substring check. The validator may only demote a value to null; it may never synthesise a quote.",
+      "properties": {
+        "sector": {
+          "type": ["string", "null"],
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "Verbatim span establishing the sector. Consumer: text_verbatim of the 'company.sector' claim."
+        },
+        "business_model": {
+          "type": ["string", "null"],
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "Verbatim span naming the customer or the monetisation. May not be the same span as the sector quote unless it genuinely states both — reusing the sector span is the commonest way an ungrounded business_model slips through (Undesired Example 1 in the prompt)."
+        },
+        "geography_country": {
+          "type": ["string", "null"],
+          "minLength": 2,
+          "maxLength": 300,
+          "description": "Verbatim span stating where the company or team is. A bare domain string ('nordwerk.de') is NOT a qualifying span and must be rejected by the validator's negative-criteria review in QA."
+        },
+        "stage_evidence": {
+          "type": ["string", "null"],
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "Verbatim span evidencing the company's present state. A founder's employer, a funding round or a demo-request form are not qualifying spans."
+        },
+        "what_is_built": {
+          "type": ["string", "null"],
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "Verbatim span describing the product. Distinct from the what_is_built field itself, which is a written summary; this is the raw span it was drawn from."
+        }
+      }
+    },
+    "missing_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "enum": [
+          "sector",
+          "business_model",
+          "geography_country",
+          "stage_evidence",
+          "what_is_built"
+        ]
+      },
+      "description": "Exactly the field names whose value is null — no more, no fewer; the validator enforces the biconditional. Each entry becomes a 'company.<field>.gap' claim with verification_status='missing' (design.md 5.4.1), and each makes every rule referencing that field evaluate to 'unknown' under D-03, which is what guarantees a thin deck can never be auto-rejected. An array of all five is a CORRECT record for an empty or contentless input: coverage then falls to 0 and the verdict is insufficient_evidence (D-07), which removes the application from the ranking rather than placing it at the bottom. Emptying this array by guessing is the single behaviour the design most needs to prevent."
+    }
+  },
+  "examples": [
+    {
+      "reasoning": "The header self-labels as AI infrastructure, but every product slide describes an ad-attribution dashboard sold to Shopify merchants, so I record what is described: sector b2b-software, not ai-infra. Overriding the self-label. Business model: merchants are the paying customer, so b2b. Country: 'Built in Rotterdam' locates the company; Rotterdam is unambiguously NL. Stage: 40 stores on a paid plan at a stated price is payment received, so early_revenue.",
+      "sector": "b2b-software",
+      "business_model": "b2b",
+      "geography_country": "NL",
+      "stage_evidence": "early_revenue",
+      "what_is_built": "A dashboard that connects a Shopify store and its ad accounts and reports attributed revenue per campaign.",
+      "quotes": {
+        "sector": "We help Shopify merchants understand which ads actually drove a sale",
+        "business_model": "40 stores on the paid plan at EUR99/mo",
+        "geography_country": "Built in Rotterdam",
+        "stage_evidence": "40 stores on the paid plan at EUR99/mo",
+        "what_is_built": "Merchants connect their store and ad accounts and see attributed revenue per campaign"
+      },
+      "missing_fields": []
+    },
+    {
+      "reasoning": "The post states the product plainly: a tool converting Postgres query logs into flame graphs, which is developer tooling. The product itself is stated to be MIT-licensed open source, which is a statement about the product rather than about a repo existing. No location appears anywhere in the post and I will not infer one. A hosted demo exists and is usable but no payment is mentioned.",
+      "sector": "devtools",
+      "business_model": "open_source",
+      "geography_country": null,
+      "stage_evidence": "prototype",
+      "what_is_built": "A tool that converts Postgres query logs into flame graphs, with a hosted demo.",
+      "quotes": {
+        "sector": "a tool that turns Postgres query logs into flame graphs",
+        "business_model": "It's open source (MIT)",
+        "geography_country": null,
+        "stage_evidence": "there's a hosted demo",
+        "what_is_built": "I built a tool that turns Postgres query logs into flame graphs"
+      },
+      "missing_fields": ["geography_country"]
+    },
+    {
+      "reasoning": "The input contained no company text and no structured hints, so there was no extractable content of any kind. No attribute can be grounded in a span and none is emitted.",
+      "sector": null,
+      "business_model": null,
+      "geography_country": null,
+      "stage_evidence": null,
+      "what_is_built": null,
+      "quotes": {
+        "sector": null,
+        "business_model": null,
+        "geography_country": null,
+        "stage_evidence": null,
+        "what_is_built": null
+      },
+      "missing_fields": [
+        "sector",
+        "business_model",
+        "geography_country",
+        "stage_evidence",
+        "what_is_built"
+      ]
+    }
+  ]
+}

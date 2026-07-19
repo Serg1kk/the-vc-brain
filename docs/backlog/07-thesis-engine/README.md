@@ -1,6 +1,16 @@
 # 07 · Thesis Engine (configurable fund lens)
 
-Status: backlog · Depends on: 01
+Status: **DB + evaluator DONE** (2026-07-19, DB QA gate PASSED) · n8n workflows in progress ·
+Depends on: 01 · Blocks: 02 (gate), 09 (lens)
+
+**Working today, without n8n:** `node lib/f07/run.js <application_id> [--recorded <dir>] [--gate-text <file>]`
+runs the whole gate end-to-end against Supabase. Verified live on the fixtures —
+Nordkit → `passed` (fit 100), Fogline → `insufficient_evidence` (coverage 0.38, no score row
+written), GameLoop → `borderline` via a soft deal-breaker.
+
+Docs: [design.md](design.md) (rev.3a) · [plan.md](plan.md) · [tracker.md](tracker.md) ·
+[handoff.md](handoff.md) — **read handoff.md if you own 02, 04, 06, 09 or 10** ·
+[qa-report-07.md](qa-report-07.md)
 
 ## What it is
 
@@ -49,7 +59,21 @@ Single fund (no multi-tenancy). Thesis back-testing (vcbrain has it) — post-MV
 - **UX/Design + UX-brainstorm with operator:** thesis config form + the «lens» interaction (thesis switch re-sorts feed live) — @designer designs, @frontend-developer builds.
 - **QA:** @qa-engineer — soft-fail keeps open door (gray-out, not hide), gate reasons visible.
 
-## Open questions
+## Open questions — both RESOLVED
 
-- Default demo thesis: «B2B tech, pre-seed/seed, EU+US, $100K» (mirrors sponsor) — confirm.
-- Do deal-breakers hard-hide or gray-out candidates? (I lean gray-out — open-door optics.)
+- **Default demo thesis** → yes, «B2B tech, pre-seed/seed, EU+US, $100K», mirroring the sponsor,
+  with the stage mapped onto our schema (`pre_seed|seed`; theirs is late seed → Series A, out of
+  scope). Seeded `active=true, is_default=true`. See design.md §7.
+- **Deal-breakers: hard-hide or gray-out?** → gray-out, and no longer a lean: it is **D-01**, with
+  reasoning and **DB-level enforcement**. `enforcement` is per-rule and defaults to `soft`; `hard`
+  is legal only for mandate-fatal or fraud, and the validator rejects a `hard` rule without a
+  valid `hard_justification` — including when the key is absent entirely, which is where a naive
+  plpgsql check silently lets it through.
+
+**Handed onward:** the anonymization vs founder-driven-assessment tension belongs to feature 03.
+
+## Post-MVP (deliberately not built)
+
+Thesis back-testing · miss-rate calibration (would require a labeled cohort we do not have —
+shipping uncalibrated percentages would fabricate a metric) · input-side identity masking ·
+boolean composition in `expr`.
