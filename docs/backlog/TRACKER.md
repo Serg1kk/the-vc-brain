@@ -444,3 +444,53 @@ results`.
 **Lesson I'll wear:** I corrected a shared convention on one probe and warned another feature on
 the strength of it. The probe was real but the conclusion outran the evidence — the mechanism I
 had not looked for was sitting in a build script one grep away.
+
+## 2026-07-19 ~11:10 · Near-miss worth knowing (append by terminal 10)
+
+Committing feature 10 involved a `git pull --rebase`, and the tooling **stashed other terminals'
+uncommitted work** to get the rebase through, then restored it. Nothing was lost — I verified
+immediately afterwards: `git stash list` empty, and 05 / 08 / 09 / `lib/f05` / `lib/f08` / `web`
+all still present in the working tree with their changes intact.
+
+But this is the same class of operation that destroyed hours of work at ~06:45 today, and it can
+fire without the terminal that owns the files knowing. **If you pull/rebase while others are
+mid-edit, check `git stash list` and your own folder afterwards.** Safest is to commit your own
+paths first and rebase second, so there is less in the tree to stash.
+
+Feature 10 is now fully pushed (`91c984a`). Terminals 05, 08, 09 and the web frontend have
+uncommitted work in the tree — **it is yours, it is intact, and nothing of it was staged by 10.**
+
+## 2026-07-19 ~11:00 · ⚠️ SECOND DATA-LOSS EVENT — same class as ~06:45, recovered
+
+**It happened again.** `git reflog` shows repeated `reset: moving to HEAD` while feature 08 had
+an hour of uncommitted work in the tree. Destroyed: all of `lib/f08/` (5 modules + 5 test files,
+115 passing tests), `08-founder-intake-interview/{design,plan,tracker,n8n-spec}.md`, both
+`agents/` specification folders, and the tracked-file edits to `docs/roadmap*.md`,
+`web/src/styles.css`, `web/src/components/NextPhasePanel.tsx` and `infra/n8n/docker-compose.yml`.
+
+**Fully recovered.** Two things made that possible, and both are worth copying:
+
+1. **Do not rewrite from memory before you look.** The work was sitting in `git stash` —
+   `stash@{1}` held all 68 files. A stash is not visible in `git status` and is easy to forget
+   exists.
+2. **A stash restores only what it captured.** Popping it brought back every *untracked* file but
+   none of the *tracked-file modifications*; those had to be redone by hand. If you are recovering,
+   check both categories separately — `git status` looking clean is not proof.
+
+**The recovery was itself a race:** `stash@{1}` disappeared between two of my commands because a
+third terminal popped it while I was inspecting it. Three terminals sharing one index and one
+stash stack is the actual hazard here, not any single command.
+
+**What I would ask of everyone for the rest of the run:**
+- Commit after each closed unit of work, not each stage. Both losses today were of work that was
+  finished but unstaged.
+- Keep a copy outside the repo for anything expensive. With three terminals, the working tree is
+  not storage.
+- If you must clean up, prefer `git restore --staged` (index only). `git reset`, `git checkout`,
+  `git restore --worktree`, `git clean` and `git stash` all reach across features here.
+- If you find someone else's work missing, check `git stash list` and `git fsck --dangling`
+  **before** telling them to rebuild it.
+
+Feature 08's work is now committed as `8c44e9e`. Some of it was also swept into feature 10's
+`91c984a`, which committed the shared index — no harm done, recorded so the history reads
+sensibly later.
