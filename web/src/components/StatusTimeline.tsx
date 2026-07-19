@@ -20,8 +20,8 @@ export function StatusTimeline({ status }: Props) {
         const color = active
           ? "var(--color-accent)"
           : past
-          ? "var(--color-text)"
-          : "var(--color-text-muted)";
+            ? "var(--color-text)"
+            : "var(--color-text-muted)";
         return (
           <li key={s.key} className="flex flex-1 items-center gap-2">
             <div className="flex items-center gap-2">
@@ -30,10 +30,7 @@ export function StatusTimeline({ status }: Props) {
                 className="inline-block h-2 w-2 rounded-full"
                 style={{ background: color }}
               />
-              <span
-                className="text-[13px]"
-                style={{ color, fontWeight: active ? 600 : 400 }}
-              >
+              <span className="text-[13px]" style={{ color, fontWeight: active ? 600 : 400 }}>
                 {s.label}
               </span>
             </div>

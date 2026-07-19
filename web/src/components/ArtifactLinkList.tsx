@@ -60,7 +60,11 @@ export function ArtifactLinkList({ values, onChange }: Props) {
                 ) : null}
               </div>
               {err ? (
-                <p id={`${id}-err`} className="mt-1 text-[13px]" style={{ color: "var(--color-warn)" }}>
+                <p
+                  id={`${id}-err`}
+                  className="mt-1 text-[13px]"
+                  style={{ color: "var(--color-warn)" }}
+                >
                   {err}
                 </p>
               ) : null}

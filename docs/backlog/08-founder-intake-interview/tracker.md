@@ -27,10 +27,11 @@
 | T12 | `f08-followup` + `-answers` | n8n-workflow-builder | T10 | **done** | `faIkBLyDGdiXTQpY` / `mu172HUPZJSzYGSh` — **not cut** |
 | T13 | `f08-application-status` | n8n-workflow-builder | T10 | **done** | `S2GGy48ZGPoKtcPr` — **not cut** |
 | T14 | End-to-end verification | orchestrator | T10-T13 | **done** | own smoke test, 9/9; CORS confirmed by real preflight earlier |
-| T15 | QA gate | @qa-engineer | T14 | dispatched | independent; told explicitly not to reuse the dev tests |
-| T16 | `done.md` for feature 11 | orchestrator | T15 | pending | |
+| T15 | QA gate | @qa-engineer | T14 | **done** | 4 criticals found; 3 fixed + re-verified, 1 disclosed. `qa-report-08.md` |
+| T16 | `done.md` for feature 11 | orchestrator | T15 | **done** | contract + honest limits |
 | T17 | Rewrite feature README body | orchestrator | — | **done** | EN + RU pair rewritten in the S2 waiting window, per plan review §10 — no longer contradicts its own header |
 | T18 | Final commit + backlog status | @devops | T16,T17 | pending | |
+| T21 | Session history (operator request, ~12:15) | orchestrator | T18 | pending | via the `create-session-history` skill, after the feature closes |
 
 ## Already done before the board opened
 

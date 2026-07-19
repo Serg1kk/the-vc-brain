@@ -28,8 +28,7 @@ export const MAX_LINK_COUNT = 5;
 
 export function validateDeckFile(file: File | null): string | null {
   if (!file) return "Attach your deck as a PDF.";
-  const isPdf =
-    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
   if (!isPdf) return "Only PDF files are accepted here.";
   if (file.size > MAX_DECK_BYTES) return "The deck is over 10 MB. Trim it and try again.";
   return null;

@@ -10,9 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApplyRouteImport } from './routes/apply'
+import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ATokenRouteImport } from './routes/a.$token'
+import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as ApplyIndexRouteImport } from './routes/apply.index'
 import { Route as ApplyQuestionsRouteImport } from './routes/apply.questions'
 import { Route as ApplyStatusRouteImport } from './routes/apply.status'
 
@@ -21,9 +23,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApplyRoute = ApplyRouteImport.update({
-  id: '/apply',
-  path: '/apply',
+const AppRouteRoute = AppRouteRouteImport.update({
+  id: '/app',
+  path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -36,74 +38,97 @@ const ATokenRoute = ATokenRouteImport.update({
   path: '/a/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const ApplyIndexRoute = ApplyIndexRouteImport.update({
+  id: '/apply/',
+  path: '/apply/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApplyQuestionsRoute = ApplyQuestionsRouteImport.update({
-  id: '/questions',
-  path: '/questions',
-  getParentRoute: () => ApplyRoute,
+  id: '/apply/questions',
+  path: '/apply/questions',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApplyStatusRoute = ApplyStatusRouteImport.update({
-  id: '/status',
-  path: '/status',
-  getParentRoute: () => ApplyRoute,
+  id: '/apply/status',
+  path: '/apply/status',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/apply': typeof ApplyRouteWithChildren
+  '/app': typeof AppRouteRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
+  '/app/': typeof AppIndexRoute
+  '/apply/': typeof ApplyIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/apply': typeof ApplyRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
+  '/app': typeof AppIndexRoute
+  '/apply': typeof ApplyIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/apply': typeof ApplyRouteWithChildren
+  '/app': typeof AppRouteRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
+  '/app/': typeof AppIndexRoute
+  '/apply/': typeof ApplyIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/apply'
+    | '/app'
     | '/privacy'
     | '/a/$token'
     | '/apply/questions'
     | '/apply/status'
+    | '/app/'
+    | '/apply/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/apply'
     | '/privacy'
     | '/a/$token'
     | '/apply/questions'
     | '/apply/status'
+    | '/app'
+    | '/apply'
   id:
     | '__root__'
     | '/'
-    | '/apply'
+    | '/app'
     | '/privacy'
     | '/a/$token'
     | '/apply/questions'
     | '/apply/status'
+    | '/app/'
+    | '/apply/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ApplyRoute: typeof ApplyRouteWithChildren
+  AppRouteRoute: typeof AppRouteRouteWithChildren
   PrivacyRoute: typeof PrivacyRoute
   ATokenRoute: typeof ATokenRoute
+  ApplyQuestionsRoute: typeof ApplyQuestionsRoute
+  ApplyStatusRoute: typeof ApplyStatusRoute
+  ApplyIndexRoute: typeof ApplyIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -115,11 +140,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/apply': {
-      id: '/apply'
-      path: '/apply'
-      fullPath: '/apply'
-      preLoaderRoute: typeof ApplyRouteImport
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -136,40 +161,57 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ATokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/apply/': {
+      id: '/apply/'
+      path: '/apply'
+      fullPath: '/apply/'
+      preLoaderRoute: typeof ApplyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/apply/questions': {
       id: '/apply/questions'
-      path: '/questions'
+      path: '/apply/questions'
       fullPath: '/apply/questions'
       preLoaderRoute: typeof ApplyQuestionsRouteImport
-      parentRoute: typeof ApplyRoute
+      parentRoute: typeof rootRouteImport
     }
     '/apply/status': {
       id: '/apply/status'
-      path: '/status'
+      path: '/apply/status'
       fullPath: '/apply/status'
       preLoaderRoute: typeof ApplyStatusRouteImport
-      parentRoute: typeof ApplyRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
-interface ApplyRouteChildren {
-  ApplyQuestionsRoute: typeof ApplyQuestionsRoute
-  ApplyStatusRoute: typeof ApplyStatusRoute
+interface AppRouteRouteChildren {
+  AppIndexRoute: typeof AppIndexRoute
 }
 
-const ApplyRouteChildren: ApplyRouteChildren = {
-  ApplyQuestionsRoute: ApplyQuestionsRoute,
-  ApplyStatusRoute: ApplyStatusRoute,
+const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppIndexRoute: AppIndexRoute,
 }
 
-const ApplyRouteWithChildren = ApplyRoute._addFileChildren(ApplyRouteChildren)
+const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
+  AppRouteRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ApplyRoute: ApplyRouteWithChildren,
+  AppRouteRoute: AppRouteRouteWithChildren,
   PrivacyRoute: PrivacyRoute,
   ATokenRoute: ATokenRoute,
+  ApplyQuestionsRoute: ApplyQuestionsRoute,
+  ApplyStatusRoute: ApplyStatusRoute,
+  ApplyIndexRoute: ApplyIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

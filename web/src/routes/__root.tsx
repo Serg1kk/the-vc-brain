@@ -80,14 +80,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "The VC Brain — Founder application" },
       {
         name: "description",
-        content:
-          "Apply for a $100K pre-seed check. A verdict within 24 hours.",
+        content: "Apply for a $100K pre-seed check. A verdict within 24 hours.",
       },
       { property: "og:title", content: "The VC Brain — Founder application" },
       {
         property: "og:description",
-        content:
-          "Apply for a $100K pre-seed check. A verdict within 24 hours.",
+        content: "Apply for a $100K pre-seed check. A verdict within 24 hours.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

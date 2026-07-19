@@ -16,7 +16,10 @@ export const Route = createFileRoute("/apply/questions")({
   head: () => ({
     meta: [
       { title: "A few follow-up questions — The VC Brain" },
-      { name: "description", content: "Optional follow-up questions to fill in what your deck didn't cover." },
+      {
+        name: "description",
+        content: "Optional follow-up questions to fill in what your deck didn't cover.",
+      },
       { property: "og:title", content: "A few follow-up questions — The VC Brain" },
       { property: "og:description", content: "Optional follow-up questions." },
       { name: "robots", content: "noindex" },
@@ -79,8 +82,8 @@ function Questions() {
         <header>
           <h1>{questionsTitle(gapQuestions.length)}</h1>
           <p className="mt-3 text-[15px] text-[color:var(--color-text-muted)]">
-            Optional. About two minutes. Skipping any of these does not count against you — it
-            only means we'll have less to go on.
+            Optional. About two minutes. Skipping any of these does not count against you — it only
+            means we'll have less to go on.
           </p>
         </header>
 

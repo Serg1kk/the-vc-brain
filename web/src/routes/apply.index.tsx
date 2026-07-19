@@ -10,7 +10,7 @@ import { PageShell } from "../components/PageShell";
 import { SubmitProgress } from "../components/SubmitProgress";
 import { submitIntake } from "../lib/api";
 import { fileToBase64 } from "../lib/file";
-import { getIntakeSubmissionId } from "../lib/idempotency";
+import { getIntakeSubmissionId, resetIntakeSubmissionId } from "../lib/idempotency";
 import { saveIntakeResponse } from "../lib/session-handoff";
 import { ApiError, type ArtifactLink, type ExtraFile } from "../lib/types";
 import {
@@ -22,20 +22,18 @@ import {
   validateEmail,
 } from "../lib/validation";
 
-export const Route = createFileRoute("/apply")({
+export const Route = createFileRoute("/apply/")({
   head: () => ({
     meta: [
       { title: "Apply — The VC Brain" },
       {
         name: "description",
-        content:
-          "Apply for a $100K pre-seed check. Three fields, a verdict within 24 hours.",
+        content: "Apply for a $100K pre-seed check. Three fields, a verdict within 24 hours.",
       },
       { property: "og:title", content: "Apply — The VC Brain" },
       {
         property: "og:description",
-        content:
-          "Apply for a $100K pre-seed check. Three fields, a verdict within 24 hours.",
+        content: "Apply for a $100K pre-seed check. Three fields, a verdict within 24 hours.",
       },
     ],
   }),
@@ -122,6 +120,19 @@ function Apply() {
 
       saveIntakeResponse(trimmedCompany, response);
 
+      // Close this idempotency scope now that the submission has succeeded.
+      //
+      // The id is what makes a retry safe: the backend keys `applications.id` on it, so a
+      // resend after a network failure collides with the existing row and replays the stored
+      // response instead of creating a duplicate. But it was never cleared, so it also
+      // "protected" the NEXT, genuinely different application in the same tab — a second
+      // founder's submission collided with the first row and silently returned the first
+      // founder's questions, with nothing written to the database and no error shown.
+      //
+      // Resetting only on SUCCESS keeps both behaviours: a retry before success still reuses
+      // the id and dedupes; a new attempt after success starts a fresh scope.
+      resetIntakeSubmissionId();
+
       if (response.gap_questions.length > 0) {
         navigate({ to: "/apply/questions" });
       } else {
@@ -135,14 +146,10 @@ function Apply() {
         } else if (err.message) {
           setApiError(err.message);
         } else {
-          setApiError(
-            "Something went wrong on our side. Your answers are still here — try again.",
-          );
+          setApiError("Something went wrong on our side. Your answers are still here — try again.");
         }
       } else {
-        setApiError(
-          "Something went wrong on our side. Your answers are still here — try again.",
-        );
+        setApiError("Something went wrong on our side. Your answers are still here — try again.");
       }
     }
   }
@@ -153,23 +160,16 @@ function Apply() {
         <header>
           <h1>Apply for a $100K pre-seed check</h1>
           <p className="mt-3 text-[15px] text-[color:var(--color-text-muted)]">
-            Three fields. A verdict within 24 hours. We do the research ourselves — you don't
-            need to write a summary of your own company.
+            Three fields. A verdict within 24 hours. We do the research ourselves — you don't need
+            to write a summary of your own company.
           </p>
         </header>
 
         <DisclosureBanner />
 
-        {apiError ? (
-          <ErrorNotice message={apiError} />
-        ) : null}
+        {apiError ? <ErrorNotice message={apiError} /> : null}
 
-        <form
-          onSubmit={onSubmit}
-          noValidate
-          className="space-y-6"
-          aria-busy={submitting}
-        >
+        <form onSubmit={onSubmit} noValidate className="space-y-6" aria-busy={submitting}>
           <fieldset
             className="ms-rule space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 sm:p-8 shadow-[0_1px_2px_rgba(10,15,60,0.04),0_20px_40px_-24px_rgba(10,15,60,0.15)]"
             disabled={submitting}
@@ -196,7 +196,11 @@ function Apply() {
                 className="mt-2 w-full rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
               />
               {companyErr ? (
-                <p id="company-err" className="mt-1 text-[13px]" style={{ color: "var(--color-warn)" }}>
+                <p
+                  id="company-err"
+                  className="mt-1 text-[13px]"
+                  style={{ color: "var(--color-warn)" }}
+                >
                   {companyErr}
                 </p>
               ) : null}
@@ -220,7 +224,11 @@ function Apply() {
                 className="mt-2 w-full rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
               />
               {emailErr ? (
-                <p id="email-err" className="mt-1 text-[13px]" style={{ color: "var(--color-warn)" }}>
+                <p
+                  id="email-err"
+                  className="mt-1 text-[13px]"
+                  style={{ color: "var(--color-warn)" }}
+                >
                   {emailErr}
                 </p>
               ) : null}
@@ -254,7 +262,10 @@ function Apply() {
             disabled={submitting}
           >
             <legend className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-text-muted)]">
-              Links <span className="ml-1 font-medium normal-case tracking-normal text-[color:var(--color-text-muted)]">— Optional</span>
+              Links{" "}
+              <span className="ml-1 font-medium normal-case tracking-normal text-[color:var(--color-text-muted)]">
+                — Optional
+              </span>
             </legend>
             <p className="mt-1 text-[13px] text-[color:var(--color-text-muted)]">
               A repo, a live URL, or a notebook. These are worth more to us than slides.
@@ -269,7 +280,10 @@ function Apply() {
             disabled={submitting}
           >
             <legend className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-text-muted)]">
-              Anything else <span className="ml-1 font-medium normal-case tracking-normal text-[color:var(--color-text-muted)]">— Optional</span>
+              Anything else{" "}
+              <span className="ml-1 font-medium normal-case tracking-normal text-[color:var(--color-text-muted)]">
+                — Optional
+              </span>
             </legend>
             <p className="mt-1 text-[13px] text-[color:var(--color-text-muted)]">
               Stored with your application. Only PDFs are read automatically in this version —

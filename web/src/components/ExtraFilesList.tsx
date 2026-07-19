@@ -82,14 +82,7 @@ export function ExtraFilesList({ files, errors, onFiles, onErrors }: Props) {
           >
             Add a file
           </button>
-          <input
-            ref={inputRef}
-            id={id}
-            type="file"
-            multiple
-            onChange={add}
-            className="sr-only"
-          />
+          <input ref={inputRef} id={id} type="file" multiple onChange={add} className="sr-only" />
         </>
       ) : null}
     </div>

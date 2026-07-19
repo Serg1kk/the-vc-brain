@@ -27,11 +27,7 @@ function baseUrl(): string {
   return url.replace(/\/$/, "");
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit,
-  timeoutMs: number,
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
@@ -48,8 +44,7 @@ async function request<T>(
   } catch (err) {
     clearTimeout(timer);
     if (err instanceof ApiError) throw err;
-    const aborted =
-      err instanceof DOMException && err.name === "AbortError";
+    const aborted = err instanceof DOMException && err.name === "AbortError";
     throw new ApiError(
       aborted ? "internal" : "internal",
       aborted
@@ -92,9 +87,7 @@ export function submitIntake(payload: IntakeSubmission): Promise<IntakeResponse>
   );
 }
 
-export function submitGapAnswers(
-  payload: GapAnswersRequest,
-): Promise<GapAnswersResponse> {
+export function submitGapAnswers(payload: GapAnswersRequest): Promise<GapAnswersResponse> {
   return request<GapAnswersResponse>(
     "/webhook/f08-gap-answers",
     { method: "POST", body: JSON.stringify(payload) },
@@ -102,9 +95,7 @@ export function submitGapAnswers(
   );
 }
 
-export function getApplicationStatus(
-  applicationId: string,
-): Promise<StatusResponse> {
+export function getApplicationStatus(applicationId: string): Promise<StatusResponse> {
   const q = encodeURIComponent(applicationId);
   return request<StatusResponse>(
     `/webhook/f08-application-status?application_id=${q}`,

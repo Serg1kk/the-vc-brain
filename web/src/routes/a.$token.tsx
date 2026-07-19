@@ -97,9 +97,7 @@ function FollowUp() {
     return (
       <PageShell>
         <h1>These questions have already been answered.</h1>
-        <p className="mt-3 text-[14px] text-[color:var(--color-text-muted)]">
-          Nothing to do here.
-        </p>
+        <p className="mt-3 text-[14px] text-[color:var(--color-text-muted)]">Nothing to do here.</p>
       </PageShell>
     );
   }

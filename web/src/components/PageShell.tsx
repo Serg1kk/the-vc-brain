@@ -8,7 +8,17 @@ interface Props {
 export function PageShell({ children }: Props) {
   return (
     <div className="min-h-screen bg-[color:var(--color-bg)]">
-      {/* Glass pill nav — matches maschmeyer-group.de */}
+      {/*
+        Glass pill nav in the sponsor's palette, carrying the sponsor's name — an operator
+        decision (Jul 19): this is a hackathon submission built FOR the Maschmeyer Group
+        challenge, and showing the intake page in their brand is how you demonstrate what it
+        would look like for them. It runs locally only and is never hosted, so it cannot be
+        mistaken for their live product.
+        Deliberately NOT restored from the generated version: the German site nav
+        (Über uns / Fonds / Smart Money / Kontakt), which mimicked their actual site
+        structure, and the "© Maschmeyer Group" footer, which is a legal assertion rather
+        than branding. The footer names the product instead.
+      */}
       <header className="sticky top-4 z-40 px-4">
         <nav
           className="mx-auto flex h-[56px] max-w-[1120px] items-center justify-between rounded-full border pl-6 pr-2 backdrop-blur-xl"
@@ -20,25 +30,13 @@ export function PageShell({ children }: Props) {
         >
           <Link
             to="/apply"
-            className="text-[15px] font-medium tracking-[-0.01em] text-[color:var(--color-text)]"
+            className="pr-2 text-[15px] font-medium tracking-[-0.01em] text-[color:var(--color-text)]"
           >
             Maschmeyer Group
           </Link>
 
-          <div className="hidden items-center gap-10 text-[14px] text-[color:var(--color-text)] md:flex">
-            <span>Über uns</span>
-            <span>Fonds</span>
-            <span>Smart Money</span>
-          </div>
-
-          <span
-            className="inline-flex items-center rounded-full px-5 py-2 text-[14px] font-medium"
-            style={{
-              background: "var(--color-lavender)",
-              color: "var(--color-text)",
-            }}
-          >
-            Kontakt
+          <span className="pr-4 text-[13px] text-[color:var(--color-text-muted)]">
+            Pre-seed applications
           </span>
         </nav>
       </header>
@@ -47,7 +45,7 @@ export function PageShell({ children }: Props) {
         {children}
         <footer className="mt-20 border-t pt-6 text-[12px] text-[color:var(--color-text-muted)]">
           <div className="flex items-center justify-between">
-            <span>© Maschmeyer Group</span>
+            <span>The VC Brain</span>
             <Link to="/privacy" className="hover:text-[color:var(--color-text)]">
               Privacy
             </Link>

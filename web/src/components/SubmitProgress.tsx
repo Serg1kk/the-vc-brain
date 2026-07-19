@@ -30,8 +30,8 @@ export function SubmitProgress() {
             state === "done"
               ? "var(--color-ok)"
               : state === "active"
-              ? "var(--color-accent)"
-              : "var(--color-text-muted)";
+                ? "var(--color-accent)"
+                : "var(--color-text-muted)";
           return (
             <li key={label} className="flex items-center gap-3 text-[14px]">
               <span
@@ -39,7 +39,11 @@ export function SubmitProgress() {
                 className="inline-block h-2 w-2 rounded-full"
                 style={{ background: color }}
               />
-              <span style={{ color: state === "pending" ? "var(--color-text-muted)" : "var(--color-text)" }}>
+              <span
+                style={{
+                  color: state === "pending" ? "var(--color-text-muted)" : "var(--color-text)",
+                }}
+              >
                 {label}
                 {state === "active" ? "…" : ""}
               </span>

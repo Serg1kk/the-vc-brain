@@ -17,7 +17,8 @@ export function questionsProgress(current: number, total: number): string {
   return `Question ${current} of ${total}`;
 }
 
-const REL = typeof Intl !== "undefined" ? new Intl.RelativeTimeFormat("en", { numeric: "auto" }) : null;
+const REL =
+  typeof Intl !== "undefined" ? new Intl.RelativeTimeFormat("en", { numeric: "auto" }) : null;
 
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();

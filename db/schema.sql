@@ -996,6 +996,22 @@ BEGIN
   -- BEFORE deleting ANY raw_signals below.
   DELETE FROM evidence WHERE claim_id = ANY (v_all_claim_ids);
   DELETE FROM claims WHERE id = ANY (v_all_claim_ids);
+
+  -- Feature 08: interviews.card_id REFERENCES cards ON DELETE RESTRICT, so every
+  -- interview attached to a card in the purge set must go BEFORE the cards delete.
+  -- Found by 08's QA gate: erasure raised 23503 for EVERY founder who had been
+  -- through f08-intake-submit, i.e. the right to erasure did not work at all for
+  -- inbound applicants. Reproduced on two independent founders.
+  --
+  -- Keyed on v_all_card_ids rather than on v_sole_interview_ids deliberately: the
+  -- sole-founder-company sweep below is a SUBSET, and the FK violation observed came
+  -- from a card outside it. Sweeping by the cards actually being deleted is the
+  -- condition that has to hold; the later sweep stays as-is and simply matches
+  -- nothing the second time.
+  DELETE FROM voice_artifacts
+   WHERE interview_id IN (SELECT id FROM interviews WHERE card_id = ANY (v_all_card_ids));
+  DELETE FROM interviews WHERE card_id = ANY (v_all_card_ids);
+
   DELETE FROM cards WHERE id = ANY (v_all_card_ids);
 
   -- founder_company for every id in this person's identity set MUST go
@@ -1608,7 +1624,18 @@ SELECT
   ml.version                                        AS memo_version,
   -- False for every row today (06 not built, memos empty) -- a truthful
   -- column, not a placeholder (design SS6.4).
-  (ml.application_id IS NOT NULL)                   AS memo_available
+  (ml.application_id IS NOT NULL)                   AS memo_available,
+  -- Task 11 addendum (feature 11 QA finding, 2026-07-19): the SYNTHETIC
+  -- badge (lovable-brief.md SS4.6, "must never be possible to see a
+  -- synthetic record without the badge") has no other reliable read path on
+  -- this view -- joining out to api_founders.is_synthetic requires a founder
+  -- card to exist and resolve application_id, which is not guaranteed (and,
+  -- measured live on the feature 11 fixture, was missing for 4 of 5 inbound
+  -- companies before that fixture was corrected). Read straight off the
+  -- already-joined companies row instead -- one extra column, no new join,
+  -- appended at the end per this file's additive-only CREATE OR REPLACE VIEW
+  -- convention (api_founders.founder_score_gaps above is the same pattern).
+  co.is_synthetic                                   AS is_synthetic
 FROM applications a
 LEFT JOIN companies                    co ON co.id = a.company_id
 LEFT JOIN score_founder_latest         sf ON sf.application_id = a.id

@@ -41,11 +41,11 @@
 | 04 | market-trend-competition | **done** (QA gate PASSED · 141 unit tests + adversarial gate · commits `a130c03`/`2be26f9` · n8n `f04-market-intel`/`f04-competition-intel`/`f04-db-write` · see `04-market-trend-competition/handoff.md`; 3 known-open non-blocking items NEW-1..3 recorded there) | 01-schema (no schema additions needed) | 05, 06 | 1 |
 | 07 | thesis-engine | **done** (QA report present, `handoff.md` written) | 01-schema | 02 (gate), 09 | 1 |
 | 05 | truth-gap-trust | **done** (QA gate PASSED after 2 passes · 197 tests · view `claim_trust` live · 3 n8n workflows active: `f05-trust-rollup` `Wtd887vYwv5x3FvH`, `f05-verify-claims` `UubHQ9HZWVdOrKjq`, `f05-contradiction-scan` `csvoMOTs7MNBdXLI` · commits `f0c2b90`→`2619230` · see `05-truth-gap-trust/done.md`; 10 known-open items recorded there) | 03 & 04 output contracts | 06 | 2 |
-| 08 | founder-intake (compact B) | backlog | 01-schema, 02 (pre-fill sub-workflows) | 11 | 2 |
+| 08 | founder-intake (compact B) | **in-build** (near done — six n8n workflows deployed and verified end to end, commit `1af02cd`; QA pass finishing; terminal still live in `web/`) | 01-schema, 02 (pre-fill sub-workflows) | 11 | 2 |
 | 10 | api-cli-skill | **done** (QA gate PASSED, 3 rounds · views + `f10-nl-search` + `lib/f10` 99 tests + `bin/vcbrain` + skill · read-only · see `10-api-cli-skill/done.md`) | 01-schema (PostgREST) | 09 (NL-search UI) | 2 |
 | 06 | memo-decision | backlog | 03, 04, 05 | 09 | 3 |
-| 09 | investor-dashboard | backlog | 03-07 outputs (design track can start NOW) | 12 demo | 3 |
-| 11 | demo-data-ethics | backlog | 02, 08 | 12 demo | 3 |
+| 09 | investor-dashboard | **in-build** (design track DONE — 4 spec docs + 14-screen export, commit `67d71d4`; `/app/*` integration in progress, see the 09 section at the end of this file) | 03-07 outputs (design track can start NOW) | 12 demo | 3 |
+| 11 | demo-data-ethics | **in-build** (fixture applied + verified live, commit `7edf3ae`; badge gap + pipeline runs in progress; UI surfaces land inside 09) | 02, 08 | 12 demo | 3 |
 | 12 | docker-deploy | backlog | compose base can start EARLY; final needs all | — | 0* + final |
 
 ## Key insight: depend on the SCHEMA, not on 01 being finished
@@ -806,3 +806,160 @@ column semantics, the `freshness`-vs-`first_seen_at` difference, and the traps.
   opt-out passed for hours while exercising a code path no real founder takes, because its fixture
   hand-inserted a `founder_company` row. Every regression lock in feature 10 has since been verified
   by reverting the fix and confirming the test fails loudly.
+
+## 2026-07-19 ~12:10 · Features 09 + 11 IN-BUILD (append by the orchestrator terminal)
+
+**09 owns `/app/*` in `web/` and nothing else.** Feature 08's `/apply*`, `/a/:token`, `/privacy`
+and `src/routes/apply*.tsx` are untouched. Shared and append-only for 09: `src/styles.css`
+(tokens appended, palette not re-themed), `src/components/ui/*`, `src/lib/types.ts`.
+New and 09-owned: `src/routes/app.*`, `src/components/app/*`, `src/lib/investor-api.ts`.
+
+**08's terminal is live in `web/` right now** — it renamed `apply.tsx` → `apply.index.tsx` and
+edited `PageShell.tsx` during this session. Two terminals in one frontend: stage explicit paths.
+
+### Live data reality as of ~12:10 (measured, not assumed)
+
+```
+scores:  founder_score=34 · thesis_fit=30 · trust=25 · idea_vs_market=8 · market=6
+claims:  unverified=838 · missing=300 · verified=34 · partially_supported=1
+founders=164 (14 synthetic) · thesis_evaluations=242 · memos=0
+```
+The earlier note that `scores(axis='founder')` and `axis='trust'` were empty is **out of date** —
+both are populated. `memos` is the only downstream table still at zero.
+
+### Feature 11 — what is done and what is left
+
+`db/fixtures/11-demo-data.sql` **applies cleanly, is idempotent, and smoke passes before and
+after it.** Nine of its ten scenarios were verified by querying the resulting rows, not by
+re-reading the INSERTs. Two defects found, both being fixed now:
+
+- **Four of five inbound companies had no `card_type='founder'` card** (Cassia, Kelpgrid,
+  Ledgerline, Playdrift), so `api_founders.company_name`/`application_id` are NULL for them.
+- **`api_applications` exposes no `is_synthetic` column at all**, and the fallback join to
+  `api_founders` is exactly the one broken above. So four feed rows currently have **no working
+  read path to the SYNTHETIC badge**, which `09/lovable-brief.md` §4.6 makes unconditional.
+  Fix is additive: expose company `is_synthetic` on the view directly.
+
+**11's remaining surfaces are not 11's to build — they land inside 09:** the synthetic badge, the
+opt-out / delete-on-request button on the founder card (§9.7), and the "what we collect" note
+(08 already ships `DisclosureBanner.tsx`). 11 is otherwise data + ethics prose.
+
+### Feature 06 — unblocked upstream, ONE blocker of its own
+
+03, 04, 05 are all done and their outputs are live in the tables above, so 06's hard deps are
+satisfied and the `memos` table already exists. But:
+
+**🔴 BLOCKER — the recommendation vocabulary conflict is REAL and confirmed live.** The shipped
+constraint is
+`CHECK (recommendation = ANY (ARRAY['invest','pass','watch']))`
+while `06-memo-decision/README.md` §4 specifies `proceed / proceed-with-conditions / pass /
+watchlist`. **The database will reject three of the README's four values.** Whoever opens 06
+must pick one and either fix the README or migrate the constraint **before writing a line** —
+this is an operator decision, not a default to be set silently. Note that a four-value
+vocabulary also needs a migration, and 09's memo screen renders whatever ships.
+
+Second thing 06 should know: it depends on 09 for its render surface (memo view is §10 of
+`09/lovable-brief.md`), so it can build the n8n `generate-memo` workflow in parallel but its
+screen appears only once 09's `/app/f/:id/memo` route lands.
+
+## 2026-07-19 ~12:35 · 08 — ⚠️ SHARED FILE EDITED: `db/schema.sql`, `purge_founder()` — GDPR blocker
+
+**The right to erasure did not work at all** for any founder who had been through
+`f08-intake-submit`. Found by 08's QA gate, reproduced on two independent founders and then
+by me on a real application:
+
+```
+ERROR: update or delete on table "cards" violates foreign key constraint
+       "interviews_card_id_fkey" on table "interviews"
+CONTEXT: SQL statement "DELETE FROM cards WHERE id = ANY (v_all_card_ids)"
+```
+
+`interviews.card_id REFERENCES cards ON DELETE RESTRICT`, but `purge_founder()` deleted `cards`
+(line ~999) well before `interviews` (~1022). Any inbound applicant was therefore un-erasable —
+the function raised 23503 and rolled back the whole purge.
+
+**Fix (committed):** sweep `voice_artifacts` + `interviews` for the cards being deleted,
+immediately before the `cards` delete. **Keyed on `v_all_card_ids`, not on
+`v_sole_interview_ids`** — the existing sole-founder-company sweep is a strict subset, and the
+violation came from a card outside it, so a simple reorder would have left the bug reachable.
+The later sweep is unchanged and now matches nothing the second time.
+
+**Verified:** `./db/apply.sh` clean · `db/tests/smoke.sql` green · `purge_founder()` on a real
+inbound founder now completes, removes the founder and their interviews, and leaves exactly the
+anonymised audit event (run inside a rolled-back transaction, so live data is untouched).
+
+**Why this matters beyond 08:** every feature writing `interviews` rows inherits it, and it is
+the kind of defect that stays invisible until someone actually exercises a deletion request —
+which nobody had, because the function had never been run against a founder with an interview.
+The `purge_founder()` delete order now has three separate ordering constraints documented inline
+(evidence→claims→cards, thesis_evaluations before scores, and now interviews before cards);
+anyone adding a table with an `ON DELETE RESTRICT` reference into that subtree must add theirs too.
+
+### 2026-07-19 ~12:20 · 🟢 OPERATOR RULING — memo recommendation vocabulary RESOLVED
+
+**The conflict is closed. Four values win; the shipped three-value constraint is being migrated.**
+
+```
+was:  CHECK (recommendation = ANY (ARRAY['invest','pass','watch']))
+now:  CHECK (recommendation = ANY (ARRAY['proceed','proceed-with-conditions','pass','watchlist']))
+```
+
+Rationale: it is the language an investment committee actually uses, and
+`06-memo-decision/README.md` §4 already specifies it as the decision node's output. `memos` had
+**0 rows**, so nothing had to be migrated — only the constraint. Applied by the orchestrator
+terminal via `db/schema.sql` (idempotent, `./db/apply.sh`-safe), and verified by watching the new
+constraint actually reject `'invest'` inside a rolled-back transaction — not merely by reading it
+back.
+
+**Feature 06: this was your blocker and it is gone.** Do not re-open it, do not "fix the README"
+in the other direction. The decision node emits one of the four values above.
+**Feature 09** renders the same four on the memo screen — the earlier design note saying it
+renders the three shipped values is now superseded.
+
+### 2026-07-19 ~12:20 · 06 starts in a PARALLEL terminal — file ownership
+
+Operator's call: 06 runs alongside 09 rather than queueing behind it, because they do not collide.
+
+- **06 owns:** `n8n/workflows/f06-*`, `lib/f06/`, `docs/backlog/06-memo-decision/`. Its build is
+  the `generate-memo` and `deep-dive-questions` workflows plus the deterministic decision node.
+- **09 (orchestrator terminal) owns:** everything under `web/src/routes/app*`,
+  `web/src/components/app/`, `web/src/lib/investor-api.ts`. **06 must not touch `web/`** — the memo
+  screen (`/app/f/:applicationId/memo`, spec at `09/lovable-brief.md` §10) is delivered by 09.
+- Contract between them: 06 writes `memos` rows; 09 reads them. If 06 needs a column that does not
+  exist, announce it here first — do not add it silently, 09 is reading the table concurrently.
+
+⚠️ **Three terminals are now live in `web/`-adjacent space (08 finishing, 09 building, 06 in n8n).**
+Stage explicit paths on every commit. `web/src/styles.css` is append-only for everyone.
+
+### 2026-07-19 ~12:20 · Prettier noise on feature-08 files — not a content change
+
+09's foundation agent ran the project's own `npm run format`, which is repo-wide by default. It
+reformatted ~15 feature-08/shared files (whitespace and line-reflow only, verified diff by diff).
+It deliberately did **not** `git checkout --` them, because those files also carry other agents'
+uncommitted work (PageShell's nav rework, privacy.tsx's contact fix) and discarding live work to
+undo cosmetic noise would have been the worse trade. **If you see formatting-only diffs on 08's
+files, that is this — nobody edited your content.** Further prettier runs are scoped to 09's files.
+
+## 2026-07-19 ~12:45 · 08 founder-intake — **DONE**
+
+QA gate passed after fixes. Six workflows deployed and active; 115 unit tests; independent
+smoke 9/9. Full contract and honest limits: `docs/backlog/08-founder-intake-interview/done.md`.
+
+**Unblocks feature 11** (demo data & ethics). Two things 11 should read first: `purge_founder()`
+does **not** sweep Storage objects, so an uploaded deck survives an erasure request and becomes
+unfindable once the `applications` row goes — that gap belongs to 11's opt-out surface. And 08
+writes real founder rows with both `email` and `github` identities, so a demo purge is a genuine
+end-to-end test, not a synthetic one.
+
+**Cross-feature fix landed here:** `purge_founder()` delete-ordering (see the ~12:35 entry) —
+erasure was broken for every inbound applicant.
+
+**Still open for whoever owns them:** 07's evidence-less `company.*` gap claims · 04's 9 NULL-FK
+`raw_signals` and 14 unpolyfilled `new URL()` calls · 05's ~190 `entity_type='application'`
+events. Repro SQL for all four is in the ~11:40 entry.
+
+**One limitation worth the whole team knowing about, because it affects how we present scoring:**
+the same deck submitted twice produced different scores (`founder_score` 18.15 vs 30.00,
+`thesis_fit` 38.10 vs 61.90). The extractor picked different verbatim quotes on each run;
+`temperature` is omitted because `gpt-5.6-luna` rejects `0`. Anyone demoing "evidence-backed,
+reproducible scoring" should know a judge can surface this by submitting one deck twice.

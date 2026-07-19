@@ -16,7 +16,10 @@ export const Route = createFileRoute("/apply/status")({
   head: () => ({
     meta: [
       { title: "Application received — The VC Brain" },
-      { name: "description", content: "Your application has been received. A verdict will follow within 24 hours." },
+      {
+        name: "description",
+        content: "Your application has been received. A verdict will follow within 24 hours.",
+      },
       { property: "og:title", content: "Application received — The VC Brain" },
       { property: "og:description", content: "Your application has been received." },
       { name: "robots", content: "noindex" },
@@ -139,26 +142,20 @@ function Status() {
         </div>
 
         {state.deckWarning === "image_only_deck" ? (
-          <div
-            role="note"
-            className="ms-rule"
-          >
+          <div role="note" className="ms-rule">
             <p className="text-[14px]">
               We could not read text from your deck — it looks like the slides are images.
             </p>
             <p className="mt-2 text-[14px]">
-              We've stored it for the investor to read directly, and we've noted in your file
-              that our automatic reading of it was limited. This lowers how much we can verify
-              on our own; it does not count against you.
+              We've stored it for the investor to read directly, and we've noted in your file that
+              our automatic reading of it was limited. This lowers how much we can verify on our
+              own; it does not count against you.
             </p>
           </div>
         ) : null}
 
         {state.deckWarning === "extraction_failed" ? (
-          <div
-            role="note"
-            className="ms-rule"
-          >
+          <div role="note" className="ms-rule">
             <p className="text-[14px]">We couldn't read this file at all.</p>
             <p className="mt-2 text-[14px]">
               We've stored it for the investor to read directly. This does not count against you.
@@ -170,7 +167,10 @@ function Status() {
           <p className="text-[14px]">
             You left {state.openQuestions} question{state.openQuestions === 1 ? "" : "s"}{" "}
             unanswered.{" "}
-            <Link to="/apply/questions" className="text-[color:var(--color-accent)] hover:underline">
+            <Link
+              to="/apply/questions"
+              className="text-[color:var(--color-accent)] hover:underline"
+            >
               You can still add them.
             </Link>
           </p>

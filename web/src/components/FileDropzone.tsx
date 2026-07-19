@@ -52,7 +52,9 @@ export function FileDropzone({ file, onFile, accept, error, label, hint, id }: P
           className="mt-2 rounded-md border border-dashed p-6 text-center transition-colors"
           style={{
             borderColor: dragOver ? "var(--color-accent)" : "var(--color-border)",
-            background: dragOver ? "color-mix(in oklab, var(--color-accent) 6%, transparent)" : "transparent",
+            background: dragOver
+              ? "color-mix(in oklab, var(--color-accent) 6%, transparent)"
+              : "transparent",
           }}
         >
           <p className="text-[14px] text-[color:var(--color-text-muted)]">
@@ -72,14 +74,18 @@ export function FileDropzone({ file, onFile, accept, error, label, hint, id }: P
             accept={accept}
             onChange={onChange}
             className="sr-only"
-            aria-describedby={[hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
+            aria-describedby={
+              [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined
+            }
           />
         </div>
       ) : (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2.5">
           <div className="min-w-0">
             <p className="truncate text-[14px] text-[color:var(--color-text)]">{file.name}</p>
-            <p className="text-[12px] text-[color:var(--color-text-muted)]">{formatBytes(file.size)}</p>
+            <p className="text-[12px] text-[color:var(--color-text-muted)]">
+              {formatBytes(file.size)}
+            </p>
           </div>
           <button
             type="button"

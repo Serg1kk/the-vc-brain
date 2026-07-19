@@ -49,27 +49,27 @@
 }
 
 :root {
-  --bg: #FFFFFF;            /* clean white page */
-  --surface: #F1EEE8;       /* warm light-gray form panel — like Maschmeyer content cards */
-  --surface-2: #ECE7F7;     /* pale lavender panel */
-  --border: #E4E0D6;
-  --text: #0A0F3C;          /* deep midnight navy */
-  --text-muted: #5B6079;
-  --accent: #0A0F3C;        /* primary — dark navy */
-  --accent-foreground: #FFFFFF;
-  --lavender: #D3C7F5;
-  --warn: #0A0F3C;          /* Maschmeyer branding — use navy line, not orange */
-  --ok: #15803D;
+  --bg: #ffffff; /* clean white page */
+  --surface: #f1eee8; /* warm light-gray form panel — like Maschmeyer content cards */
+  --surface-2: #ece7f7; /* pale lavender panel */
+  --border: #e4e0d6;
+  --text: #0a0f3c; /* deep midnight navy */
+  --text-muted: #5b6079;
+  --accent: #0a0f3c; /* primary — dark navy */
+  --accent-foreground: #ffffff;
+  --lavender: #d3c7f5;
+  --warn: #0a0f3c; /* Maschmeyer branding — use navy line, not orange */
+  --ok: #15803d;
   --radius: 6px;
 }
-
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
 
-  html, body {
+  html,
+  body {
     background-color: var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-sans);
@@ -99,7 +99,10 @@
     color: var(--color-text);
   }
 
-  input, textarea, select, button {
+  input,
+  textarea,
+  select,
+  button {
     font: inherit;
     color: inherit;
   }
@@ -112,3 +115,68 @@
   padding-top: 18px;
 }
 
+/*
+ * Feature 09 (investor dashboard) — new tokens only, per lovable-brief.md §7.1.
+ * The founder app above is a form; this is a data surface. Nothing above this
+ * point is touched or re-themed — this is the sponsor's brand palette.
+ */
+
+:root {
+  --track: #e4e0d6; /* unfilled portion of an axis bar */
+  --row-h: 56px; /* feed row height */
+}
+
+@theme inline {
+  --color-track: var(--track);
+  /* One monospace face for every number, chip and score (§7) — system stack, no
+     webfont, so it survives an offline build. Also exposes the `font-mono` utility. */
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+/* The "Not assessed" axis-bar state (§4.3): a hatched track, never an empty or
+   0%-filled bar — an absent number and a low number are opposite findings. */
+@utility track-hatch {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-border) 0,
+    var(--color-border) 1.5px,
+    transparent 1.5px,
+    transparent 5px
+  );
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+/* The two computation-provenance chips (§4.1). Distinguishable without colour and
+   without hover — a feed of 40 rows must read at a glance which column is a rule
+   and which is a model's judgement. */
+@utility chip-rule {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  padding: 0 4px;
+}
+
+/* The middle chip (▦◇, "rule on model input"): a dashed border over the rule's
+   surface tone marks that the arithmetic is a rule but at least one input was a
+   model's judgement — a third, at-a-glance-distinct form, not a blend of the other
+   two. */
+@utility chip-rule-on-model {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 1px dashed var(--color-text-muted);
+  padding: 0 3px;
+}
+
+@utility chip-model {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background-color: var(--color-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0 4px;
+}
