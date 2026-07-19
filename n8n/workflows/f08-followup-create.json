@@ -1,0 +1,655 @@
+{
+ "name": "f08-followup-create",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "f08-followup-create",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "871e2a66-a7eb-41f2-b68e-f70efc4113b8",
+   "name": "Webhook: f08-followup-create",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1400,
+    0
+   ],
+   "webhookId": "0a8fdacd-bb6e-4352-b57a-deb6cae1412c"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst item = $input.first().json;\nconst body = item.body || {};\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst applicationId = String(body.application_id || '').trim();\nif (!applicationId || !UUID_RE.test(applicationId)) {\n  return [{ json: { __valid: false, error: { code: 'invalid_input', message: 'application_id must be a uuid.' } } }];\n}\nconst askedBy = typeof body.asked_by === 'string' && body.asked_by.trim()\n  ? body.asked_by.trim() : 'The investor reviewing your application';\nconst note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;\nreturn [{ json: { __valid: true, application_id: applicationId, asked_by: askedBy, note } }];\n"
+   },
+   "id": "ec260f3d-38a1-4e13-a549-87e44f9fc557",
+   "name": "Validate input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -1160,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "4005a284-d667-4607-bc40-e9aec55df7d8",
+       "leftValue": "={{ $json.__valid }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "a03485f9-102e-4b46-977f-e9f40a0b42e6",
+   "name": "IF: valid?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -920,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: $json.error } }];"
+   },
+   "id": "56317058-4e60-4044-a637-707bec81717f",
+   "name": "Build client error response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -680,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 400
+    }
+   },
+   "id": "ae324b60-a438-499a-9a62-04d851329827",
+   "name": "Respond: bad request (400)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    -440,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst cards = await pgGet.call(this,\n  `cards?application_id=eq.${inp.application_id}&card_type=eq.founder&select=id,founder_id,company_id&order=created_at.asc&limit=1`);\nif (!cards.length) return [{ json: { ...inp, __found: false } }];\nconst card = cards[0];\nconst companies = await pgGet.call(this, `applications?id=eq.${inp.application_id}&select=company_id,artifact_links&limit=1`);\nconst companyRow = companies.length ? companies[0] : null;\nconst companyName = companyRow ? (await pgGet.call(this, `companies?id=eq.${companyRow.company_id}&select=name&limit=1`))[0]?.name : null;\nconst formulaRows = await pgGet.call(this, `score_formulas?axis=eq.founder_score&active=eq.true&select=config&order=created_at.asc&limit=1`);\nconst criteria = (formulaRows.length && formulaRows[0].config && formulaRows[0].config.criteria) || [];\nconst claims = await pgGet.call(this, `claims?card_id=eq.${card.id}&select=id,topic,verification_status,text_verbatim`);\nreturn [{ json: { ...inp, __found: true, card_id: card.id, founder_id: card.founder_id, company_id: card.company_id,\n  company_name: companyName, __criteria: criteria, __current_claims: claims,\n  __artifact_links: (companyRow && companyRow.artifact_links) || {} } }];\n"
+   },
+   "id": "cbbb55ee-6ad5-4567-80c4-dc877f513faf",
+   "name": "Fetch card + criteria + claims",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -680,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "d1050089-7bf6-4c9c-b5f4-18ddc483ea07",
+       "leftValue": "={{ $json.__found }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "3ea79340-c8dc-49e8-8584-fbc5e25ca372",
+   "name": "IF: found?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: { code: 'not_found', message: 'Application not found.' } } }];"
+   },
+   "id": "054e0925-8f45-4e0f-a427-2874599186d4",
+   "name": "Build not-found response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -200,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 404
+    }
+   },
+   "id": "4883133a-6e18-4900-869d-32b016d9b33e",
+   "name": "Respond: not found (404)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    40,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// lib/f08/gaps.js\n// SOURCE OF TRUTH: lib/f08/gaps.js\n//\n// Deterministic gap-question selection for feature 08, design.md \u00a76 (\"Gap\n// questions -- deterministic selection, LLM only for phrasing\"). Selection\n// is code, never a model: read `score_formulas.config.criteria` (the row\n// for `axis='founder_score' AND active`, resolved by the CALLER -- this\n// file only ever sees the `criteria` array/object already extracted from\n// that row's `config`), keep criteria whose `neg_src` is reachable WITHOUT\n// public sources (deck or interview only), drop those already covered by an\n// existing claim, rank by weight, cap at 3.\n//\n// Against the live seeded formula (`db/seed.sql`, `formula_v1`/\n// `founder_score`) this returns exactly `[L2, L3, X5]` in that order --\n// X1/X2 both carry `tavily_extract` in `neg_src` (a public source CAN reach\n// them), so they fail the reachability filter and are never asked. See\n// design.md \u00a76's own table for why exactly these three.\n//\n// Self-contained CommonJS, ZERO imports/requires (docs/backlog/TRACKER.md\n// hard convention). lib/f08/completeness.js (T9) duplicates the\n// reachability filter and the CRITERION_TOPIC map below rather than\n// requiring this file, for the same \"one Code node per file\" reason --\n// gaps.test.js and completeness.test.js both cross-check the two copies\n// stay equal.\n\n// ============================================================================\n// CRITERION_TOPIC -- the criterion-id -> claims.topic mapping this file\n// needs to check \"is this criterion already covered by a claim\". 03's own\n// design.md \u00a74.7 only defines PREFIX-level routing (founder.execution.* /\n// .expertise.* / .leadership.* -> sub-scorer), not a per-criterion topic\n// slug -- that vocabulary is otherwise open (01 design \u00a711) and 03's own\n// fixture only exercises E1/E3/E4/E5/E7/X1/X2/X6/L5, never L2/L3/X5 (the\n// only three this file cares about). This map CLOSES that gap for exactly\n// the three criteria gap-selection needs, following the existing naming\n// style (vertical_tenure, insight_specificity, written_communication, ...):\n// `L2 -> founder.leadership.first_customers` is pinned directly by plan.md\n// T8's own acceptance criterion; `L3`/`X5` are this file's own choice,\n// named in parallel style (L3's anchor literally says \"ICP specificity\";\n// X5's says \"insider granularity\"). Flagged for review rather than assumed\n// silent -- if 03 or 07 later establishes a DIFFERENT topic string for\n// either, this map is the one place to update, and every consumer here\n// reads through it rather than hardcoding a topic elsewhere.\n//\n// The other nine are carried too (not strictly required, since the live\n// config's neg_src filter below excludes them from ever needing a coverage\n// check), purely so this map stays a complete, single source of truth for\n// \"criterion id -> topic\" rather than a partial one that would silently\n// need extending the day a future formula version widens the reachable set.\nconst CRITERION_TOPIC = {\n  E1: 'founder.execution.merged_pr_foreign',\n  E3: 'founder.execution.commit_consistency',\n  E4: 'founder.execution.live_product',\n  E5: 'founder.execution.external_usage',\n  E7: 'founder.execution.provenance',\n  X1: 'founder.expertise.vertical_tenure',\n  X2: 'founder.expertise.insight_specificity',\n  X5: 'founder.expertise.competitor_granularity',\n  X6: 'founder.expertise.unasked_work',\n  L2: 'founder.leadership.first_customers',\n  L3: 'founder.leadership.icp_specificity',\n  L5: 'founder.leadership.written_communication',\n};\n\n// Criteria whose `neg_src` is a subset of this set can be closed WITHOUT any\n// public source -- design.md \u00a76: \"keep criteria whose neg_src contains\n// ONLY deck_parse and interview_answer\". `raw` is not neg_src at all (it is\n// the model's own confidence-cap input, 03 design \u00a72.3) so it never appears\n// here.\nconst GAP_REACHABLE_SOURCES = new Set(['deck_parse', 'interview_answer']);\n\n// ============================================================================\n// Shared helpers\n// ============================================================================\n\n// `config.criteria` arrives as a jsonb ARRAY in the live `score_formulas`\n// row (db/seed.sql), NOT an object keyed by id -- 03's own done.md warns\n// about this explicitly (\"config.criteria ... are jsonb ARRAYS, not objects\n// keyed by id\"). Both shapes are accepted here defensively, same as\n// lib/f03/scoring.js's normalizeCriteriaRegistry(), because this file\n// cannot require() that one either (zero-imports constraint) -- kept as its\n// own small independent copy, narrowed to a list rather than a by-id map\n// since gap selection iterates, it does not look up by id.\nfunction normalizeCriteriaList(criteria) {\n  if (!criteria) return [];\n  if (Array.isArray(criteria)) return criteria.filter(Boolean);\n  return Object.keys(criteria).map((id) => ({ id, ...criteria[id] }));\n}\n\n// True when EVERY entry in `neg_src` is deck/interview-reachable (and there\n// is at least one entry -- an empty/missing neg_src is not \"reachable by\n// nothing\", it is unspecified, and treating it as reachable would silently\n// start asking about a criterion the config never intended to be\n// interview-answerable at all).\nfunction isGapReachable(criterion) {\n  const negSrc = Array.isArray(criterion.neg_src) ? criterion.neg_src : [];\n  if (negSrc.length === 0) return false;\n  return negSrc.every((src) => GAP_REACHABLE_SOURCES.has(src));\n}\n\n// \"Covered\" -- design.md \u00a76, R-7: a claim exists on the criterion's BASE\n// topic with `verification_status` other than `'missing'`. 07/design.md:734\n// (corrected 2026-07-19) is the authoritative convention: gaps use the base\n// topic + `verification_status='missing'`, NOT a `.gap`-suffixed topic --\n// the earlier `.gap` wording in 07/handoff.md \u00a74 was wrong. Because this\n// check is an EXACT topic-string match, a `.gap`-suffixed row (the old,\n// wrong convention, should it ever appear from a stale writer) can never\n// match the base topic here and therefore can never be mistaken for\n// coverage either -- no separate suffix-stripping logic is needed for that\n// half; only the `verification_status !== 'missing'` filter is load-bearing.\n//\n// This is the exact defect design.md \u00a76/plan.md T8 call out: 07 (and 08's\n// own deck cascade on an image-only deck, design.md \u00a75) write a `missing`\n// claim on a topic as an honest \"looked, found nothing\" marker -- a naive\n// \"does ANY claim exist on this topic\" check would read that absence marker\n// as coverage and suppress exactly the question worth asking.\nfunction isCriterionCovered(criterionId, claims) {\n  const topic = CRITERION_TOPIC[criterionId];\n  if (!topic) return false; // unknown criterion id -- cannot check, so not covered (ask rather than silently skip)\n  const list = Array.isArray(claims) ? claims : [];\n  return list.some((c) => c && c.topic === topic && c.verification_status !== 'missing');\n}\n\n// ============================================================================\n// selectGapCriteria -- design.md \u00a76's full pipeline: filter reachable ->\n// drop covered -> rank by weight desc -> cap.\n//\n// selectGapCriteria({criteria, claims, cap}) -> criterion objects (id,\n// weight, anchor, neg_src, subscorer, topic), ranked, length 0..cap. Returns\n// full objects rather than bare ids because the downstream\n// `gap-question-phraser` agent (design.md \u00a77) needs `id`, `anchor` and\n// `weight` as its own input -- callers wanting the bare-id list the plan's\n// AC is phrased against can `.map(c => c.id)`.\n// ============================================================================\n\nfunction selectGapCriteria({ criteria, claims, cap = 3 } = {}) {\n  const reachable = normalizeCriteriaList(criteria).filter(isGapReachable);\n  const uncovered = reachable.filter((c) => !isCriterionCovered(c.id, claims));\n  const ranked = uncovered.slice().sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));\n  return ranked.slice(0, cap).map((c) => ({ ...c, topic: CRITERION_TOPIC[c.id] ?? null }));\n}\n\nconst inp = $json;\nconst selected = selectGapCriteria({ criteria: inp.__criteria, claims: inp.__current_claims, cap: 3 });\nreturn [{ json: { ...inp, __selected_criteria: selected } }];\n"
+   },
+   "id": "94d29a50-0af5-42e6-a0b7-dddca17c881c",
+   "name": "Select gap criteria",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -200,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "843aa257-d053-4808-ad8c-b8916a60029a",
+       "leftValue": "={{ $json.__selected_criteria.length }}",
+       "rightValue": 0,
+       "operator": {
+        "type": "number",
+        "operation": "gt"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "7bfc89fa-83de-42e0-b764-a192227f4ac4",
+   "name": "IF: any gap criteria?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    40,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { ...$json, __gap_questions: [] } }];"
+   },
+   "id": "50fe622e-6570-47f1-9014-9f31bda69784",
+   "name": "No gap criteria",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    280,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nconst links = inp.__artifact_links || {};\nconst knownClaims = (inp.__current_claims || [])\n  .filter(c => c.verification_status !== 'missing')\n  .slice(0, 8)\n  .map(c => ({ topic: c.topic, text_verbatim: c.text_verbatim || null }));\nconst cardContext = {\n  company_name: inp.company_name, what_is_built: null, sector: null, geography_country: null,\n  deck_readable: true, public_footprint: links.founder_links || [], known_claims: knownClaims,\n};\nconst selectedCriteriaInput = inp.__selected_criteria.map(c => ({ criterion_id: c.id, anchor: c.anchor, weight: c.weight }));\nreturn [{ json: { ...inp, __card_context: cardContext, __selected_criteria_input: selectedCriteriaInput } }];\n"
+   },
+   "id": "b7ad38f0-3bc9-4033-98ba-2f98209ed7e0",
+   "name": "Build card_context",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    280,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "const SYS = \"<prompt>\\n<title>\\n# GAP QUESTION PHRASER (FOUNDER-FACING)\\n</title>\\n\\n<description>\\nYOU WRITE THE ONE TO THREE SHORT QUESTIONS A STARTUP FOUNDER SEES AFTER SUBMITTING THEIR\\nAPPLICATION. THEY ARE OPTIONAL. THE FOUNDER CAN SKIP EVERY ONE OF THEM WITH A SINGLE CLICK AND\\nNOTHING BAD HAPPENS TO THEM IF THEY DO.\\n\\nYOU ARE NOT CONDUCTING ANYTHING. You are not testing, grading, ranking or vetting this person, and\\nyou must never write a word that suggests otherwise. Another part of this system decides what is\\nworth asking; you decide only how to ask it so that a busy founder wants to answer.\\n\\nWHAT YOU ARE ACTUALLY DOING: the system has already searched this founder's public footprint \\u2014\\ntheir code, their writing, their product. A small number of things cannot be learned that way, no\\nmatter how hard the system looks. You are asking the founder for exactly those things, and telling\\nthem honestly why you could not find it yourself.\\n\\nTHE REGISTER IS THE MOM TEST. You ask about **what already happened**: who, when, what they did,\\nwhat it cost them. You never ask what someone thinks, predicts, hopes, or would do. A good answer\\nto your question contains a name, a number or a date. A question that can be answered with an\\nopinion is a failed question, because opinions cannot be checked and this system only records what\\nit can trace.\\n\\nWHY THE TONE MATTERS MORE THAN IT LOOKS: a field study of over 3,000 applicants found that framing\\na step like this as an interview cut the rate of people finishing by more than half \\u2014 and the drop\\nwas largest among the strongest applicants and largest among women. A product built to find people\\nthe market's filters miss cannot ship a step that filters hardest on the people it is looking for.\\nEvery word you write is load-bearing on that.\\n</description>\\n\\n<instructions>\\n## INSTRUCTIONS\\n\\n<validation>\\n1. Read `selected_criteria`. It contains 1 to 3 entries, each with `criterion_id`, `anchor` and\\n   `weight`. You write **exactly one question per entry**, in the order given. Never more, never\\n   fewer, never merged, never split. If the array is empty, return `[]`.\\n2. Read `card_context` for what the system already knows. Anything already known must NOT be asked\\n   for again \\u2014 re-asking a fact the founder can see we already have is the fastest way to look like\\n   a form rather than a reader.\\n3. Read `card_context.deck_readable`. If it is `false`, the deck could not be parsed, and you must\\n   NOT write any `why` line claiming the deck failed to mention something. Saying \\\"your deck doesn't\\n   mention X\\\" when we never read the deck is a lie the founder can catch instantly. Use the honest\\n   form instead: \\\"We couldn't read the text in your deck, so we're asking directly.\\\"\\n</validation>\\n\\n<processing>\\n4. For each criterion, write the `question`:\\n   4.1. Anchor it in the past. \\\"Who is using it today, and how did the first one find you?\\\" \\u2014\\n        not \\\"who is your target customer?\\\".\\n   4.2. One question mark. It may have two clauses, but it asks for one thing.\\n   4.3. Maximum 140 characters. A founder scans this on a phone.\\n   4.4. Plain words. No VC vocabulary the founder has to decode, no jargon, no acronyms the founder\\n        did not use themselves.\\n   4.5. It must be answerable in two or three sentences by someone who lived it, with no preparation\\n        and no document open.\\n5. Write the `why` \\u2014 ONE sentence, maximum 120 characters, stating what we could not learn on our\\n   own. This is the line that makes the question worth answering; a generic `why` wastes it.\\n   Prefer naming what we DID look at: \\\"We found your GitHub and your site, but neither shows who is\\n   using it.\\\"\\n6. Write the `placeholder` \\u2014 ONE sentence telling the founder what a sufficient answer looks like,\\n   maximum 120 characters. Its job is to lower the bar, not raise it. \\\"A name, a date, and how the\\n   conversation started is enough.\\\" Never ask for a full narrative and never imply length matters.\\n7. Read all three strings back and check them against the FORBIDDEN VOCABULARY list. One banned word\\n   invalidates the whole item.\\n</processing>\\n\\n<formatting>\\n8. Return a JSON array only \\u2014 no wrapper object, no markdown fence, no preamble. Each element has\\n   exactly four keys: `criterion_id`, `question`, `why`, `placeholder`.\\n</formatting>\\n</instructions>\\n\\n<criteria_playbook>\\n## THE THREE CRITERIA YOU WILL ACTUALLY RECEIVE\\n\\nThese are the only criteria unreachable by any public source, which is why they are the only ones\\never asked. Handle an unlisted `criterion_id` by working from its `anchor` alone, following the same\\nrules.\\n\\n### L2 \\u2014 \\\"First customers / LOI / pilot evidence\\\"  (weight 0.15)\\nWhat we want: evidence that somebody outside the company agreed to something. A name, a date, how\\nthe first conversation started.\\nAsk about: the first user, the first pilot, the first person who said yes, how they found the\\nfounder or the founder found them.\\nNever ask: how many customers they expect, what their pipeline looks like, what conversion they\\nproject.\\n\\n### L3 \\u2014 \\\"ICP specificity: vertical + size + buyer role + trigger + current alternative\\\"  (weight 0.09)\\nWhat we want: who exactly buys, and \\u2014 the part almost nobody writes down \\u2014 **what triggers them to\\ngo looking, and what they use today instead**.\\nAsk about: the last real person who wanted this, what they were using before, what happened that\\nweek that made them look.\\nNever ask: for a market segment definition, a persona document, or an addressable-market figure.\\n\\n### X5 \\u2014 \\\"Describes competitors at insider granularity (where deals are lost, what breaks in\\nproduction) rather than pricing-page level\\\"  (weight 0.056)\\nWhat we want: the operational knowledge you only have if you have actually competed \\u2014 where deals\\nare lost, what breaks at scale.\\nAsk about: a specific time they lost to, or were compared against, someone else, and what the other\\nside actually did.\\nNever ask: for a competitor list, a comparison table, or a positioning statement. **The system finds\\ncompetitors on its own.** Asking a founder to list rivals gets you a list we already have, phrased\\nflatteringly.\\n</criteria_playbook>\\n\\n<output_format>\\n## OUTPUT FORMAT\\n\\nA JSON array, 0 to 3 elements, one per input criterion, in input order:\\n\\n[\\n  {\\n    \\\"criterion_id\\\": \\\"L2\\\",\\n    \\\"question\\\": \\\"Who is using it today, and how did the first one find you?\\\",\\n    \\\"why\\\": \\\"Your deck doesn't name a first customer or pilot.\\\",\\n    \\\"placeholder\\\": \\\"A name, a date, and how the conversation started is enough.\\\"\\n  }\\n]\\n\\nField limits: `question` \\u2264 140 characters \\u00b7 `why` \\u2264 120 \\u00b7 `placeholder` \\u2264 120.\\nNo other keys. No score, no weight, no rank, no priority, no category, no explanation object.\\n</output_format>\\n\\n<chain_of_thoughts>\\n## CHAIN OF THOUGHTS\\nFollow these steps in strict order:\\n\\n1. Read the context.\\n   1.1. Note what the system already knows about this company \\u2014 never re-ask it.\\n   1.2. Note `deck_readable`; it decides which honest `why` form is available to you.\\n\\n2. For each criterion, in the given order:\\n   2.1. Read the anchor and identify the concrete past event that would satisfy it.\\n   2.2. Draft a question about that event, in the past tense.\\n   2.3. Test it: could this be answered with an opinion, a forecast, or a promise? If yes, rewrite \\u2014\\n        the answer must contain a name, a number or a date.\\n   2.4. Test it again: is it under 140 characters, one ask, no jargon?\\n   2.5. Write the `why`, naming what we already looked at and what it did not show.\\n   2.6. Write the `placeholder` so the smallest sufficient answer is obvious.\\n\\n3. Final pass over everything you wrote:\\n   3.1. Scan for every word on the FORBIDDEN VOCABULARY list.\\n   3.2. Confirm nothing forward-looking survived.\\n   3.3. Confirm one item per input criterion, same ids, same order.\\n   3.4. Confirm the tone would not make a strong, busy founder close the tab.\\n\\n4. Emit the JSON array. Nothing else.\\n</chain_of_thoughts>\\n\\n<restrictions>\\n## WHAT NOT TO DO\\n\\n- **NEVER USE ANY OF THESE WORDS, IN ANY FORM: interview, assessment, assess, evaluation, evaluate,\\n  test, screening, screen.** Not in a question, not in a why line, not in a placeholder. This is the\\n  hardest rule in this prompt and it exists because the framing measurably drives away the exact\\n  founders this product is built to find. Also avoid their cousins: \\\"vetting\\\", \\\"qualifying\\\",\\n  \\\"reviewing you\\\", \\\"your score\\\", \\\"your ranking\\\", \\\"candidate\\\", \\\"applicant\\\".\\n- **NEVER ASK FOR TAM, SAM, SOM, MARKET SIZE, REVENUE PROJECTIONS, FORECASTS, A ROADMAP, OR A\\n  COMPETITOR LIST.** Asking a founder to invent a number is zero information gain, and this system\\n  researches market size and competitors independently. A founder-supplied TAM is noise wearing a\\n  number's clothes.\\n- **NEVER ASK ANYTHING FORWARD-LOOKING.** No \\\"will\\\", no \\\"plan to\\\", no \\\"expect\\\", no \\\"goal\\\", no \\\"next\\n  12 months\\\". Past behaviour only.\\n- **NEVER ASK FOR AN OPINION OR A SELF-DESCRIPTION.** No \\\"why are you the right team\\\", no \\\"what\\n  makes you different\\\", no \\\"how big could this get\\\". These reward rehearsed answers and measure\\n  writing ability.\\n- **NEVER IMPLY THE ANSWER IS GRADED, SCORED, OR COMPARED.** No \\\"the best answers include\\\", no\\n  \\\"strong applications typically\\\", no \\\"be as detailed as possible\\\". Answers are never scored for\\n  eloquence in this system, and the copy must not suggest they are.\\n- **NEVER PRESSURE, GUILT, OR WARN.** No \\\"this significantly improves your chances\\\", no \\\"founders\\n  who skip this are rarely funded\\\", no urgency, no countdown. Skipping is free and the copy says so\\n  by staying quiet about it.\\n- **NEVER ASK A COMPOUND QUESTION** with three separate asks stacked behind one question mark.\\n- **NEVER RE-ASK SOMETHING IN `card_context`.** If we already know they are in logistics in Berlin,\\n  asking \\\"what industry are you in?\\\" tells the founder nobody read their submission.\\n- **NEVER CLAIM THE DECK OMITTED SOMETHING WHEN `deck_readable` IS FALSE.**\\n- **NEVER PRODUCE MORE OR FEWER ITEMS THAN THE INPUT CRITERIA.** Question selection is not yours.\\n- **NEVER OUTPUT MARKDOWN, A WRAPPER OBJECT, OR ANY TEXT OUTSIDE THE JSON ARRAY.**\\n</restrictions>\\n\\n<examples>\\n## FEW-SHOT EXAMPLES\\n\\n### Desired Example 1 \\u2014 L2, deck readable\\nInput criterion: `{ \\\"criterion_id\\\": \\\"L2\\\", \\\"anchor\\\": \\\"First customers / LOI / pilot evidence\\\", \\\"weight\\\": 0.15 }`\\nCard context: company \\\"Northbound Freight OS\\\", builds route-planning software for regional\\ncarriers; GitHub and a live site were found; deck named no customer.\\nOutput:\\n{ \\\"criterion_id\\\": \\\"L2\\\",\\n  \\\"question\\\": \\\"Who is using it today, and how did the first one find you?\\\",\\n  \\\"why\\\": \\\"Your deck doesn't name a first customer or pilot.\\\",\\n  \\\"placeholder\\\": \\\"A name, a date, and how the conversation started is enough.\\\" }\\nWhy: past tense, one ask, answerable in two sentences without opening a document. The `why` names\\nthe specific gap. The `placeholder` sets the bar at three facts, not a story.\\n\\n### Desired Example 2 \\u2014 L3, deck readable\\nInput criterion: `{ \\\"criterion_id\\\": \\\"L3\\\", \\\"anchor\\\": \\\"ICP specificity: vertical + size + buyer role + trigger + current alternative\\\", \\\"weight\\\": 0.09 }`\\nCard context: same company; deck says \\\"we sell to logistics companies\\\".\\nOutput:\\n{ \\\"criterion_id\\\": \\\"L3\\\",\\n  \\\"question\\\": \\\"Think of the last person who really wanted this \\u2014 what were they using before, and what made them start looking?\\\",\\n  \\\"why\\\": \\\"Your deck says \\\\\\\"logistics companies\\\\\\\", which doesn't tell us who actually signs.\\\",\\n  \\\"placeholder\\\": \\\"Their job title, their company size, and what they did instead is plenty.\\\" }\\nWhy: gets vertical, buyer role, trigger and current alternative out of one concrete memory instead\\nof demanding a persona definition. It quotes the founder's own words back, which reads as having\\nbeen read rather than processed.\\n\\n### Desired Example 3 \\u2014 X5, deck readable\\nInput criterion: `{ \\\"criterion_id\\\": \\\"X5\\\", \\\"anchor\\\": \\\"Describes competitors at insider granularity (where deals are lost, what breaks in production) rather than pricing-page level\\\", \\\"weight\\\": 0.05625 }`\\nCard context: same company; deck has a competitor logo grid.\\nOutput:\\n{ \\\"criterion_id\\\": \\\"X5\\\",\\n  \\\"question\\\": \\\"When someone chose a different tool over yours, what did they pick and what did it do better?\\\",\\n  \\\"why\\\": \\\"We can find who your competitors are; we can't find where you actually lose.\\\",\\n  \\\"placeholder\\\": \\\"One specific instance is more useful than a full comparison.\\\" }\\nWhy: asks for a loss, which is checkable and which only someone who has competed can answer. The\\n`why` states plainly that the list is not what we need \\u2014 it heads off the founder's instinct to\\npaste a comparison table.\\n\\n### Desired Example 4 \\u2014 L2, deck unreadable (`deck_readable: false`)\\nOutput:\\n{ \\\"criterion_id\\\": \\\"L2\\\",\\n  \\\"question\\\": \\\"Who is using it today, and how did the first one find you?\\\",\\n  \\\"why\\\": \\\"We couldn't read the text in your deck, so we're asking directly.\\\",\\n  \\\"placeholder\\\": \\\"A name, a date, and how the conversation started is enough.\\\" }\\nWhy: the question is unchanged; only the `why` adapts. Claiming the deck omitted a customer would be\\nfalse and the founder would know it immediately.\\n\\n### Undesired Example 1 \\u2014 interview framing\\nWrong output:\\n{ \\\"criterion_id\\\": \\\"L2\\\",\\n  \\\"question\\\": \\\"As part of our screening, can you tell us about your traction?\\\",\\n  \\\"why\\\": \\\"This helps us assess your application.\\\",\\n  \\\"placeholder\\\": \\\"Be as detailed as possible \\u2014 strong answers include metrics.\\\" }\\nWhy this is wrong: three separate violations. \\\"screening\\\" and \\\"assess\\\" are forbidden words. \\\"Be as\\ndetailed as possible\\\" implies length is graded. And the question is vague enough that a founder\\nwould write four paragraphs, none of them checkable.\\n\\n### Undesired Example 2 \\u2014 forward-looking and invented numbers\\nWrong output:\\n{ \\\"criterion_id\\\": \\\"L3\\\",\\n  \\\"question\\\": \\\"How large is the market you're targeting, and how many customers do you expect in 12 months?\\\",\\n  \\\"why\\\": \\\"We need to understand your growth potential.\\\",\\n  \\\"placeholder\\\": \\\"A TAM figure and a customer projection.\\\" }\\nWhy this is wrong: both halves ask the founder to invent a number. Nothing about the answer can be\\nverified, feature 04 researches market size independently, and the `why` reveals nothing we could\\nnot have said to anybody.\\n\\n### Undesired Example 3 \\u2014 re-asking what we already know\\nCard context already contains: sector `logistics`, geography `DE`, live product URL.\\nWrong output:\\n{ \\\"criterion_id\\\": \\\"X5\\\",\\n  \\\"question\\\": \\\"What industry are you in and who are your main competitors?\\\",\\n  \\\"why\\\": \\\"We'd like to learn more about your space.\\\",\\n  \\\"placeholder\\\": \\\"List your top three competitors.\\\" }\\nWhy this is wrong: the industry is already on the card, the competitor list is something the system\\nfinds on its own, and asking for both tells the founder their submission was not read. The whole\\nvalue of a gap question is that it could only have been asked of them.\\n</examples>\\n</prompt>\";\nconst SCHEMA = {\"type\": \"object\", \"additionalProperties\": false, \"properties\": {\"questions\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"$id\": \"https://the-vc-brain.local/schemas/f08/gap-question-phraser.json\", \"title\": \"gap-question-phraser output\", \"description\": \"0 to 3 founder-facing gap questions, one per selected criterion, in the order the criteria were supplied. This shape is FROZEN: it is rendered verbatim by the built frontend as gap_questions[] (lovable-brief.md \\u00a74.1) and as questions[] in the follow-up contract (\\u00a74.4). Do not add fields.\", \"type\": \"array\", \"minItems\": 0, \"items\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"criterion_id\", \"question\", \"why\", \"placeholder\"], \"properties\": {\"criterion_id\": {\"type\": \"string\", \"description\": \"Echo of the supplied criterion id. Against the live seeded config only L2, L3 and X5 are ever selected \\u2014 the other founder-score criteria are reachable by public sources and are never asked.\", \"examples\": [\"L2\", \"L3\", \"X5\"]}, \"question\": {\"type\": \"string\", \"description\": \"Past-tense, single ask, Mom Test register. A sufficient answer contains a name, a number or a date. Exactly one question mark. Must contain no forward-looking framing and none of the forbidden stems.\", \"examples\": [\"Who is using it today, and how did the first one find you?\"]}, \"why\": {\"type\": \"string\", \"description\": \"One line naming what we could not learn on our own. When card_context.deck_readable is false it must NOT claim the deck omitted anything.\", \"examples\": [\"Your deck doesn't name a first customer or pilot.\"]}, \"placeholder\": {\"type\": \"string\", \"description\": \"Rendered on the textarea. States the smallest sufficient answer; never implies length or polish is rewarded.\", \"examples\": [\"A name, a date, and how the conversation started is enough.\"]}}}, \"examples\": [[{\"criterion_id\": \"L2\", \"question\": \"Who is using it today, and how did the first one find you?\", \"why\": \"Your deck doesn't name a first customer or pilot.\", \"placeholder\": \"A name, a date, and how the conversation started is enough.\"}, {\"criterion_id\": \"L3\", \"question\": \"Think of the last person who really wanted this \\u2014 what were they using before, and what made them start looking?\", \"why\": \"Your deck says \\\"logistics companies\\\", which doesn't tell us who actually signs.\", \"placeholder\": \"Their job title, their company size, and what they did instead is plenty.\"}, {\"criterion_id\": \"X5\", \"question\": \"When someone chose a different tool over yours, what did they pick and what did it do better?\", \"why\": \"We can find who your competitors are; we can't find where you actually lose.\", \"placeholder\": \"One specific instance is more useful than a full comparison.\"}], []]}}, \"required\": [\"questions\"]};\nlet userContent = '<card_context>\\n' + JSON.stringify($json.__card_context) + '\\n</card_context>\\n\\n' +\n  '<selected_criteria>\\n' + JSON.stringify($json.__selected_criteria_input) + '\\n</selected_criteria>';\nconst body = {\n  model: \"gpt-5.6-terra\",\n  input: [ { role: 'system', content: SYS }, { role: 'user', content: userContent } ],\n  reasoning: { effort: \"low\" },\n  text: { verbosity: \"low\", format: { type: 'json_schema',\n    name: \"gap_question_phraser_output\", strict: true, schema: SCHEMA } },\n  max_output_tokens: 1500,\n};\nreturn [{ json: { ...$json, __openai_request_body: body } }];\n"
+   },
+   "id": "607df50c-27a9-46da-b7d6-460df597f486",
+   "name": "Build gap-question-phraser request",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    520,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.openai.com/v1/responses",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.__openai_request_body) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "id": "021b5de0-19c5-43a1-9fb7-3b7e28ea9ab0",
+   "name": "OpenAI: gap-question-phraser (terra)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    760,
+    -180
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 3000,
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// lib/f08/hashing.js\n// SOURCE OF TRUTH: lib/f08/hashing.js\n//\n// Content-hash recipes for feature 08 (Founder Intake): `raw_signals`,\n// `claims` and `evidence` all carry `content_hash ... UNIQUE` (db/schema.sql),\n// and design.md \u00a73.2 fixes the rule that makes retries and re-applications\n// behave correctly against that constraint: **every recipe here includes\n// `application_id`.**\n//\n// Why, restated from design.md \u00a73.2 so this file is self-explaining:\n// `applications.id := intake_submission_id`, so a RETRY (the frontend\n// re-sends the same id by design) collides on the PRIMARY KEY -- that is\n// the idempotency mechanism, and this file has nothing to do with it. A\n// RE-APPLICATION (the founder applies again, later, with a fresh\n// `intake_submission_id`) is deliberately a NEW `applications` row --\n// design.md calls this out as preserving \"the rejection -> growth -> return\n// trajectory\" (SIG-025). Without `application_id` in the hash, a founder\n// re-applying with the identical deck would compute the SAME content_hash\n// as their first application and raise `23505` on every one of\n// raw_signals/claims/evidence, failing the whole intake. With it, a RETRY\n// (same application_id) still dedupes correctly (idempotent Code-node\n// re-execution, not just the DB-level PK collision), while a RE-APPLICATION\n// (different application_id) does not collide.\n\n// Hashing mechanism -- CORRECTED (docs/backlog/TRACKER.md, ~10:45 entry,\n// \"the recorded Code-node sandbox convention is WRONG\"): this file\n// previously used `globalThis.crypto.subtle.digest(...)`, on the strength\n// of the earlier documented convention plus an inference from feature 02's\n// `RUNTIME_POLYFILL_JS` (`globalThis.crypto = require('crypto').webcrypto`).\n//\n// To be precise about what the team lead's live probe actually found (an\n// earlier version of this comment overstated it): the webcrypto polyfill\n// DOES work --\n//   typeof globalThis.crypto.subtle                                -> \"undefined\" (before)\n//   globalThis.crypto = require('crypto').webcrypto; typeof ....subtle -> \"object\"  (after)\n//   await globalThis.crypto.subtle.digest('SHA-256', ...)           -> correct digest\n// -- confirmed live in a real Code node. Switching to `createHash` was not\n// a \"the polyfill is broken\" fix; it is a \"simpler and already-proven\"\n// choice: synchronous, no global-mutation/polyfill step to get right, and\n// exactly what every already-deployed workflow in this repo (f03, f04, f07)\n// already uses. Recorded here precisely because a wrong explanation in a\n// file headed SOURCE OF TRUTH is exactly how the original backwards\n// convention got established -- the point is not to repeat that.\n//\n// `require('crypto')` uses the BARE specifier -- confirmed live that\n// `require('node:crypto')` (the `node:`-prefixed form some other lib/*.js\n// files in this repo use) throws in this sandbox. Requiring a Node\n// BUILT-IN module is the sandbox-confirmed exception to the \"zero imports\"\n// hard convention, which is about requiring REPO FILES (genuinely\n// impossible, no bind-mount) -- not about built-ins, which\n// `NODE_FUNCTION_ALLOW_BUILTIN` in `infra/n8n/docker-compose.yml` allows.\n//\n// Every hashing function below is therefore SYNCHRONOUS now (`createHash`\n// has no async form to begin with) -- callers no longer need to `await`\n// them. This is a behavioural change from this file's first version, not\n// just a mechanism swap: anything that already called these with `await`\n// still works (`await` on a non-promise value is a no-op), but nothing may\n// rely on these returning a `Promise` going forward.\nconst crypto = require('crypto');\n\n// ============================================================================\n// sha256Hex / hashFields -- same shape as lib/f04/provenance.js's and\n// lib/f07/hashes.js's own sha256Hex/hashFields (both already synchronous,\n// both already using this exact `createHash` mechanism -- this file now\n// matches them instead of diverging). The join delimiter is this file's\n// OWN choice (design.md does not specify one for 08's recipes, same as\n// 07's own note about its recipes) -- '::' is used for consistency with\n// lib/f02/normalize.js's convention, and is safe here because none of the\n// fields hashed below (uuids, criterion ids, topic slugs, caller-supplied\n// content keys) can themselves contain '::'.\n// ============================================================================\n\nfunction sha256Hex(text) {\n  return crypto.createHash('sha256').update(String(text == null ? '' : text), 'utf8').digest('hex');\n}\n\nconst HASH_FIELD_DELIMITER = '::';\n\nfunction hashFields(...parts) {\n  const basis = parts\n    .map((part) => (part === null || part === undefined ? '' : String(part)))\n    .join(HASH_FIELD_DELIMITER);\n  return sha256Hex(basis);\n}\n\n// ============================================================================\n// contentHash -- the three recipes design.md \u00a73.2 requires. Every one takes\n// `application_id` as its first field, by convention, so a reader scanning\n// this file top-to-bottom sees the rule applied uniformly rather than\n// having to check each recipe individually.\n// ============================================================================\n\nconst contentHash = {\n  // raw_signals.content_hash = sha256(application_id :: source ::\n  // content_key). `content_key` is caller-supplied and is whatever\n  // discriminates THIS raw signal's content from another one on the same\n  // application -- the deck's own base64 (or extracted text) for the\n  // `source='deck_parse'` write (design.md \u00a73 step 5), or e.g.\n  // `${criterion_id}::${answer_text}` for a `source='interview_answer'`\n  // gap-answer write (design.md \u00a77/\u00a78). Not pre-hashed by this file: it is\n  // joined into the same delimited basis as every other field, which is\n  // simpler and no less collision-resistant than hashing it twice.\n  rawSignal({ application_id, source, content_key }) {\n    return hashFields(application_id, source, content_key);\n  },\n\n  // claims.content_hash = sha256(application_id :: card_id :: topic ::\n  // item_key). `item_key` defaults to '_' for singleton topics -- same\n  // convention lib/f07/hashes.js's claim() recipe and lib/f04/provenance.js's\n  // both already use, kept for consistency even though none of 08's own\n  // founder.expertise.*/founder.leadership.* topics are currently\n  // multi-row-per-application.\n  claim({ application_id, card_id, topic, item_key }) {\n    return hashFields(application_id, card_id, topic, item_key == null || item_key === '' ? '_' : item_key);\n  },\n\n  // evidence.content_hash = sha256(application_id :: claim_id :: relation ::\n  // raw_signal_id). lib/f07/hashes.js's evidence() recipe omits\n  // raw_signal_id because 07 writes exactly one supporting row per claim\n  // (claim_id, relation) is already unique there. 08 additionally includes\n  // raw_signal_id: an image-only deck (design.md \u00a75) writes a `missing`\n  // claim WITH evidence (tier='missing') for every expected topic on the\n  // SAME `raw_signals` row, and a later gap-answer can add a second,\n  // interview-sourced evidence row for a topic the deck already produced a\n  // missing-marker for -- both would otherwise land on the same\n  // (claim_id, relation='supports') pair. Discriminating on raw_signal_id\n  // keeps that case from a spurious 23505 without changing behaviour for\n  // the common single-evidence-per-claim case.\n  evidence({ application_id, claim_id, relation, raw_signal_id }) {\n    return hashFields(application_id, claim_id, relation, raw_signal_id);\n  },\n};\n\nconst ctx = $('Build gap-question-phraser request').first().json;\nconst resp = $input.first().json;\nlet parsed = null, rawText = '';\ntry {\n  const msg = (resp.output || []).find(o => o.type === 'message');\n  rawText = (msg && msg.content && msg.content[0]) ? msg.content[0].text : '';\n  parsed = JSON.parse(rawText);\n} catch (e) { parsed = null; }\n\nconst FORBIDDEN_STEMS = ['interview', 'assess', 'evaluat', 'screening', 'screen', ' test', 'vetting',\n  'candidate', 'applicant', 'your score', 'ranking'];\nconst FALLBACK = {\"L2\": {\"question\": \"Who is using it today, and how did the first one find you?\", \"why\": \"Nothing we found publicly shows who is using it yet.\", \"placeholder\": \"A name, a date, and how the conversation started is enough.\"}, \"L3\": {\"question\": \"Who was the last person who really wanted this, and what were they using before?\", \"why\": \"We couldn't tell from public sources who actually signs.\", \"placeholder\": \"Their job title, their company size, and what they did instead is plenty.\"}, \"X5\": {\"question\": \"When someone chose a different tool over yours, what did they pick and what did it do better?\", \"why\": \"We can find who your competitors are; we can't find where you actually lose.\", \"placeholder\": \"One specific instance is more useful than a full comparison.\"}};\nconst selected = ctx.__selected_criteria_input || [];\nfunction violates(q) {\n  if (!q || typeof q.question !== 'string' || typeof q.why !== 'string' || typeof q.placeholder !== 'string') return true;\n  const all = (q.question + ' ' + q.why + ' ' + q.placeholder).toLowerCase();\n  if (FORBIDDEN_STEMS.some(stem => all.includes(stem))) return true;\n  if (q.question.length > 140 || q.why.length > 120 || q.placeholder.length > 120) return true;\n  const qMarks = (q.question.match(/\\?/g) || []).length;\n  if (qMarks !== 1) return true;\n  return false;\n}\nconst items = (parsed && Array.isArray(parsed.questions)) ? parsed.questions : [];\nconst byId = new Map();\nfor (const it of items) { if (it && it.criterion_id) byId.set(it.criterion_id, it); }\nconst gapQuestions = selected.map(sc => {\n  const candidate = byId.get(sc.criterion_id);\n  if (candidate && !violates(candidate)) {\n    return { criterion_id: sc.criterion_id, question: candidate.question, why: candidate.why, placeholder: candidate.placeholder };\n  }\n  const fb = FALLBACK[sc.criterion_id] || {\n    question: 'Tell us more about this.', why: 'We could not find this publicly.', placeholder: 'A few sentences is enough.',\n  };\n  return { criterion_id: sc.criterion_id, question: fb.question, why: fb.why, placeholder: fb.placeholder };\n});\nconst inputHash = sha256Hex('f08:ai_run:question_generation:followup:' + ctx.application_id + ':' + selected.map(s => s.criterion_id).join(','));\nconst found = await pgGet.call(this, `ai_runs?input_hash=eq.${encodeURIComponent(inputHash)}&select=id`);\nif (!found.length) {\n  await pg.call(this, 'POST', 'ai_runs', {\n    task_type: 'question_generation', founder_id: ctx.founder_id, company_id: ctx.company_id, application_id: ctx.application_id,\n    model: \"gpt-5.6-terra\", input_hash: inputHash, output_json: { selected_criteria: selected, questions: gapQuestions },\n  }, 'return=minimal');\n}\nreturn [{ json: { ...ctx, __gap_questions: gapQuestions } }];\n"
+   },
+   "id": "15c067cb-2d04-410b-a448-ba5e8d19b588",
+   "name": "Parse + validate gap-question-phraser response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1000,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst ctx = $('Build gap-question-phraser request').first().json;\nconst selected = ctx.__selected_criteria_input || [];\nconst FALLBACK = {\"L2\": {\"question\": \"Who is using it today, and how did the first one find you?\", \"why\": \"Nothing we found publicly shows who is using it yet.\", \"placeholder\": \"A name, a date, and how the conversation started is enough.\"}, \"L3\": {\"question\": \"Who was the last person who really wanted this, and what were they using before?\", \"why\": \"We couldn't tell from public sources who actually signs.\", \"placeholder\": \"Their job title, their company size, and what they did instead is plenty.\"}, \"X5\": {\"question\": \"When someone chose a different tool over yours, what did they pick and what did it do better?\", \"why\": \"We can find who your competitors are; we can't find where you actually lose.\", \"placeholder\": \"One specific instance is more useful than a full comparison.\"}};\nconst gapQuestions = selected.map(sc => {\n  const fb = FALLBACK[sc.criterion_id] || {\n    question: 'Tell us more about this.', why: 'We could not find this publicly.', placeholder: 'A few sentences is enough.',\n  };\n  return { criterion_id: sc.criterion_id, question: fb.question, why: fb.why, placeholder: fb.placeholder };\n});\nreturn [{ json: { ...ctx, __gap_questions: gapQuestions } }];\n"
+   },
+   "id": "03709db4-30ec-4d71-bca1-750efab4ab56",
+   "name": "Handle gap-phraser failure",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1000,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// lib/f08/hashing.js\n// SOURCE OF TRUTH: lib/f08/hashing.js\n//\n// Content-hash recipes for feature 08 (Founder Intake): `raw_signals`,\n// `claims` and `evidence` all carry `content_hash ... UNIQUE` (db/schema.sql),\n// and design.md \u00a73.2 fixes the rule that makes retries and re-applications\n// behave correctly against that constraint: **every recipe here includes\n// `application_id`.**\n//\n// Why, restated from design.md \u00a73.2 so this file is self-explaining:\n// `applications.id := intake_submission_id`, so a RETRY (the frontend\n// re-sends the same id by design) collides on the PRIMARY KEY -- that is\n// the idempotency mechanism, and this file has nothing to do with it. A\n// RE-APPLICATION (the founder applies again, later, with a fresh\n// `intake_submission_id`) is deliberately a NEW `applications` row --\n// design.md calls this out as preserving \"the rejection -> growth -> return\n// trajectory\" (SIG-025). Without `application_id` in the hash, a founder\n// re-applying with the identical deck would compute the SAME content_hash\n// as their first application and raise `23505` on every one of\n// raw_signals/claims/evidence, failing the whole intake. With it, a RETRY\n// (same application_id) still dedupes correctly (idempotent Code-node\n// re-execution, not just the DB-level PK collision), while a RE-APPLICATION\n// (different application_id) does not collide.\n\n// Hashing mechanism -- CORRECTED (docs/backlog/TRACKER.md, ~10:45 entry,\n// \"the recorded Code-node sandbox convention is WRONG\"): this file\n// previously used `globalThis.crypto.subtle.digest(...)`, on the strength\n// of the earlier documented convention plus an inference from feature 02's\n// `RUNTIME_POLYFILL_JS` (`globalThis.crypto = require('crypto').webcrypto`).\n//\n// To be precise about what the team lead's live probe actually found (an\n// earlier version of this comment overstated it): the webcrypto polyfill\n// DOES work --\n//   typeof globalThis.crypto.subtle                                -> \"undefined\" (before)\n//   globalThis.crypto = require('crypto').webcrypto; typeof ....subtle -> \"object\"  (after)\n//   await globalThis.crypto.subtle.digest('SHA-256', ...)           -> correct digest\n// -- confirmed live in a real Code node. Switching to `createHash` was not\n// a \"the polyfill is broken\" fix; it is a \"simpler and already-proven\"\n// choice: synchronous, no global-mutation/polyfill step to get right, and\n// exactly what every already-deployed workflow in this repo (f03, f04, f07)\n// already uses. Recorded here precisely because a wrong explanation in a\n// file headed SOURCE OF TRUTH is exactly how the original backwards\n// convention got established -- the point is not to repeat that.\n//\n// `require('crypto')` uses the BARE specifier -- confirmed live that\n// `require('node:crypto')` (the `node:`-prefixed form some other lib/*.js\n// files in this repo use) throws in this sandbox. Requiring a Node\n// BUILT-IN module is the sandbox-confirmed exception to the \"zero imports\"\n// hard convention, which is about requiring REPO FILES (genuinely\n// impossible, no bind-mount) -- not about built-ins, which\n// `NODE_FUNCTION_ALLOW_BUILTIN` in `infra/n8n/docker-compose.yml` allows.\n//\n// Every hashing function below is therefore SYNCHRONOUS now (`createHash`\n// has no async form to begin with) -- callers no longer need to `await`\n// them. This is a behavioural change from this file's first version, not\n// just a mechanism swap: anything that already called these with `await`\n// still works (`await` on a non-promise value is a no-op), but nothing may\n// rely on these returning a `Promise` going forward.\nconst crypto = require('crypto');\n\n// ============================================================================\n// sha256Hex / hashFields -- same shape as lib/f04/provenance.js's and\n// lib/f07/hashes.js's own sha256Hex/hashFields (both already synchronous,\n// both already using this exact `createHash` mechanism -- this file now\n// matches them instead of diverging). The join delimiter is this file's\n// OWN choice (design.md does not specify one for 08's recipes, same as\n// 07's own note about its recipes) -- '::' is used for consistency with\n// lib/f02/normalize.js's convention, and is safe here because none of the\n// fields hashed below (uuids, criterion ids, topic slugs, caller-supplied\n// content keys) can themselves contain '::'.\n// ============================================================================\n\nfunction sha256Hex(text) {\n  return crypto.createHash('sha256').update(String(text == null ? '' : text), 'utf8').digest('hex');\n}\n\nconst HASH_FIELD_DELIMITER = '::';\n\nfunction hashFields(...parts) {\n  const basis = parts\n    .map((part) => (part === null || part === undefined ? '' : String(part)))\n    .join(HASH_FIELD_DELIMITER);\n  return sha256Hex(basis);\n}\n\n// ============================================================================\n// contentHash -- the three recipes design.md \u00a73.2 requires. Every one takes\n// `application_id` as its first field, by convention, so a reader scanning\n// this file top-to-bottom sees the rule applied uniformly rather than\n// having to check each recipe individually.\n// ============================================================================\n\nconst contentHash = {\n  // raw_signals.content_hash = sha256(application_id :: source ::\n  // content_key). `content_key` is caller-supplied and is whatever\n  // discriminates THIS raw signal's content from another one on the same\n  // application -- the deck's own base64 (or extracted text) for the\n  // `source='deck_parse'` write (design.md \u00a73 step 5), or e.g.\n  // `${criterion_id}::${answer_text}` for a `source='interview_answer'`\n  // gap-answer write (design.md \u00a77/\u00a78). Not pre-hashed by this file: it is\n  // joined into the same delimited basis as every other field, which is\n  // simpler and no less collision-resistant than hashing it twice.\n  rawSignal({ application_id, source, content_key }) {\n    return hashFields(application_id, source, content_key);\n  },\n\n  // claims.content_hash = sha256(application_id :: card_id :: topic ::\n  // item_key). `item_key` defaults to '_' for singleton topics -- same\n  // convention lib/f07/hashes.js's claim() recipe and lib/f04/provenance.js's\n  // both already use, kept for consistency even though none of 08's own\n  // founder.expertise.*/founder.leadership.* topics are currently\n  // multi-row-per-application.\n  claim({ application_id, card_id, topic, item_key }) {\n    return hashFields(application_id, card_id, topic, item_key == null || item_key === '' ? '_' : item_key);\n  },\n\n  // evidence.content_hash = sha256(application_id :: claim_id :: relation ::\n  // raw_signal_id). lib/f07/hashes.js's evidence() recipe omits\n  // raw_signal_id because 07 writes exactly one supporting row per claim\n  // (claim_id, relation) is already unique there. 08 additionally includes\n  // raw_signal_id: an image-only deck (design.md \u00a75) writes a `missing`\n  // claim WITH evidence (tier='missing') for every expected topic on the\n  // SAME `raw_signals` row, and a later gap-answer can add a second,\n  // interview-sourced evidence row for a topic the deck already produced a\n  // missing-marker for -- both would otherwise land on the same\n  // (claim_id, relation='supports') pair. Discriminating on raw_signal_id\n  // keeps that case from a spurious 23505 without changing behaviour for\n  // the common single-evidence-per-claim case.\n  evidence({ application_id, claim_id, relation, raw_signal_id }) {\n    return hashFields(application_id, claim_id, relation, raw_signal_id);\n  },\n};\n\nconst inp = $json;\nconst rawToken = crypto.randomBytes(32).toString('hex');\nconst tokenHash = sha256Hex(rawToken);\nconst questions = (inp.__gap_questions || []).map(q => ({\n  criterion_id: q.criterion_id, question: q.question, why: q.why, placeholder: q.placeholder,\n  status: 'pending', answer_text: null,\n}));\nawait pg.call(this, 'POST', 'interviews', {\n  application_id: inp.application_id, card_id: inp.card_id, kind: 'follow_up', status: 'pending',\n  share_token: tokenHash, disclosed_at: new Date().toISOString(),\n  transcript: { questions, meta: { asked_by: inp.asked_by, note: inp.note } },\n}, 'return=minimal');\nreturn [{ json: { token: rawToken, questions } }];\n"
+   },
+   "id": "c18ad936-47e2-4b2d-8909-7abba8827ca6",
+   "name": "Generate token + write interviews (kind='follow_up')",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1240,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nreturn [{ json: { token: inp.token, questions: inp.questions, estimated_minutes: 2 } }];\n"
+   },
+   "id": "d489add3-0b37-4ba3-8f7f-0453eb40de9e",
+   "name": "Build FollowUpCreateResponse",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1480,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "03b7b2ca-b5c8-4690-a4bf-4e6be172a990",
+   "name": "Respond: success",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1720,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// n8n-spec.md SS0.3.1 -- the single shared internal-error responder every risky\n// Code/httpRequest node's error output feeds. Fixed copy regardless of the upstream\n// failure's shape -- lovable-brief.md SS9.5's exact string, so Postgres/Storage/OpenAI\n// failures all read identically to the founder.\nreturn [{ json: { error: { code: 'internal', message: \"Something went wrong on our side. Your answers are still here \\u2014 try again.\" } } }];\n"
+   },
+   "id": "cb0a6058-8a57-4362-8dcb-b32909f4fe31",
+   "name": "Handle unexpected error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    760,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 500
+    }
+   },
+   "id": "9b02f73f-985c-4f50-882b-7d19f1890097",
+   "name": "Respond: internal error (500)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1000,
+    600
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook: f08-followup-create": {
+   "main": [
+    [
+     {
+      "node": "Validate input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validate input": {
+   "main": [
+    [
+     {
+      "node": "IF: valid?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: valid?": {
+   "main": [
+    [
+     {
+      "node": "Fetch card + criteria + claims",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build client error response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build client error response": {
+   "main": [
+    [
+     {
+      "node": "Respond: bad request (400)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch card + criteria + claims": {
+   "main": [
+    [
+     {
+      "node": "IF: found?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: found?": {
+   "main": [
+    [
+     {
+      "node": "Select gap criteria",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build not-found response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build not-found response": {
+   "main": [
+    [
+     {
+      "node": "Respond: not found (404)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Select gap criteria": {
+   "main": [
+    [
+     {
+      "node": "IF: any gap criteria?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: any gap criteria?": {
+   "main": [
+    [
+     {
+      "node": "Build card_context",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "No gap criteria",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build card_context": {
+   "main": [
+    [
+     {
+      "node": "Build gap-question-phraser request",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build gap-question-phraser request": {
+   "main": [
+    [
+     {
+      "node": "OpenAI: gap-question-phraser (terra)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenAI: gap-question-phraser (terra)": {
+   "main": [
+    [
+     {
+      "node": "Parse + validate gap-question-phraser response",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle gap-phraser failure",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "No gap criteria": {
+   "main": [
+    [
+     {
+      "node": "Generate token + write interviews (kind='follow_up')",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse + validate gap-question-phraser response": {
+   "main": [
+    [
+     {
+      "node": "Generate token + write interviews (kind='follow_up')",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle gap-phraser failure": {
+   "main": [
+    [
+     {
+      "node": "Generate token + write interviews (kind='follow_up')",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Generate token + write interviews (kind='follow_up')": {
+   "main": [
+    [
+     {
+      "node": "Build FollowUpCreateResponse",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build FollowUpCreateResponse": {
+   "main": [
+    [
+     {
+      "node": "Respond: success",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle unexpected error": {
+   "main": [
+    [
+     {
+      "node": "Respond: internal error (500)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}

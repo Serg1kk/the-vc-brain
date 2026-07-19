@@ -1,0 +1,645 @@
+{
+ "name": "f08-gap-answers",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "f08-gap-answers",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "c38961e4-3ce1-44a1-b1cf-abc0553cc068",
+   "name": "Webhook: f08-gap-answers",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1600,
+    0
+   ],
+   "webhookId": "cb0dd63e-e7e7-4b68-a298-85c1c11cd14c"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst item = $input.first().json;\nconst body = item.body || {};\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst applicationId = String(body.application_id || '').trim();\nif (!applicationId || !UUID_RE.test(applicationId)) {\n  return [{ json: { __valid: false, error: { code: 'invalid_input', message: 'application_id must be a uuid.' } } }];\n}\nconst answersIn = Array.isArray(body.answers) ? body.answers : [];\nconst answers = [];\nfor (const a of answersIn) {\n  if (!a || typeof a !== 'object') continue;\n  const criterionId = String(a.criterion_id || '').trim();\n  const answerText = typeof a.answer_text === 'string' ? a.answer_text : '';\n  if (!criterionId || !answerText.trim()) continue; // blank/malformed -- treated as not-answered, never an error\n  answers.push({ criterion_id: criterionId, question: String(a.question || ''), answer_text: answerText });\n}\nconst skippedIn = Array.isArray(body.skipped_criterion_ids) ? body.skipped_criterion_ids : [];\nconst skipped = skippedIn.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim());\nreturn [{ json: { __valid: true, application_id: applicationId, answers, skipped_criterion_ids: skipped } }];\n"
+   },
+   "id": "78dd1ba3-bd4b-4afa-9b83-4d733a76b56b",
+   "name": "Validate input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -1360,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "214c7061-631c-4d31-b586-bb7a79b6c785",
+       "leftValue": "={{ $json.__valid }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "9a46fc60-cca3-4a0b-abc4-469aa1193bf4",
+   "name": "IF: valid?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -1120,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: $json.error } }];"
+   },
+   "id": "23f54402-97b7-46d9-82ba-4b8fbb10fdd7",
+   "name": "Build client error response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -880,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 400
+    }
+   },
+   "id": "5024b776-a412-42b4-9755-f65d377e882e",
+   "name": "Respond: bad request (400)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    -640,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst apps = await pgGet.call(this, `applications?id=eq.${inp.application_id}&select=id,status&order=created_at.asc&limit=1`);\nif (!apps.length) return [{ json: { ...inp, __found: false } }];\nconst cards = await pgGet.call(this,\n  `cards?application_id=eq.${inp.application_id}&card_type=eq.founder&select=id,founder_id,company_id&order=created_at.asc&limit=1`);\nconst card = cards.length ? cards[0] : null;\nconst interviews = await pgGet.call(this,\n  `interviews?application_id=eq.${inp.application_id}&kind=eq.first&select=id,status,transcript&order=created_at.asc&limit=1`);\nconst interview = interviews.length ? interviews[0] : null;\nreturn [{ json: { ...inp, __found: true, status: apps[0].status,\n  card_id: card ? card.id : null, founder_id: card ? card.founder_id : null, company_id: card ? card.company_id : null,\n  __interview: interview, __interview_completed: !!(interview && interview.status === 'completed') } }];\n"
+   },
+   "id": "71bb941c-c962-424d-9b1c-ac6dd029aac8",
+   "name": "Fetch application + first interview",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -880,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "303f7bd6-da29-4d44-a420-0d95b2bb1327",
+       "leftValue": "={{ $json.__found }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "bd4c3be3-e857-426a-95c6-9648b9d283b2",
+   "name": "IF: application found?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -640,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: { code: 'not_found', message: 'Application not found.' } } }];"
+   },
+   "id": "08c20aec-0155-4b73-9d50-f20a295f25dd",
+   "name": "Build not-found response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    480
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 404
+    }
+   },
+   "id": "e402087f-a2c1-4296-88b9-f93a157aedc0",
+   "name": "Respond: not found (404)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    -160,
+    480
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "121991a3-b0c3-487a-859a-5d1a63d84d0c",
+       "leftValue": "={{ $json.__interview_completed }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "ea5f9c3c-8218-463c-8c1c-cf25f7113ff2",
+   "name": "IF: interview already completed?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -400,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// lib/f08/completeness.js\n// SOURCE OF TRUTH: lib/f08/completeness.js\n//\n// `cards.completeness` for feature 08, design.md \u00a76.1: covered weight \u00f7\n// reachable weight, over the SAME three-criterion set lib/f08/gaps.js\n// selects from (the criteria whose neg_src is deck/interview-reachable --\n// L2/L3/X5 against the live seeded formula).\n//\n// THIS IS NOT 03's `coverage`. Stated here per design.md \u00a76.1's own\n// instruction (\"the two must never be rendered as the same quantity\"):\n// - 03's `coverage` (lib/f03/scoring.js, `aggregate()`) spans ALL TWELVE\n//   founder_score criteria, assessed against a ~0.704 ceiling that includes\n//   criteria no founder-side action can ever close (E1/E3/E4/E5/E7 need\n//   `github_api`; L5 needs `hn_algolia`). It answers \"how much of the\n//   founder's TOTAL score is evidenced\".\n// - 08's `card_completeness` (this file) spans only the three criteria a\n//   FOUNDER can personally close by answering a gap question, against a\n//   ceiling of exactly their combined weight (0.29625 in the live config).\n//   It answers \"of the questions we could still ask you, how many have you\n//   answered\" -- the dashboard renders it as \"how complete your card is\",\n//   never as a score (design.md \u00a76.1).\n// A founder who skips every gap question can show `card_completeness: 0.0`\n// while still carrying a perfectly respectable `founder_score.coverage`\n// from public signals alone -- the two numbers are allowed, and expected, to\n// disagree.\n//\n// Self-contained CommonJS, ZERO imports/requires (docs/backlog/TRACKER.md\n// hard convention). Duplicates lib/f08/gaps.js's CRITERION_TOPIC map and\n// reachability filter rather than requiring that file (each lib/f08/*.js\n// file is pasted into its own separate n8n Code node) -- kept in lockstep\n// by hand; completeness.test.js cross-checks the two copies stay equal.\n\n// ---- duplicated from lib/f08/gaps.js; see that file's header for why. ----\n\nconst CRITERION_TOPIC = {\n  E1: 'founder.execution.merged_pr_foreign',\n  E3: 'founder.execution.commit_consistency',\n  E4: 'founder.execution.live_product',\n  E5: 'founder.execution.external_usage',\n  E7: 'founder.execution.provenance',\n  X1: 'founder.expertise.vertical_tenure',\n  X2: 'founder.expertise.insight_specificity',\n  X5: 'founder.expertise.competitor_granularity',\n  X6: 'founder.expertise.unasked_work',\n  L2: 'founder.leadership.first_customers',\n  L3: 'founder.leadership.icp_specificity',\n  L5: 'founder.leadership.written_communication',\n};\n\nconst GAP_REACHABLE_SOURCES = new Set(['deck_parse', 'interview_answer']);\n\nfunction normalizeCriteriaList(criteria) {\n  if (!criteria) return [];\n  if (Array.isArray(criteria)) return criteria.filter(Boolean);\n  return Object.keys(criteria).map((id) => ({ id, ...criteria[id] }));\n}\n\nfunction isGapReachable(criterion) {\n  const negSrc = Array.isArray(criterion.neg_src) ? criterion.neg_src : [];\n  if (negSrc.length === 0) return false;\n  return negSrc.every((src) => GAP_REACHABLE_SOURCES.has(src));\n}\n\nfunction isCriterionCovered(criterionId, claims) {\n  const topic = CRITERION_TOPIC[criterionId];\n  if (!topic) return false;\n  const list = Array.isArray(claims) ? claims : [];\n  return list.some((c) => c && c.topic === topic && c.verification_status !== 'missing');\n}\n\n// ---- rounding: matches cards.completeness numeric(3,2) (db/schema.sql). ----\n\nfunction round2(value) {\n  return Number(value.toFixed(2));\n}\n\n// ============================================================================\n// cardCompleteness({criteria, claims}) -> number, 0..1, rounded to 2dp.\n//\n// Guarded against an empty reachable set (0/0 -> 0.0 rather than NaN),\n// though the live config never produces one (min three criteria always\n// pass the reachability filter, same guard shape as lib/f03/scoring.js's\n// `allWeight > 0 ? ... : 0` for its own coverage calculation).\n// ============================================================================\n\nfunction cardCompleteness({ criteria, claims } = {}) {\n  const reachable = normalizeCriteriaList(criteria).filter(isGapReachable);\n  const reachableWeight = reachable.reduce((sum, c) => sum + (c.weight ?? 0), 0);\n  if (reachableWeight <= 0) return 0;\n\n  const coveredWeight = reachable\n    .filter((c) => isCriterionCovered(c.id, claims))\n    .reduce((sum, c) => sum + (c.weight ?? 0), 0);\n\n  return round2(coveredWeight / reachableWeight);\n}\n\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst formulaRows = await pgGet.call(this, `score_formulas?axis=eq.founder_score&active=eq.true&select=config&order=created_at.asc&limit=1`);\nconst criteria = (formulaRows.length && formulaRows[0].config && formulaRows[0].config.criteria) || [];\nconst claims = await pgGet.call(this, `claims?card_id=eq.${inp.card_id}&select=id,topic,verification_status`);\nconst completeness = cardCompleteness({ criteria, claims });\nconst questions = (inp.__interview.transcript && inp.__interview.transcript.questions) || [];\nconst accepted = questions.filter(q => q.status === 'answered').length;\nconst skippedCount = questions.filter(q => q.status === 'skipped').length;\nreturn [{ json: { accepted, skipped: skippedCount, card_completeness: completeness, status: inp.status,\n  verdict_eta_hours: 24 } }];\n"
+   },
+   "id": "12166950-7eda-4a61-8ce2-7fb2c10e7b2f",
+   "name": "Build replay response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -160,
+    -240
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "aa0ee832-6c88-4461-ad28-9024bec6f215",
+   "name": "Respond: success (replay)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    80,
+    -240
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// lib/f08/hashing.js\n// SOURCE OF TRUTH: lib/f08/hashing.js\n//\n// Content-hash recipes for feature 08 (Founder Intake): `raw_signals`,\n// `claims` and `evidence` all carry `content_hash ... UNIQUE` (db/schema.sql),\n// and design.md \u00a73.2 fixes the rule that makes retries and re-applications\n// behave correctly against that constraint: **every recipe here includes\n// `application_id`.**\n//\n// Why, restated from design.md \u00a73.2 so this file is self-explaining:\n// `applications.id := intake_submission_id`, so a RETRY (the frontend\n// re-sends the same id by design) collides on the PRIMARY KEY -- that is\n// the idempotency mechanism, and this file has nothing to do with it. A\n// RE-APPLICATION (the founder applies again, later, with a fresh\n// `intake_submission_id`) is deliberately a NEW `applications` row --\n// design.md calls this out as preserving \"the rejection -> growth -> return\n// trajectory\" (SIG-025). Without `application_id` in the hash, a founder\n// re-applying with the identical deck would compute the SAME content_hash\n// as their first application and raise `23505` on every one of\n// raw_signals/claims/evidence, failing the whole intake. With it, a RETRY\n// (same application_id) still dedupes correctly (idempotent Code-node\n// re-execution, not just the DB-level PK collision), while a RE-APPLICATION\n// (different application_id) does not collide.\n\n// Hashing mechanism -- CORRECTED (docs/backlog/TRACKER.md, ~10:45 entry,\n// \"the recorded Code-node sandbox convention is WRONG\"): this file\n// previously used `globalThis.crypto.subtle.digest(...)`, on the strength\n// of the earlier documented convention plus an inference from feature 02's\n// `RUNTIME_POLYFILL_JS` (`globalThis.crypto = require('crypto').webcrypto`).\n//\n// To be precise about what the team lead's live probe actually found (an\n// earlier version of this comment overstated it): the webcrypto polyfill\n// DOES work --\n//   typeof globalThis.crypto.subtle                                -> \"undefined\" (before)\n//   globalThis.crypto = require('crypto').webcrypto; typeof ....subtle -> \"object\"  (after)\n//   await globalThis.crypto.subtle.digest('SHA-256', ...)           -> correct digest\n// -- confirmed live in a real Code node. Switching to `createHash` was not\n// a \"the polyfill is broken\" fix; it is a \"simpler and already-proven\"\n// choice: synchronous, no global-mutation/polyfill step to get right, and\n// exactly what every already-deployed workflow in this repo (f03, f04, f07)\n// already uses. Recorded here precisely because a wrong explanation in a\n// file headed SOURCE OF TRUTH is exactly how the original backwards\n// convention got established -- the point is not to repeat that.\n//\n// `require('crypto')` uses the BARE specifier -- confirmed live that\n// `require('node:crypto')` (the `node:`-prefixed form some other lib/*.js\n// files in this repo use) throws in this sandbox. Requiring a Node\n// BUILT-IN module is the sandbox-confirmed exception to the \"zero imports\"\n// hard convention, which is about requiring REPO FILES (genuinely\n// impossible, no bind-mount) -- not about built-ins, which\n// `NODE_FUNCTION_ALLOW_BUILTIN` in `infra/n8n/docker-compose.yml` allows.\n//\n// Every hashing function below is therefore SYNCHRONOUS now (`createHash`\n// has no async form to begin with) -- callers no longer need to `await`\n// them. This is a behavioural change from this file's first version, not\n// just a mechanism swap: anything that already called these with `await`\n// still works (`await` on a non-promise value is a no-op), but nothing may\n// rely on these returning a `Promise` going forward.\nconst crypto = require('crypto');\n\n// ============================================================================\n// sha256Hex / hashFields -- same shape as lib/f04/provenance.js's and\n// lib/f07/hashes.js's own sha256Hex/hashFields (both already synchronous,\n// both already using this exact `createHash` mechanism -- this file now\n// matches them instead of diverging). The join delimiter is this file's\n// OWN choice (design.md does not specify one for 08's recipes, same as\n// 07's own note about its recipes) -- '::' is used for consistency with\n// lib/f02/normalize.js's convention, and is safe here because none of the\n// fields hashed below (uuids, criterion ids, topic slugs, caller-supplied\n// content keys) can themselves contain '::'.\n// ============================================================================\n\nfunction sha256Hex(text) {\n  return crypto.createHash('sha256').update(String(text == null ? '' : text), 'utf8').digest('hex');\n}\n\nconst HASH_FIELD_DELIMITER = '::';\n\nfunction hashFields(...parts) {\n  const basis = parts\n    .map((part) => (part === null || part === undefined ? '' : String(part)))\n    .join(HASH_FIELD_DELIMITER);\n  return sha256Hex(basis);\n}\n\n// ============================================================================\n// contentHash -- the three recipes design.md \u00a73.2 requires. Every one takes\n// `application_id` as its first field, by convention, so a reader scanning\n// this file top-to-bottom sees the rule applied uniformly rather than\n// having to check each recipe individually.\n// ============================================================================\n\nconst contentHash = {\n  // raw_signals.content_hash = sha256(application_id :: source ::\n  // content_key). `content_key` is caller-supplied and is whatever\n  // discriminates THIS raw signal's content from another one on the same\n  // application -- the deck's own base64 (or extracted text) for the\n  // `source='deck_parse'` write (design.md \u00a73 step 5), or e.g.\n  // `${criterion_id}::${answer_text}` for a `source='interview_answer'`\n  // gap-answer write (design.md \u00a77/\u00a78). Not pre-hashed by this file: it is\n  // joined into the same delimited basis as every other field, which is\n  // simpler and no less collision-resistant than hashing it twice.\n  rawSignal({ application_id, source, content_key }) {\n    return hashFields(application_id, source, content_key);\n  },\n\n  // claims.content_hash = sha256(application_id :: card_id :: topic ::\n  // item_key). `item_key` defaults to '_' for singleton topics -- same\n  // convention lib/f07/hashes.js's claim() recipe and lib/f04/provenance.js's\n  // both already use, kept for consistency even though none of 08's own\n  // founder.expertise.*/founder.leadership.* topics are currently\n  // multi-row-per-application.\n  claim({ application_id, card_id, topic, item_key }) {\n    return hashFields(application_id, card_id, topic, item_key == null || item_key === '' ? '_' : item_key);\n  },\n\n  // evidence.content_hash = sha256(application_id :: claim_id :: relation ::\n  // raw_signal_id). lib/f07/hashes.js's evidence() recipe omits\n  // raw_signal_id because 07 writes exactly one supporting row per claim\n  // (claim_id, relation) is already unique there. 08 additionally includes\n  // raw_signal_id: an image-only deck (design.md \u00a75) writes a `missing`\n  // claim WITH evidence (tier='missing') for every expected topic on the\n  // SAME `raw_signals` row, and a later gap-answer can add a second,\n  // interview-sourced evidence row for a topic the deck already produced a\n  // missing-marker for -- both would otherwise land on the same\n  // (claim_id, relation='supports') pair. Discriminating on raw_signal_id\n  // keeps that case from a spurious 23505 without changing behaviour for\n  // the common single-evidence-per-claim case.\n  evidence({ application_id, claim_id, relation, raw_signal_id }) {\n    return hashFields(application_id, claim_id, relation, raw_signal_id);\n  },\n};\n// lib/f08/gaps.js\n// SOURCE OF TRUTH: lib/f08/gaps.js\n//\n// Deterministic gap-question selection for feature 08, design.md \u00a76 (\"Gap\n// questions -- deterministic selection, LLM only for phrasing\"). Selection\n// is code, never a model: read `score_formulas.config.criteria` (the row\n// for `axis='founder_score' AND active`, resolved by the CALLER -- this\n// file only ever sees the `criteria` array/object already extracted from\n// that row's `config`), keep criteria whose `neg_src` is reachable WITHOUT\n// public sources (deck or interview only), drop those already covered by an\n// existing claim, rank by weight, cap at 3.\n//\n// Against the live seeded formula (`db/seed.sql`, `formula_v1`/\n// `founder_score`) this returns exactly `[L2, L3, X5]` in that order --\n// X1/X2 both carry `tavily_extract` in `neg_src` (a public source CAN reach\n// them), so they fail the reachability filter and are never asked. See\n// design.md \u00a76's own table for why exactly these three.\n//\n// Self-contained CommonJS, ZERO imports/requires (docs/backlog/TRACKER.md\n// hard convention). lib/f08/completeness.js (T9) duplicates the\n// reachability filter and the CRITERION_TOPIC map below rather than\n// requiring this file, for the same \"one Code node per file\" reason --\n// gaps.test.js and completeness.test.js both cross-check the two copies\n// stay equal.\n\n// ============================================================================\n// CRITERION_TOPIC -- the criterion-id -> claims.topic mapping this file\n// needs to check \"is this criterion already covered by a claim\". 03's own\n// design.md \u00a74.7 only defines PREFIX-level routing (founder.execution.* /\n// .expertise.* / .leadership.* -> sub-scorer), not a per-criterion topic\n// slug -- that vocabulary is otherwise open (01 design \u00a711) and 03's own\n// fixture only exercises E1/E3/E4/E5/E7/X1/X2/X6/L5, never L2/L3/X5 (the\n// only three this file cares about). This map CLOSES that gap for exactly\n// the three criteria gap-selection needs, following the existing naming\n// style (vertical_tenure, insight_specificity, written_communication, ...):\n// `L2 -> founder.leadership.first_customers` is pinned directly by plan.md\n// T8's own acceptance criterion; `L3`/`X5` are this file's own choice,\n// named in parallel style (L3's anchor literally says \"ICP specificity\";\n// X5's says \"insider granularity\"). Flagged for review rather than assumed\n// silent -- if 03 or 07 later establishes a DIFFERENT topic string for\n// either, this map is the one place to update, and every consumer here\n// reads through it rather than hardcoding a topic elsewhere.\n//\n// The other nine are carried too (not strictly required, since the live\n// config's neg_src filter below excludes them from ever needing a coverage\n// check), purely so this map stays a complete, single source of truth for\n// \"criterion id -> topic\" rather than a partial one that would silently\n// need extending the day a future formula version widens the reachable set.\nconst CRITERION_TOPIC = {\n  E1: 'founder.execution.merged_pr_foreign',\n  E3: 'founder.execution.commit_consistency',\n  E4: 'founder.execution.live_product',\n  E5: 'founder.execution.external_usage',\n  E7: 'founder.execution.provenance',\n  X1: 'founder.expertise.vertical_tenure',\n  X2: 'founder.expertise.insight_specificity',\n  X5: 'founder.expertise.competitor_granularity',\n  X6: 'founder.expertise.unasked_work',\n  L2: 'founder.leadership.first_customers',\n  L3: 'founder.leadership.icp_specificity',\n  L5: 'founder.leadership.written_communication',\n};\n\n// Criteria whose `neg_src` is a subset of this set can be closed WITHOUT any\n// public source -- design.md \u00a76: \"keep criteria whose neg_src contains\n// ONLY deck_parse and interview_answer\". `raw` is not neg_src at all (it is\n// the model's own confidence-cap input, 03 design \u00a72.3) so it never appears\n// here.\nconst GAP_REACHABLE_SOURCES = new Set(['deck_parse', 'interview_answer']);\n\n// ============================================================================\n// Shared helpers\n// ============================================================================\n\n// `config.criteria` arrives as a jsonb ARRAY in the live `score_formulas`\n// row (db/seed.sql), NOT an object keyed by id -- 03's own done.md warns\n// about this explicitly (\"config.criteria ... are jsonb ARRAYS, not objects\n// keyed by id\"). Both shapes are accepted here defensively, same as\n// lib/f03/scoring.js's normalizeCriteriaRegistry(), because this file\n// cannot require() that one either (zero-imports constraint) -- kept as its\n// own small independent copy, narrowed to a list rather than a by-id map\n// since gap selection iterates, it does not look up by id.\nfunction normalizeCriteriaList(criteria) {\n  if (!criteria) return [];\n  if (Array.isArray(criteria)) return criteria.filter(Boolean);\n  return Object.keys(criteria).map((id) => ({ id, ...criteria[id] }));\n}\n\n// True when EVERY entry in `neg_src` is deck/interview-reachable (and there\n// is at least one entry -- an empty/missing neg_src is not \"reachable by\n// nothing\", it is unspecified, and treating it as reachable would silently\n// start asking about a criterion the config never intended to be\n// interview-answerable at all).\nfunction isGapReachable(criterion) {\n  const negSrc = Array.isArray(criterion.neg_src) ? criterion.neg_src : [];\n  if (negSrc.length === 0) return false;\n  return negSrc.every((src) => GAP_REACHABLE_SOURCES.has(src));\n}\n\n// \"Covered\" -- design.md \u00a76, R-7: a claim exists on the criterion's BASE\n// topic with `verification_status` other than `'missing'`. 07/design.md:734\n// (corrected 2026-07-19) is the authoritative convention: gaps use the base\n// topic + `verification_status='missing'`, NOT a `.gap`-suffixed topic --\n// the earlier `.gap` wording in 07/handoff.md \u00a74 was wrong. Because this\n// check is an EXACT topic-string match, a `.gap`-suffixed row (the old,\n// wrong convention, should it ever appear from a stale writer) can never\n// match the base topic here and therefore can never be mistaken for\n// coverage either -- no separate suffix-stripping logic is needed for that\n// half; only the `verification_status !== 'missing'` filter is load-bearing.\n//\n// This is the exact defect design.md \u00a76/plan.md T8 call out: 07 (and 08's\n// own deck cascade on an image-only deck, design.md \u00a75) write a `missing`\n// claim on a topic as an honest \"looked, found nothing\" marker -- a naive\n// \"does ANY claim exist on this topic\" check would read that absence marker\n// as coverage and suppress exactly the question worth asking.\nfunction isCriterionCovered(criterionId, claims) {\n  const topic = CRITERION_TOPIC[criterionId];\n  if (!topic) return false; // unknown criterion id -- cannot check, so not covered (ask rather than silently skip)\n  const list = Array.isArray(claims) ? claims : [];\n  return list.some((c) => c && c.topic === topic && c.verification_status !== 'missing');\n}\n\n// ============================================================================\n// selectGapCriteria -- design.md \u00a76's full pipeline: filter reachable ->\n// drop covered -> rank by weight desc -> cap.\n//\n// selectGapCriteria({criteria, claims, cap}) -> criterion objects (id,\n// weight, anchor, neg_src, subscorer, topic), ranked, length 0..cap. Returns\n// full objects rather than bare ids because the downstream\n// `gap-question-phraser` agent (design.md \u00a77) needs `id`, `anchor` and\n// `weight` as its own input -- callers wanting the bare-id list the plan's\n// AC is phrased against can `.map(c => c.id)`.\n// ============================================================================\n\nfunction selectGapCriteria({ criteria, claims, cap = 3 } = {}) {\n  const reachable = normalizeCriteriaList(criteria).filter(isGapReachable);\n  const uncovered = reachable.filter((c) => !isCriterionCovered(c.id, claims));\n  const ranked = uncovered.slice().sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));\n  return ranked.slice(0, cap).map((c) => ({ ...c, topic: CRITERION_TOPIC[c.id] ?? null }));\n}\n\nconst inp = $json;\nfor (const a of inp.answers) {\n  const topic = CRITERION_TOPIC[a.criterion_id];\n  if (!topic) continue; // unknown criterion id -- defensively skip rather than throw\n  const rsHash = contentHash.rawSignal({ application_id: inp.application_id, source: 'interview_answer',\n    content_key: a.criterion_id + ':answer' });\n  const existingRs = await pgGet.call(this, `raw_signals?content_hash=eq.${encodeURIComponent(rsHash)}&select=id`);\n  let rawSignalId;\n  if (existingRs.length) {\n    rawSignalId = existingRs[0].id;\n  } else {\n    const made = await pg.call(this, 'POST', 'raw_signals', {\n      source: 'interview_answer', source_url: null,\n      payload: { criterion_id: a.criterion_id, question: a.question, answer_text: a.answer_text },\n      content_hash: rsHash, founder_id: inp.founder_id, company_id: inp.company_id, observed_at: new Date().toISOString(),\n    }, 'return=representation');\n    rawSignalId = made[0].id;\n  }\n  const claimHash = contentHash.claim({ application_id: inp.application_id, card_id: inp.card_id, topic, item_key: 'interview' });\n  const existingClaim = await pgGet.call(this, `claims?content_hash=eq.${encodeURIComponent(claimHash)}&select=id`);\n  let claimId;\n  if (existingClaim.length) {\n    claimId = existingClaim[0].id;\n  } else {\n    const made = await pg.call(this, 'POST', 'claims', {\n      card_id: inp.card_id, topic, text_verbatim: a.answer_text, value: null, axis: null,\n      source_kind: 'interview', base_confidence: 0.3, verification_status: 'unverified', content_hash: claimHash,\n    }, 'return=representation');\n    claimId = made[0].id;\n  }\n  const evHash = contentHash.evidence({ application_id: inp.application_id, claim_id: claimId, relation: 'supports', raw_signal_id: rawSignalId });\n  const existingEv = await pgGet.call(this, `evidence?content_hash=eq.${encodeURIComponent(evHash)}&select=id`);\n  if (!existingEv.length) {\n    await pg.call(this, 'POST', 'evidence', {\n      claim_id: claimId, relation: 'supports', tier: 'discovered', strength: null,\n      quote_verbatim: a.answer_text, source_url: null, raw_signal_id: rawSignalId, content_hash: evHash,\n    }, 'return=minimal');\n  }\n}\nreturn [{ json: inp }];\n"
+   },
+   "id": "74edb8ec-cf8e-4416-afad-4b2b2a0ee2d5",
+   "name": "Write answer claims + evidence + raw_signals",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -160,
+    120
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst answeredIds = new Set(inp.answers.map(a => a.criterion_id));\nconst skippedIds = new Set(inp.skipped_criterion_ids);\nconst transcript = inp.__interview.transcript || { questions: [] };\nconst questions = (transcript.questions || []).map(q => {\n  if (answeredIds.has(q.criterion_id)) {\n    const a = inp.answers.find(x => x.criterion_id === q.criterion_id);\n    return { ...q, status: 'answered', answer_text: a.answer_text };\n  }\n  if (skippedIds.has(q.criterion_id)) return { ...q, status: 'skipped' };\n  return q; // neither answered nor explicitly skipped -- left pending\n});\nawait pg.call(this, 'PATCH', `interviews?id=eq.${inp.__interview.id}`, {\n  status: 'completed', transcript: { questions }, completed_at: new Date().toISOString(),\n}, 'return=minimal');\nreturn [{ json: inp }];\n"
+   },
+   "id": "19122c2c-94da-4b69-8fe6-24b5049f5748",
+   "name": "Mark interview completed",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    80,
+    120
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// lib/f08/completeness.js\n// SOURCE OF TRUTH: lib/f08/completeness.js\n//\n// `cards.completeness` for feature 08, design.md \u00a76.1: covered weight \u00f7\n// reachable weight, over the SAME three-criterion set lib/f08/gaps.js\n// selects from (the criteria whose neg_src is deck/interview-reachable --\n// L2/L3/X5 against the live seeded formula).\n//\n// THIS IS NOT 03's `coverage`. Stated here per design.md \u00a76.1's own\n// instruction (\"the two must never be rendered as the same quantity\"):\n// - 03's `coverage` (lib/f03/scoring.js, `aggregate()`) spans ALL TWELVE\n//   founder_score criteria, assessed against a ~0.704 ceiling that includes\n//   criteria no founder-side action can ever close (E1/E3/E4/E5/E7 need\n//   `github_api`; L5 needs `hn_algolia`). It answers \"how much of the\n//   founder's TOTAL score is evidenced\".\n// - 08's `card_completeness` (this file) spans only the three criteria a\n//   FOUNDER can personally close by answering a gap question, against a\n//   ceiling of exactly their combined weight (0.29625 in the live config).\n//   It answers \"of the questions we could still ask you, how many have you\n//   answered\" -- the dashboard renders it as \"how complete your card is\",\n//   never as a score (design.md \u00a76.1).\n// A founder who skips every gap question can show `card_completeness: 0.0`\n// while still carrying a perfectly respectable `founder_score.coverage`\n// from public signals alone -- the two numbers are allowed, and expected, to\n// disagree.\n//\n// Self-contained CommonJS, ZERO imports/requires (docs/backlog/TRACKER.md\n// hard convention). Duplicates lib/f08/gaps.js's CRITERION_TOPIC map and\n// reachability filter rather than requiring that file (each lib/f08/*.js\n// file is pasted into its own separate n8n Code node) -- kept in lockstep\n// by hand; completeness.test.js cross-checks the two copies stay equal.\n\n// ---- duplicated from lib/f08/gaps.js; see that file's header for why. ----\n\nconst CRITERION_TOPIC = {\n  E1: 'founder.execution.merged_pr_foreign',\n  E3: 'founder.execution.commit_consistency',\n  E4: 'founder.execution.live_product',\n  E5: 'founder.execution.external_usage',\n  E7: 'founder.execution.provenance',\n  X1: 'founder.expertise.vertical_tenure',\n  X2: 'founder.expertise.insight_specificity',\n  X5: 'founder.expertise.competitor_granularity',\n  X6: 'founder.expertise.unasked_work',\n  L2: 'founder.leadership.first_customers',\n  L3: 'founder.leadership.icp_specificity',\n  L5: 'founder.leadership.written_communication',\n};\n\nconst GAP_REACHABLE_SOURCES = new Set(['deck_parse', 'interview_answer']);\n\nfunction normalizeCriteriaList(criteria) {\n  if (!criteria) return [];\n  if (Array.isArray(criteria)) return criteria.filter(Boolean);\n  return Object.keys(criteria).map((id) => ({ id, ...criteria[id] }));\n}\n\nfunction isGapReachable(criterion) {\n  const negSrc = Array.isArray(criterion.neg_src) ? criterion.neg_src : [];\n  if (negSrc.length === 0) return false;\n  return negSrc.every((src) => GAP_REACHABLE_SOURCES.has(src));\n}\n\nfunction isCriterionCovered(criterionId, claims) {\n  const topic = CRITERION_TOPIC[criterionId];\n  if (!topic) return false;\n  const list = Array.isArray(claims) ? claims : [];\n  return list.some((c) => c && c.topic === topic && c.verification_status !== 'missing');\n}\n\n// ---- rounding: matches cards.completeness numeric(3,2) (db/schema.sql). ----\n\nfunction round2(value) {\n  return Number(value.toFixed(2));\n}\n\n// ============================================================================\n// cardCompleteness({criteria, claims}) -> number, 0..1, rounded to 2dp.\n//\n// Guarded against an empty reachable set (0/0 -> 0.0 rather than NaN),\n// though the live config never produces one (min three criteria always\n// pass the reachability filter, same guard shape as lib/f03/scoring.js's\n// `allWeight > 0 ? ... : 0` for its own coverage calculation).\n// ============================================================================\n\nfunction cardCompleteness({ criteria, claims } = {}) {\n  const reachable = normalizeCriteriaList(criteria).filter(isGapReachable);\n  const reachableWeight = reachable.reduce((sum, c) => sum + (c.weight ?? 0), 0);\n  if (reachableWeight <= 0) return 0;\n\n  const coveredWeight = reachable\n    .filter((c) => isCriterionCovered(c.id, claims))\n    .reduce((sum, c) => sum + (c.weight ?? 0), 0);\n\n  return round2(coveredWeight / reachableWeight);\n}\n\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst formulaRows = await pgGet.call(this, `score_formulas?axis=eq.founder_score&active=eq.true&select=config&order=created_at.asc&limit=1`);\nconst criteria = (formulaRows.length && formulaRows[0].config && formulaRows[0].config.criteria) || [];\nconst claims = await pgGet.call(this, `claims?card_id=eq.${inp.card_id}&select=id,topic,verification_status`);\nconst completeness = cardCompleteness({ criteria, claims });\nawait pg.call(this, 'PATCH', `cards?id=eq.${inp.card_id}`, { completeness }, 'return=minimal');\nawait pg.call(this, 'POST', 'events', {\n  event_type: 'gap_answers_submitted', entity_type: 'founder', entity_id: inp.founder_id,\n  payload: { application_id: inp.application_id, accepted: inp.answers.length, skipped: inp.skipped_criterion_ids.length },\n  actor: 'f08-gap-answers',\n}, 'return=minimal');\nreturn [{ json: { founder_id: inp.founder_id, accepted: inp.answers.length, skipped: inp.skipped_criterion_ids.length,\n  card_completeness: completeness, status: inp.status, verdict_eta_hours: 24 } }];\n"
+   },
+   "id": "00297df1-17d8-4141-9828-ba0dacc7aeb5",
+   "name": "Recompute completeness + write events",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    320,
+    120
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nreturn [{ json: { accepted: inp.accepted, skipped: inp.skipped, card_completeness: inp.card_completeness,\n  status: inp.status, verdict_eta_hours: inp.verdict_eta_hours } }];\n"
+   },
+   "id": "7131d5d7-167f-4450-bf58-d742e74f6144",
+   "name": "Build GapAnswersResponse",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    560,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "7b1ee3df-a30b-4437-b988-96b59a7d9862",
+   "name": "Respond: success",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    800,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// n8n-spec.md SS0.3.1 -- the single shared internal-error responder every risky\n// Code/httpRequest node's error output feeds. Fixed copy regardless of the upstream\n// failure's shape -- lovable-brief.md SS9.5's exact string, so Postgres/Storage/OpenAI\n// failures all read identically to the founder.\nreturn [{ json: { error: { code: 'internal', message: \"Something went wrong on our side. Your answers are still here \\u2014 try again.\" } } }];\n"
+   },
+   "id": "028ff93a-805d-409f-b236-5fcee83d09ec",
+   "name": "Handle unexpected error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -160,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 500
+    }
+   },
+   "id": "8cbcaf5d-35b6-4f1d-8601-b49452d7aa4b",
+   "name": "Respond: internal error (500)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    80,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "const ctx = $('Recompute completeness + write events').first().json; return [{ json: { founder_id: ctx.founder_id } }];"
+   },
+   "id": "11527c6c-589d-41bc-a7a4-a83fe1dfd9a7",
+   "name": "Build rescore input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1040,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "source": "database",
+    "workflowId": {
+     "__rl": true,
+     "value": "AlkzJ70zET7SiHkn",
+     "mode": "id"
+    },
+    "options": {}
+   },
+   "id": "c343beb7-91c8-4824-8f04-97430308179c",
+   "name": "Trigger f03-score-founder rescore",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.2,
+   "position": [
+    1280,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $('Build rescore input').first().json;\nawait pg.call(this, 'POST', 'events', {\n  event_type: 'rescore_triggered', entity_type: 'founder', entity_id: inp.founder_id, payload: {}, actor: 'f08-gap-answers',\n}, 'return=minimal');\nreturn [{ json: {} }];\n"
+   },
+   "id": "867977ec-3268-4711-b661-2bad4aad3dd0",
+   "name": "Write events (rescore_triggered)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1520,
+    120
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook: f08-gap-answers": {
+   "main": [
+    [
+     {
+      "node": "Validate input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validate input": {
+   "main": [
+    [
+     {
+      "node": "IF: valid?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: valid?": {
+   "main": [
+    [
+     {
+      "node": "Fetch application + first interview",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build client error response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build client error response": {
+   "main": [
+    [
+     {
+      "node": "Respond: bad request (400)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch application + first interview": {
+   "main": [
+    [
+     {
+      "node": "IF: application found?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: application found?": {
+   "main": [
+    [
+     {
+      "node": "IF: interview already completed?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build not-found response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build not-found response": {
+   "main": [
+    [
+     {
+      "node": "Respond: not found (404)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: interview already completed?": {
+   "main": [
+    [
+     {
+      "node": "Build replay response",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Write answer claims + evidence + raw_signals",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build replay response": {
+   "main": [
+    [
+     {
+      "node": "Respond: success (replay)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write answer claims + evidence + raw_signals": {
+   "main": [
+    [
+     {
+      "node": "Mark interview completed",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mark interview completed": {
+   "main": [
+    [
+     {
+      "node": "Recompute completeness + write events",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Recompute completeness + write events": {
+   "main": [
+    [
+     {
+      "node": "Build GapAnswersResponse",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build GapAnswersResponse": {
+   "main": [
+    [
+     {
+      "node": "Respond: success",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Respond: success": {
+   "main": [
+    [
+     {
+      "node": "Build rescore input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build rescore input": {
+   "main": [
+    [
+     {
+      "node": "Trigger f03-score-founder rescore",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Trigger f03-score-founder rescore": {
+   "main": [
+    [
+     {
+      "node": "Write events (rescore_triggered)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle unexpected error": {
+   "main": [
+    [
+     {
+      "node": "Respond: internal error (500)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}

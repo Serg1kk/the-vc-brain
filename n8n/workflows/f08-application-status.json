@@ -1,0 +1,375 @@
+{
+ "name": "f08-application-status",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "f08-application-status",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "33539e4a-0147-4a93-baa6-ccc4769f62e7",
+   "name": "Webhook: f08-application-status",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1200,
+    0
+   ],
+   "webhookId": "4aa673d9-3bac-45a6-8a9a-0e459d597d65"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst item = $input.first().json;\nconst query = item.query || {};\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst applicationId = String(query.application_id || '').trim();\nif (!applicationId || !UUID_RE.test(applicationId)) {\n  return [{ json: { __valid: false, error: { code: 'invalid_input', message: 'application_id must be a uuid.' } } }];\n}\nreturn [{ json: { __valid: true, application_id: applicationId } }];\n"
+   },
+   "id": "1ad400bb-eb70-4615-923d-3979e837da7d",
+   "name": "Validate query",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -960,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "776b27c5-537d-44ef-a977-44cf4cf56d15",
+       "leftValue": "={{ $json.__valid }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "1ae410d6-01ca-484a-b4df-7dd228e6b2fa",
+   "name": "IF: valid?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -720,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: $json.error } }];"
+   },
+   "id": "7283579d-08b9-470f-8461-bc9461a1c78d",
+   "name": "Build client error response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -480,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 400
+    }
+   },
+   "id": "874d3acc-e1da-4d63-9b28-58c74e59af99",
+   "name": "Respond: bad request (400)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    -240,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst apps = await pgGet.call(this,\n  `applications?id=eq.${inp.application_id}&select=id,status,created_at,company_id&order=created_at.asc&limit=1`);\nif (!apps.length) return [{ json: { ...inp, __found: false } }];\nconst app = apps[0];\nconst companies = await pgGet.call(this, `companies?id=eq.${app.company_id}&select=name&limit=1`);\nconst cards = await pgGet.call(this,\n  `cards?application_id=eq.${inp.application_id}&card_type=eq.founder&select=id,completeness&order=created_at.asc&limit=1`);\nconst card = cards.length ? cards[0] : null;\nconst interviews = await pgGet.call(this,\n  `interviews?application_id=eq.${inp.application_id}&kind=eq.first&select=status,transcript&order=created_at.asc&limit=1`);\nconst interview = interviews.length ? interviews[0] : null;\nreturn [{ json: { ...inp, __found: true, status: app.status, submitted_at: app.created_at,\n  company_name: companies.length ? companies[0].name : null, card_id: card ? card.id : null, __interview: interview } }];\n"
+   },
+   "id": "84507160-286a-4cc8-850f-cc8d4fac7881",
+   "name": "Fetch application + company + card + interview",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -480,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "2abc5841-6d68-483d-a828-286efb560e03",
+       "leftValue": "={{ $json.__found }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "b91be122-e399-43f0-b594-d0307ec58655",
+   "name": "IF: found?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -240,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: { code: 'not_found', message: 'Application not found.' } } }];"
+   },
+   "id": "7fd29601-528a-4971-8e3d-04b92e6b3bc7",
+   "name": "Build not-found response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 404
+    }
+   },
+   "id": "139caa15-2b7b-4828-89e7-391080fa4885",
+   "name": "Respond: not found (404)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    240,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// lib/f08/completeness.js\n// SOURCE OF TRUTH: lib/f08/completeness.js\n//\n// `cards.completeness` for feature 08, design.md \u00a76.1: covered weight \u00f7\n// reachable weight, over the SAME three-criterion set lib/f08/gaps.js\n// selects from (the criteria whose neg_src is deck/interview-reachable --\n// L2/L3/X5 against the live seeded formula).\n//\n// THIS IS NOT 03's `coverage`. Stated here per design.md \u00a76.1's own\n// instruction (\"the two must never be rendered as the same quantity\"):\n// - 03's `coverage` (lib/f03/scoring.js, `aggregate()`) spans ALL TWELVE\n//   founder_score criteria, assessed against a ~0.704 ceiling that includes\n//   criteria no founder-side action can ever close (E1/E3/E4/E5/E7 need\n//   `github_api`; L5 needs `hn_algolia`). It answers \"how much of the\n//   founder's TOTAL score is evidenced\".\n// - 08's `card_completeness` (this file) spans only the three criteria a\n//   FOUNDER can personally close by answering a gap question, against a\n//   ceiling of exactly their combined weight (0.29625 in the live config).\n//   It answers \"of the questions we could still ask you, how many have you\n//   answered\" -- the dashboard renders it as \"how complete your card is\",\n//   never as a score (design.md \u00a76.1).\n// A founder who skips every gap question can show `card_completeness: 0.0`\n// while still carrying a perfectly respectable `founder_score.coverage`\n// from public signals alone -- the two numbers are allowed, and expected, to\n// disagree.\n//\n// Self-contained CommonJS, ZERO imports/requires (docs/backlog/TRACKER.md\n// hard convention). Duplicates lib/f08/gaps.js's CRITERION_TOPIC map and\n// reachability filter rather than requiring that file (each lib/f08/*.js\n// file is pasted into its own separate n8n Code node) -- kept in lockstep\n// by hand; completeness.test.js cross-checks the two copies stay equal.\n\n// ---- duplicated from lib/f08/gaps.js; see that file's header for why. ----\n\nconst CRITERION_TOPIC = {\n  E1: 'founder.execution.merged_pr_foreign',\n  E3: 'founder.execution.commit_consistency',\n  E4: 'founder.execution.live_product',\n  E5: 'founder.execution.external_usage',\n  E7: 'founder.execution.provenance',\n  X1: 'founder.expertise.vertical_tenure',\n  X2: 'founder.expertise.insight_specificity',\n  X5: 'founder.expertise.competitor_granularity',\n  X6: 'founder.expertise.unasked_work',\n  L2: 'founder.leadership.first_customers',\n  L3: 'founder.leadership.icp_specificity',\n  L5: 'founder.leadership.written_communication',\n};\n\nconst GAP_REACHABLE_SOURCES = new Set(['deck_parse', 'interview_answer']);\n\nfunction normalizeCriteriaList(criteria) {\n  if (!criteria) return [];\n  if (Array.isArray(criteria)) return criteria.filter(Boolean);\n  return Object.keys(criteria).map((id) => ({ id, ...criteria[id] }));\n}\n\nfunction isGapReachable(criterion) {\n  const negSrc = Array.isArray(criterion.neg_src) ? criterion.neg_src : [];\n  if (negSrc.length === 0) return false;\n  return negSrc.every((src) => GAP_REACHABLE_SOURCES.has(src));\n}\n\nfunction isCriterionCovered(criterionId, claims) {\n  const topic = CRITERION_TOPIC[criterionId];\n  if (!topic) return false;\n  const list = Array.isArray(claims) ? claims : [];\n  return list.some((c) => c && c.topic === topic && c.verification_status !== 'missing');\n}\n\n// ---- rounding: matches cards.completeness numeric(3,2) (db/schema.sql). ----\n\nfunction round2(value) {\n  return Number(value.toFixed(2));\n}\n\n// ============================================================================\n// cardCompleteness({criteria, claims}) -> number, 0..1, rounded to 2dp.\n//\n// Guarded against an empty reachable set (0/0 -> 0.0 rather than NaN),\n// though the live config never produces one (min three criteria always\n// pass the reachability filter, same guard shape as lib/f03/scoring.js's\n// `allWeight > 0 ? ... : 0` for its own coverage calculation).\n// ============================================================================\n\nfunction cardCompleteness({ criteria, claims } = {}) {\n  const reachable = normalizeCriteriaList(criteria).filter(isGapReachable);\n  const reachableWeight = reachable.reduce((sum, c) => sum + (c.weight ?? 0), 0);\n  if (reachableWeight <= 0) return 0;\n\n  const coveredWeight = reachable\n    .filter((c) => isCriterionCovered(c.id, claims))\n    .reduce((sum, c) => sum + (c.weight ?? 0), 0);\n\n  return round2(coveredWeight / reachableWeight);\n}\n\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nlet openQuestions = 0;\nif (inp.__interview && inp.__interview.status !== 'completed') {\n  const qs = (inp.__interview.transcript && inp.__interview.transcript.questions) || [];\n  openQuestions = qs.filter(q => q.status === 'pending').length;\n}\nlet completeness = 0;\nif (inp.card_id) {\n  const formulaRows = await pgGet.call(this, `score_formulas?axis=eq.founder_score&active=eq.true&select=config&order=created_at.asc&limit=1`);\n  const criteria = (formulaRows.length && formulaRows[0].config && formulaRows[0].config.criteria) || [];\n  const claims = await pgGet.call(this, `claims?card_id=eq.${inp.card_id}&select=id,topic,verification_status`);\n  completeness = cardCompleteness({ criteria, claims });\n}\nreturn [{ json: {\n  application_id: inp.application_id, company_name: inp.company_name, status: inp.status,\n  submitted_at: inp.submitted_at, verdict_eta_hours: 24, card_completeness: completeness, open_questions: openQuestions,\n} }];\n"
+   },
+   "id": "5504fc78-2ea1-45fe-9570-2fb0b670c46f",
+   "name": "Compute open_questions + fresh completeness",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "ce625d38-f367-40b9-8663-bdb1d1540c09",
+   "name": "Respond: success",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    240,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// n8n-spec.md SS0.3.1 -- the single shared internal-error responder every risky\n// Code/httpRequest node's error output feeds. Fixed copy regardless of the upstream\n// failure's shape -- lovable-brief.md SS9.5's exact string, so Postgres/Storage/OpenAI\n// failures all read identically to the founder.\nreturn [{ json: { error: { code: 'internal', message: \"Something went wrong on our side. Your answers are still here \\u2014 try again.\" } } }];\n"
+   },
+   "id": "c9f4c2f0-f6a4-4e7c-b10b-89f5ccceff30",
+   "name": "Handle unexpected error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 500
+    }
+   },
+   "id": "6420c4f7-e3c3-4ce3-891b-6769faacd938",
+   "name": "Respond: internal error (500)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    240,
+    600
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook: f08-application-status": {
+   "main": [
+    [
+     {
+      "node": "Validate query",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validate query": {
+   "main": [
+    [
+     {
+      "node": "IF: valid?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: valid?": {
+   "main": [
+    [
+     {
+      "node": "Fetch application + company + card + interview",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build client error response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build client error response": {
+   "main": [
+    [
+     {
+      "node": "Respond: bad request (400)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch application + company + card + interview": {
+   "main": [
+    [
+     {
+      "node": "IF: found?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: found?": {
+   "main": [
+    [
+     {
+      "node": "Compute open_questions + fresh completeness",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build not-found response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build not-found response": {
+   "main": [
+    [
+     {
+      "node": "Respond: not found (404)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Compute open_questions + fresh completeness": {
+   "main": [
+    [
+     {
+      "node": "Respond: success",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle unexpected error": {
+   "main": [
+    [
+     {
+      "node": "Respond: internal error (500)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}

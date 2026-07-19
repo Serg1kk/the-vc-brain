@@ -1,0 +1,441 @@
+{
+ "name": "f08-followup",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "f08-followup",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "011164b6-b8f0-4d8e-b5b9-4f9369b4ec55",
+   "name": "Webhook: f08-followup",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1000,
+    0
+   ],
+   "webhookId": "d591f5c4-3e1d-4c7e-aaca-25c6a74200d6"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "e3f9e38b-b8ad-434c-b1df-e2caa99f4cd1",
+       "leftValue": "={{ !!$json.query.token }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "5abd3628-43df-4416-bfc2-b1aa3ed9901f",
+   "name": "IF: token param present?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -760,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: { code: 'invalid_input', message: 'token is required.' } } }];"
+   },
+   "id": "6ad05bc5-fd61-493c-a0b5-2d432eb34fa4",
+   "name": "Build missing-token error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -520,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 400
+    }
+   },
+   "id": "9a5fbe19-dd5f-4c6b-93f1-0fef83a04acf",
+   "name": "Respond: bad request (400)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    -280,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n// lib/f08/hashing.js\n// SOURCE OF TRUTH: lib/f08/hashing.js\n//\n// Content-hash recipes for feature 08 (Founder Intake): `raw_signals`,\n// `claims` and `evidence` all carry `content_hash ... UNIQUE` (db/schema.sql),\n// and design.md \u00a73.2 fixes the rule that makes retries and re-applications\n// behave correctly against that constraint: **every recipe here includes\n// `application_id`.**\n//\n// Why, restated from design.md \u00a73.2 so this file is self-explaining:\n// `applications.id := intake_submission_id`, so a RETRY (the frontend\n// re-sends the same id by design) collides on the PRIMARY KEY -- that is\n// the idempotency mechanism, and this file has nothing to do with it. A\n// RE-APPLICATION (the founder applies again, later, with a fresh\n// `intake_submission_id`) is deliberately a NEW `applications` row --\n// design.md calls this out as preserving \"the rejection -> growth -> return\n// trajectory\" (SIG-025). Without `application_id` in the hash, a founder\n// re-applying with the identical deck would compute the SAME content_hash\n// as their first application and raise `23505` on every one of\n// raw_signals/claims/evidence, failing the whole intake. With it, a RETRY\n// (same application_id) still dedupes correctly (idempotent Code-node\n// re-execution, not just the DB-level PK collision), while a RE-APPLICATION\n// (different application_id) does not collide.\n\n// Hashing mechanism -- CORRECTED (docs/backlog/TRACKER.md, ~10:45 entry,\n// \"the recorded Code-node sandbox convention is WRONG\"): this file\n// previously used `globalThis.crypto.subtle.digest(...)`, on the strength\n// of the earlier documented convention plus an inference from feature 02's\n// `RUNTIME_POLYFILL_JS` (`globalThis.crypto = require('crypto').webcrypto`).\n//\n// To be precise about what the team lead's live probe actually found (an\n// earlier version of this comment overstated it): the webcrypto polyfill\n// DOES work --\n//   typeof globalThis.crypto.subtle                                -> \"undefined\" (before)\n//   globalThis.crypto = require('crypto').webcrypto; typeof ....subtle -> \"object\"  (after)\n//   await globalThis.crypto.subtle.digest('SHA-256', ...)           -> correct digest\n// -- confirmed live in a real Code node. Switching to `createHash` was not\n// a \"the polyfill is broken\" fix; it is a \"simpler and already-proven\"\n// choice: synchronous, no global-mutation/polyfill step to get right, and\n// exactly what every already-deployed workflow in this repo (f03, f04, f07)\n// already uses. Recorded here precisely because a wrong explanation in a\n// file headed SOURCE OF TRUTH is exactly how the original backwards\n// convention got established -- the point is not to repeat that.\n//\n// `require('crypto')` uses the BARE specifier -- confirmed live that\n// `require('node:crypto')` (the `node:`-prefixed form some other lib/*.js\n// files in this repo use) throws in this sandbox. Requiring a Node\n// BUILT-IN module is the sandbox-confirmed exception to the \"zero imports\"\n// hard convention, which is about requiring REPO FILES (genuinely\n// impossible, no bind-mount) -- not about built-ins, which\n// `NODE_FUNCTION_ALLOW_BUILTIN` in `infra/n8n/docker-compose.yml` allows.\n//\n// Every hashing function below is therefore SYNCHRONOUS now (`createHash`\n// has no async form to begin with) -- callers no longer need to `await`\n// them. This is a behavioural change from this file's first version, not\n// just a mechanism swap: anything that already called these with `await`\n// still works (`await` on a non-promise value is a no-op), but nothing may\n// rely on these returning a `Promise` going forward.\nconst crypto = require('crypto');\n\n// ============================================================================\n// sha256Hex / hashFields -- same shape as lib/f04/provenance.js's and\n// lib/f07/hashes.js's own sha256Hex/hashFields (both already synchronous,\n// both already using this exact `createHash` mechanism -- this file now\n// matches them instead of diverging). The join delimiter is this file's\n// OWN choice (design.md does not specify one for 08's recipes, same as\n// 07's own note about its recipes) -- '::' is used for consistency with\n// lib/f02/normalize.js's convention, and is safe here because none of the\n// fields hashed below (uuids, criterion ids, topic slugs, caller-supplied\n// content keys) can themselves contain '::'.\n// ============================================================================\n\nfunction sha256Hex(text) {\n  return crypto.createHash('sha256').update(String(text == null ? '' : text), 'utf8').digest('hex');\n}\n\nconst HASH_FIELD_DELIMITER = '::';\n\nfunction hashFields(...parts) {\n  const basis = parts\n    .map((part) => (part === null || part === undefined ? '' : String(part)))\n    .join(HASH_FIELD_DELIMITER);\n  return sha256Hex(basis);\n}\n\n// ============================================================================\n// contentHash -- the three recipes design.md \u00a73.2 requires. Every one takes\n// `application_id` as its first field, by convention, so a reader scanning\n// this file top-to-bottom sees the rule applied uniformly rather than\n// having to check each recipe individually.\n// ============================================================================\n\nconst contentHash = {\n  // raw_signals.content_hash = sha256(application_id :: source ::\n  // content_key). `content_key` is caller-supplied and is whatever\n  // discriminates THIS raw signal's content from another one on the same\n  // application -- the deck's own base64 (or extracted text) for the\n  // `source='deck_parse'` write (design.md \u00a73 step 5), or e.g.\n  // `${criterion_id}::${answer_text}` for a `source='interview_answer'`\n  // gap-answer write (design.md \u00a77/\u00a78). Not pre-hashed by this file: it is\n  // joined into the same delimited basis as every other field, which is\n  // simpler and no less collision-resistant than hashing it twice.\n  rawSignal({ application_id, source, content_key }) {\n    return hashFields(application_id, source, content_key);\n  },\n\n  // claims.content_hash = sha256(application_id :: card_id :: topic ::\n  // item_key). `item_key` defaults to '_' for singleton topics -- same\n  // convention lib/f07/hashes.js's claim() recipe and lib/f04/provenance.js's\n  // both already use, kept for consistency even though none of 08's own\n  // founder.expertise.*/founder.leadership.* topics are currently\n  // multi-row-per-application.\n  claim({ application_id, card_id, topic, item_key }) {\n    return hashFields(application_id, card_id, topic, item_key == null || item_key === '' ? '_' : item_key);\n  },\n\n  // evidence.content_hash = sha256(application_id :: claim_id :: relation ::\n  // raw_signal_id). lib/f07/hashes.js's evidence() recipe omits\n  // raw_signal_id because 07 writes exactly one supporting row per claim\n  // (claim_id, relation) is already unique there. 08 additionally includes\n  // raw_signal_id: an image-only deck (design.md \u00a75) writes a `missing`\n  // claim WITH evidence (tier='missing') for every expected topic on the\n  // SAME `raw_signals` row, and a later gap-answer can add a second,\n  // interview-sourced evidence row for a topic the deck already produced a\n  // missing-marker for -- both would otherwise land on the same\n  // (claim_id, relation='supports') pair. Discriminating on raw_signal_id\n  // keeps that case from a spurious 23505 without changing behaviour for\n  // the common single-evidence-per-claim case.\n  evidence({ application_id, claim_id, relation, raw_signal_id }) {\n    return hashFields(application_id, claim_id, relation, raw_signal_id);\n  },\n};\n\nconst item = $input.first().json;\nconst token = String((item.query && item.query.token) || '');\nconst tokenHash = sha256Hex(token);\nconst rows = await pgGet.call(this,\n  `interviews?kind=eq.follow_up&share_token=eq.${encodeURIComponent(tokenHash)}` +\n  `&select=id,application_id,status,transcript,created_at&order=created_at.asc&limit=1`);\nreturn [{ json: { __interview: rows.length ? rows[0] : null } }];\n"
+   },
+   "id": "98e88bd6-4280-41e6-832c-33bee94f3b7f",
+   "name": "Hash token, look up interview",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -520,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "8a88dfd1-e128-41d9-bd7c-fdaa87a32a69",
+       "leftValue": "={{ !!$json.__interview }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "70e52f45-f61e-468d-aba0-9c25f65e3c83",
+   "name": "IF: found?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -280,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { valid: false, reason: 'unknown' } }];"
+   },
+   "id": "29a186b6-5581-4ad0-bc99-9d38c3adffe5",
+   "name": "Build valid:false (unknown)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -40,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "bd728cfa-dfdf-4403-8dbb-341f0108ebeb",
+   "name": "Respond: valid false (200)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    200,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "2c3b664a-0f1a-4b4a-b020-96e757578980",
+       "leftValue": "={{ (Date.now() - new Date($json.__interview.created_at).getTime()) > 24*60*60*1000 }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "dcec9b6d-f462-49ab-8514-2b5928dac5b8",
+   "name": "IF: expired (>24h)?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -40,
+    -60
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { valid: false, reason: 'expired' } }];"
+   },
+   "id": "b93135fe-860a-413f-99f4-ff23c99530e6",
+   "name": "Build valid:false (expired)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    200,
+    -240
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "d02c5777-d179-4e0d-9076-973451514324",
+   "name": "Respond: valid false expired (200)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    440,
+    -240
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\nconst iv = inp.__interview;\nconst apps = await pgGet.call(this, `applications?id=eq.${iv.application_id}&select=company_id&limit=1`);\nconst companyId = apps.length ? apps[0].company_id : null;\nconst companies = companyId ? await pgGet.call(this, `companies?id=eq.${companyId}&select=name&limit=1`) : [];\nconst meta = (iv.transcript && iv.transcript.meta) || {};\nconst questions = ((iv.transcript && iv.transcript.questions) || [])\n  .map(q => ({ criterion_id: q.criterion_id, question: q.question, why: q.why, placeholder: q.placeholder }));\nreturn [{ json: {\n  valid: true,\n  company_name: companies.length ? companies[0].name : null,\n  asked_by: meta.asked_by || 'The investor reviewing your application',\n  note: meta.note || null,\n  questions,\n  estimated_minutes: 2,\n  already_answered: iv.status === 'completed',\n} }];\n"
+   },
+   "id": "679b7fd7-ca63-4d2e-8e75-b885d89cf524",
+   "name": "Build FollowUpGetResponse",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    200,
+    120
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "1811b421-e50e-4d50-a4de-88c22b60a3a0",
+   "name": "Respond: success",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    440,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// n8n-spec.md SS0.3.1 -- the single shared internal-error responder every risky\n// Code/httpRequest node's error output feeds. Fixed copy regardless of the upstream\n// failure's shape -- lovable-brief.md SS9.5's exact string, so Postgres/Storage/OpenAI\n// failures all read identically to the founder.\nreturn [{ json: { error: { code: 'internal', message: \"Something went wrong on our side. Your answers are still here \\u2014 try again.\" } } }];\n"
+   },
+   "id": "63b5e888-8ebf-46c7-8b05-172353b7f5f1",
+   "name": "Handle unexpected error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -40,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 500
+    }
+   },
+   "id": "e016fee5-6ba4-431d-bbba-4d1cab300e9b",
+   "name": "Respond: internal error (500)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    200,
+    600
+   ]
+  }
+ ],
+ "connections": {
+  "IF: token param present?": {
+   "main": [
+    [
+     {
+      "node": "Hash token, look up interview",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build missing-token error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Webhook: f08-followup": {
+   "main": [
+    [
+     {
+      "node": "IF: token param present?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build missing-token error": {
+   "main": [
+    [
+     {
+      "node": "Respond: bad request (400)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Hash token, look up interview": {
+   "main": [
+    [
+     {
+      "node": "IF: found?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: found?": {
+   "main": [
+    [
+     {
+      "node": "IF: expired (>24h)?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build valid:false (unknown)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build valid:false (unknown)": {
+   "main": [
+    [
+     {
+      "node": "Respond: valid false (200)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: expired (>24h)?": {
+   "main": [
+    [
+     {
+      "node": "Build valid:false (expired)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build FollowUpGetResponse",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build valid:false (expired)": {
+   "main": [
+    [
+     {
+      "node": "Respond: valid false expired (200)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build FollowUpGetResponse": {
+   "main": [
+    [
+     {
+      "node": "Respond: success",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle unexpected error": {
+   "main": [
+    [
+     {
+      "node": "Respond: internal error (500)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}
