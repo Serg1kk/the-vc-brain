@@ -24,3 +24,9 @@ infra/supabase/volumes/
 
 # --- Lovable export archives (contents in web/) ---
 docs/backlog/08-founder-intake-interview/*.zip
+
+# --- Local junk / test artifacts ---
+.playwright-mcp/
+/*.png
+/ingest_dry_stdout.json
+/ingest_dry_stderr.log
