@@ -10,6 +10,9 @@ session-history/
 .env
 .env.*
 *credentials*
+# feature 12 (deploy): real server env files use a *.env suffix, not the .env
+# prefix pattern above -- .env.example variants stay tracked (name doesn't match).
+infra/vcbrain/*.env
 
 # --- Local junk / runtime ---
 .DS_Store
@@ -30,3 +33,7 @@ docs/backlog/08-founder-intake-interview/*.zip
 /*.png
 /ingest_dry_stdout.json
 /ingest_dry_stderr.log
+
+# --- Russian doc versions (kept local, not published to public repo) ---
+*.ru.md
+docs/backlog/_oss-borrow-map.md
