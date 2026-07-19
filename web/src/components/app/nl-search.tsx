@@ -15,13 +15,20 @@ import {
   type NlSearchResponse,
 } from "@/lib/investor-api";
 import { SyntheticBadge } from "./synthetic-badge";
+import { FeedRow } from "./feed-row";
+import { matchByName, type FeedItem } from "./feed-lanes";
 
+const SEARCH_PLACEHOLDER =
+  "Search by name or company — or describe attributes (technical founder, dev tools, no prior VC…)";
 const BENCHMARK_QUERY =
   "technical founder, Berlin, AI infra, enterprise traction, no prior VC backing, top-tier accelerator";
 
 type SearchState =
   | { status: "idle" }
   | { status: "loading"; query: string }
+  // Instant client-side name/company match — free, no model call, resolved before
+  // the NL path is even attempted for a plain term.
+  | { status: "name-match"; query: string; matches: FeedItem[] }
   | { status: "ok"; query: string; response: NlSearchResponse }
   | { status: "rejected"; query: string; error: ApiError } // Fate C — whole-plan rejection
   | { status: "error"; query: string; error: ApiError };
@@ -187,14 +194,37 @@ function ResultRow({ item }: { item: NlSearchItem }) {
 // --- panel --------------------------------------------------------------------
 
 interface NlSearchPanelProps {
+  /** Everything currently loaded in the feed — the source the instant name/company
+   * match runs against. Unfiltered: a name search should find someone regardless of
+   * which source/lane filter happens to be active on the lane view underneath. */
+  items: FeedItem[];
   onActiveChange?: (active: boolean) => void;
   className?: string;
 }
 
-export function NlSearchPanel({ onActiveChange, className }: NlSearchPanelProps) {
+// Auto-search debounce (operator request, 2026-07-19). Two speeds for two very
+// different costs: the name/company match is a local array scan (free, near-
+// instant), the NL-attribute path is a model call (real seconds, real cost) — never
+// fired on 1-2 characters of noise. A comma is treated as the signal for "this is a
+// compound attribute query", matching the sponsor's own benchmark shape; a plain
+// term with no comma tries the free path first and only falls through to the model
+// if nothing matched.
+const NAME_MATCH_DEBOUNCE_MS = 280;
+const NAME_MATCH_MIN_CHARS = 2;
+const AUTO_SEARCH_DEBOUNCE_MS = 700;
+const AUTO_SEARCH_MIN_CHARS = 3;
+
+export function NlSearchPanel({ items, onActiveChange, className }: NlSearchPanelProps) {
   const [queryText, setQueryText] = useState("");
   const [state, setState] = useState<SearchState>({ status: "idle" });
   const inputRef = useRef<HTMLInputElement>(null);
+  const fastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slowRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Auto-search can have more than one request in flight (pause → fires → resume
+  // typing → pause again fires a second one before the first resolves). Only the
+  // most recent request's result may land — an older, slower response overwriting a
+  // newer one would show stale results for what the box currently says.
+  const generationRef = useRef(0);
 
   useEffect(() => {
     onActiveChange?.(state.status !== "idle");
@@ -204,8 +234,10 @@ export function NlSearchPanel({ onActiveChange, className }: NlSearchPanelProps)
   async function runSearch(query: string) {
     const trimmed = query.trim();
     if (!trimmed) return;
+    const generation = ++generationRef.current;
     setState({ status: "loading", query: trimmed });
     const res = await nlSearch(trimmed, 20);
+    if (generation !== generationRef.current) return; // superseded — drop it
     if (res.ok) {
       setState({ status: "ok", query: trimmed, response: res.data });
     } else if (res.error.upstreamKind === "unresolvable_query") {
@@ -215,17 +247,87 @@ export function NlSearchPanel({ onActiveChange, className }: NlSearchPanelProps)
     }
   }
 
-  function clear() {
+  function resetToIdle() {
+    generationRef.current++; // invalidates any in-flight request
     setState({ status: "idle" });
+  }
+
+  function clear() {
+    resetToIdle();
     setQueryText("");
+  }
+
+  function clearTimers() {
+    if (fastRef.current) clearTimeout(fastRef.current);
+    if (slowRef.current) clearTimeout(slowRef.current);
+  }
+
+  /** Explicit submit (Enter, the Search button, a chip removal) — always resolves
+   * something immediately rather than waiting out either debounce. */
+  function triggerImmediate(query: string) {
+    clearTimers();
+    const trimmed = query.trim();
+    if (!trimmed) {
+      resetToIdle();
+      return;
+    }
+    if (!trimmed.includes(",")) {
+      const matches = matchByName(items, trimmed);
+      if (matches.length > 0) {
+        generationRef.current++; // invalidate any in-flight NL fetch
+        setState({ status: "name-match", query: trimmed, matches });
+        return;
+      }
+    }
+    void runSearch(trimmed);
   }
 
   function removeUnderstood(label: string) {
     const next = stripFragment(queryText, label);
     setQueryText(next);
-    if (next) void runSearch(next);
-    else clear();
+    triggerImmediate(next);
   }
+
+  // Reactive typing: the name/company match tries first, fast, on any plain term;
+  // the NL-attribute path fires on a comma or as a fallback once nothing name-side
+  // matched. Auto-clears back to the lane feed on an emptied box either way — no
+  // button press needed (operator request).
+  useEffect(() => {
+    clearTimers();
+    const trimmed = queryText.trim();
+
+    if (trimmed.length === 0) {
+      slowRef.current = setTimeout(resetToIdle, AUTO_SEARCH_DEBOUNCE_MS);
+      return clearTimers;
+    }
+
+    const hasComma = trimmed.includes(",");
+
+    if (!hasComma) {
+      fastRef.current = setTimeout(() => {
+        const matches = matchByName(items, trimmed);
+        if (matches.length > 0) {
+          generationRef.current++;
+          setState({ status: "name-match", query: trimmed, matches });
+        } else if (trimmed.length < NAME_MATCH_MIN_CHARS) {
+          resetToIdle();
+        }
+        // else: nothing matched by name but long enough to try — leave it to the
+        // slower NL fallback below rather than show a dead end.
+      }, NAME_MATCH_DEBOUNCE_MS);
+    }
+
+    if (hasComma || trimmed.length >= AUTO_SEARCH_MIN_CHARS) {
+      slowRef.current = setTimeout(() => {
+        // Re-check at fire time: if the fast path already satisfied this exact
+        // query with a name match, the model call would be redundant.
+        if (!hasComma && matchByName(items, trimmed).length > 0) return;
+        void runSearch(trimmed);
+      }, AUTO_SEARCH_DEBOUNCE_MS);
+    }
+
+    return clearTimers;
+  }, [queryText, items]);
 
   const planAttributes: PlanAttribute[] =
     state.status === "ok" ? state.response.plan.attributes.map(readPlanAttribute) : [];
@@ -239,15 +341,23 @@ export function NlSearchPanel({ onActiveChange, className }: NlSearchPanelProps)
           value={queryText}
           onChange={(e) => setQueryText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void runSearch(queryText);
+            if (e.key === "Enter") triggerImmediate(queryText);
           }}
-          placeholder={BENCHMARK_QUERY}
+          onBlur={() => {
+            // Belt-and-braces alongside the debounced auto-clear above — click-out
+            // on an emptied box resets immediately rather than waiting out the timer.
+            if (queryText.trim() === "" && state.status !== "idle") {
+              clearTimers();
+              resetToIdle();
+            }
+          }}
+          placeholder={SEARCH_PLACEHOLDER}
           aria-label="Search the corpus in plain language"
           className="w-full border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-3.5 py-2.5 text-[14px] outline-none focus-visible:border-[color:var(--color-accent)]"
         />
         <button
           type="button"
-          onClick={() => void runSearch(queryText)}
+          onClick={() => triggerImmediate(queryText)}
           className="shrink-0 cursor-pointer border border-[color:var(--color-border)] px-3 text-[13px] font-medium"
         >
           Search
@@ -269,6 +379,26 @@ export function NlSearchPanel({ onActiveChange, className }: NlSearchPanelProps)
             <div className="h-full w-2/3 animate-pulse bg-[color:var(--color-text)]" />
           </div>
           <div className="mt-1 text-[12px] text-[color:var(--color-text-muted)]">Searching…</div>
+        </div>
+      ) : null}
+
+      {state.status === "name-match" ? (
+        <div className="mt-2">
+          <div className="flex items-baseline gap-3 px-2 pt-2 pb-1.5">
+            <span className="text-[11.5px] font-semibold tracking-[0.08em] uppercase">
+              Name matches — {state.matches.length}
+            </span>
+            <span className="text-[12px] text-[color:var(--color-text-muted)]">
+              Matched on company or founder name. Add a comma-separated attribute (e.g. “, Berlin,
+              AI infra”) to search by criteria instead.
+            </span>
+          </div>
+          {/* Real rows, real data — the same component the ranked feed uses. A name
+              match is not a ranked or scored result, so it never borrows the NL
+              path's confidence/rank fields to look more computed than it is. */}
+          {state.matches.map((item) => (
+            <FeedRow key={item.application.application_id} item={item} />
+          ))}
         </div>
       ) : null}
 

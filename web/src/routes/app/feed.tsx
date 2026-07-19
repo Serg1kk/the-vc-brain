@@ -20,8 +20,14 @@ import { NlSearchPanel } from "@/components/app/nl-search";
 import {
   bucketIntoLanes,
   chunk,
+  sortLaneItems,
+  LANE_ORDER,
+  LANE_TITLE,
+  SORT_LABEL,
   type FeedApplicationRow,
   type FeedItem,
+  type LaneKey,
+  type SortKey,
 } from "@/components/app/feed-lanes";
 
 export const Route = createFileRoute("/app/feed")({
@@ -73,6 +79,11 @@ const KIND_FILTERS: Array<{ value: ApplicationKind | "all"; label: string }> = [
   { value: "inbound", label: "Inbound" },
   { value: "radar_activated", label: "Radar" },
 ];
+
+const SORT_KEYS: SortKey[] = ["default", "founder_score", "thesis_fit", "freshness", "company_az"];
+
+const SELECT_CLASS =
+  "cursor-pointer border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-2 py-1 text-[12.5px] font-medium";
 
 interface FeedState {
   items: FeedItem[] | null;
@@ -159,7 +170,19 @@ function Feed() {
   const { items, exceptionalMinValue, thesisName, loading, progress, error, retry } = useFeedData();
   const { open } = useExplainPanel();
   const [kindFilter, setKindFilter] = useState<ApplicationKind | "all">("all");
+  const [laneFilter, setLaneFilter] = useState<LaneKey | "all">("all");
+  const [syntheticOnly, setSyntheticOnly] = useState(false);
+  const [assessedOnly, setAssessedOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<SortKey>("default");
   const [searchActive, setSearchActive] = useState(false);
+
+  function resetFilters() {
+    setKindFilter("all");
+    setLaneFilter("all");
+    setSyntheticOnly(false);
+    setAssessedOnly(false);
+    setSortBy("default");
+  }
 
   function openAxisHeader(axis: (typeof AXIS_HEADER)[number]) {
     const data: ExplainPanelData = { title: axis.label, what: axis.what, chip: axis.chip };
@@ -208,10 +231,18 @@ function Feed() {
   }
 
   const allItems = items ?? [];
-  const filteredItems = allItems.filter(
-    (i) => kindFilter === "all" || i.application.kind === kindFilter,
-  );
-  const lanes = bucketIntoLanes(filteredItems, exceptionalMinValue);
+  const filteredItems = allItems.filter((i) => {
+    if (kindFilter !== "all" && i.application.kind !== kindFilter) return false;
+    if (syntheticOnly && !i.application.is_synthetic) return false;
+    if (assessedOnly && !(i.founder?.score_assessed ?? false)) return false;
+    return true;
+  });
+  const lanes = bucketIntoLanes(filteredItems, exceptionalMinValue)
+    .filter((lane) => laneFilter === "all" || lane.key === laneFilter)
+    .map((lane) => ({ ...lane, items: sortLaneItems(lane.items, sortBy) }));
+  const filtersActive =
+    kindFilter !== "all" || laneFilter !== "all" || syntheticOnly || assessedOnly;
+  const visibleCount = lanes.reduce((n, lane) => n + lane.items.length, 0);
   const newCount = allItems.filter(
     (i) => Date.now() - new Date(i.application.submitted_at).getTime() < 24 * 3600 * 1000,
   ).length;
@@ -248,8 +279,9 @@ function Feed() {
 
       {/* Source is a filter over one feed, not three sidebar destinations — the
           sidebar deliberately leaves this to the screen that owns the query
-          (see sidebar.tsx's own comment). */}
-      <div className="mt-4 flex gap-1.5">
+          (see sidebar.tsx's own comment). Sort reorders WITHIN each lane; it never
+          replaces the thesis lens (brief §4.5 rule 1 — no composite ranking). */}
+      <div className="mt-4 flex flex-wrap items-center gap-1.5">
         {KIND_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -264,9 +296,57 @@ function Feed() {
             {f.label}
           </button>
         ))}
+        <span className="flex-1" />
+        <select
+          value={laneFilter}
+          onChange={(e) => setLaneFilter(e.target.value as LaneKey | "all")}
+          aria-label="Filter by lane"
+          className={SELECT_CLASS}
+        >
+          <option value="all">All lanes</option>
+          {LANE_ORDER.map((key) => (
+            <option key={key} value={key}>
+              {LANE_TITLE[key]}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setSyntheticOnly((v) => !v)}
+          className="cursor-pointer border px-3 py-1 text-[12.5px] font-medium"
+          style={{
+            borderColor: "var(--color-border)",
+            backgroundColor: syntheticOnly ? "var(--color-surface)" : "transparent",
+          }}
+        >
+          Synthetic only
+        </button>
+        <button
+          type="button"
+          onClick={() => setAssessedOnly((v) => !v)}
+          className="cursor-pointer border px-3 py-1 text-[12.5px] font-medium"
+          style={{
+            borderColor: "var(--color-border)",
+            backgroundColor: assessedOnly ? "var(--color-surface)" : "transparent",
+          }}
+        >
+          Founder Score assessed
+        </button>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortKey)}
+          aria-label="Sort within each lane"
+          className={SELECT_CLASS}
+        >
+          {SORT_KEYS.map((key) => (
+            <option key={key} value={key}>
+              Sort: {SORT_LABEL[key]}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <NlSearchPanel onActiveChange={setSearchActive} className="mt-3" />
+      <NlSearchPanel items={allItems} onActiveChange={setSearchActive} className="mt-3" />
 
       {!searchActive ? (
         <>
@@ -300,6 +380,16 @@ function Feed() {
               <div className="mt-1 text-[13px] text-[color:var(--color-text-muted)]">
                 New candidates arrive from inbound applications and the outbound radar scan — check
                 back once a scan has run.
+              </div>
+            </div>
+          ) : visibleCount === 0 && filtersActive && laneFilter !== "exceptional" ? (
+            <div className="border border-[color:var(--color-border)] p-6 text-[14px]">
+              No rows match these filters.
+              <div className="mt-1 text-[13px] text-[color:var(--color-text-muted)]">
+                <button type="button" onClick={resetFilters} className="cursor-pointer underline">
+                  Reset filters
+                </button>{" "}
+                to see the full feed again.
               </div>
             </div>
           ) : (
