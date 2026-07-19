@@ -237,3 +237,59 @@ anywhere it fits; if the clock tightens, 10 is the first to drop, then 09's poli
 into one commit. Four terminals editing uncommitted shared files is exactly the ~06:45 setup.
 Also still unresolved and operator-only: 07's publication finding above (`docs/` is tracked and
 would go public on the first push) — **do not push until the operator rules on it.**
+
+## ✅ RESOLVED: the publication question (operator ruling, 2026-07-19 ~09:00)
+
+07's tracker raised a blocker before the first push: `docs/` is tracked and would go public,
+contrary to what CLAUDE.md claimed. **Operator has ruled: `docs/` is published — that is fine.**
+Option (b) of the three 07 listed: the design process ships as part of the submission's
+transparency story. `session-history/` is the one thing that stays local, and it was already in
+`.gitignore` (a new local copy of the challenge's session logs now lives there).
+
+Consequences for every terminal:
+- **The push freeze is lifted.** `main` is 16+ commits ahead of `origin/main`; @devops can push.
+- **Write `docs/` as if judges will read it — because they will.** No closed-corpus quotes, no
+  source attribution from the intel base, no third-party names (Hard rule #1). QA reports and
+  trackers are in scope for this: they are the most candid documents we have.
+- CLAUDE.md's Git section has been corrected; it had listed `docs/` as ignored, which never
+  matched the actual `.gitignore` file and cost 07 a real blocker.
+
+## 2026-07-19 ~09:48 · 10 → 02/09, CROSS-FEATURE BUG FIXED (append by terminal 10)
+
+**`radar_candidates` aborted any query that materialised `obscurity`.** The view computes
+`log(1 + hn_karma)` with no domain guard. Founder `d2e2c8fb-3abc-4f31-9c65-66ecc16066e4`
+("shlokkshahh") has a genuine latest `hn_karma = -2` — HN karma legitimately goes negative when a
+user is downvoted, so this is real data, not corruption — and `log(-1)` raises
+`ERROR: cannot take logarithm of a negative number`, which aborts the whole statement.
+
+**Why nobody caught it:** `select count(*) from radar_candidates` succeeds, because the planner
+prunes the unused column. It only fires when `obscurity` is actually materialised, e.g.
+`select count(*), count(obscurity) from radar_candidates`. 02's smoke tests use the former shape.
+
+**Blast radius:** it blocked feature 10's `api_founders` outright, and would equally have blocked
+**09's dashboard** and **02's own radar feed** the moment either rendered the obscurity column.
+
+**Fix, applied by terminal 10 inside `CREATE OR REPLACE VIEW radar_candidates` in `db/schema.sql`,
+marked `-- Feature 10 fix to a Feature 02 object`:** floor the log arguments —
+`log(1 + GREATEST(hn_karma, 0))`, same guard on `gh_followers`. **Nothing else about the view
+changed** — not the formula shape, not the divisors (3 and 4), not the NULL-vs-0 semantics that
+carry 02's REQ-003 reasoning, not `obscurity_basis`. Semantics of the clamp: karma ≤ 0 →
+`karma_term = 1` → maximally obscure, which is what the metric already means for a user with no
+visibility.
+
+Feature 02 is closed and has no live terminal, so terminal 10 took the call rather than leaving a
+known-broken shared object in place. If 02 is ever reopened, this is the one edit made to its DDL
+from outside.
+
+### Also from 10, for whoever owns them
+
+- **`scores(axis='founder')` has ZERO rows database-wide.** 04 owns that axis and never wrote one.
+  10's `api_applications.score_founder` therefore reports `assessed: false` on all 308 rows. **This
+  will equally hit 06 (memo) and 09 (dashboard)** — an absent axis must read as "not assessed",
+  never as zero.
+- **`claims.verification_status='verified'` is 0** database-wide (690 unverified, 34 missing) since
+  05 has not landed, so verification status cannot be used as a ranking or trust signal yet.
+- **`scores(axis='founder_score').missing_flags` is an array of OBJECTS**
+  (`{criterion_id, what_would_close_it}`), not of strings. 03's `done.md` says "array", which is
+  true of the container but misleading about the elements. `what_would_close_it` is worth surfacing
+  — 10 exposes it as `api_founders.founder_score_gaps`.

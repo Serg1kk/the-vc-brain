@@ -1162,11 +1162,26 @@ obscurity_terms AS (
   -- founders with the least data to the top of the feed.
   SELECT
     founder_id, gh_followers, gh_notable_followers, hn_karma, hn_points, hn_comments,
+    -- Feature 10 fix to a Feature 02 object: log-domain guard, see TRACKER.md
+    -- (feature 10 task A1a). HN karma legitimately goes negative for a
+    -- downvoted user (real, measured: founder d2e2c8fb-3abc-4f31-9c65-
+    -- 66ecc16066e4 has hn_karma=-2) and log() of a non-positive argument
+    -- raised "cannot take logarithm of a negative number", aborting any
+    -- statement that reads `obscurity` across all rows (count(*) alone
+    -- doesn't trip it -- the planner prunes the unused column, which is why
+    -- 02's own smoke tests never caught it). GREATEST(x, 0) floors the log
+    -- argument to 1 at worst -- log(1)=0 -- so a non-positive metric now
+    -- resolves the term to its existing ceiling (1 - 0 = 1, "maximally
+    -- obscure"), which is already what this metric means for a founder with
+    -- no visible standing; it does not change the formula shape, the 3/4
+    -- divisors, or the NULL-vs-0 semantics above (still NULL, never 0, when
+    -- the metric was never observed at all). gh_followers cannot go negative
+    -- today but gets the same guard for free.
     CASE WHEN gh_followers IS NOT NULL
-      THEN 1 - LEAST(GREATEST(log(1 + gh_followers) / 3, 0), 1)
+      THEN 1 - LEAST(GREATEST(log(1 + GREATEST(gh_followers, 0)) / 3, 0), 1)
       ELSE NULL END AS followers_term,
     CASE WHEN hn_karma IS NOT NULL
-      THEN 1 - LEAST(GREATEST(log(1 + hn_karma) / 4, 0), 1)
+      THEN 1 - LEAST(GREATEST(log(1 + GREATEST(hn_karma, 0)) / 4, 0), 1)
       ELSE NULL END AS karma_term
   FROM metrics_pivot
 ),
@@ -1211,3 +1226,380 @@ FROM cards c
 LEFT JOIN obscurity_terms ot ON ot.founder_id = c.founder_id
 LEFT JOIN earliest_signal es ON es.founder_id = c.founder_id
 WHERE c.card_type = 'founder' AND c.founder_id IS NOT NULL;
+
+-- ============================================================================
+-- Feature 10: api_founders / api_applications / api_claims
+-- (docs/backlog/10-api-cli-skill/design.md SS4, rev.4 -- the documented
+-- PostgREST read contract. Purely additive: one helper function + three
+-- CREATE OR REPLACE VIEW. No new tables, no data written by this feature
+-- (SS8.3). Appended last, same reasoning as radar_candidates above: a
+-- read-side view has no FK dependency of its own, only a data dependency on
+-- objects that already exist by this point in the file.
+-- ============================================================================
+
+-- ---- Helper: missing_flags normalisation (design SS4.2) --------------------
+--
+-- `scores.missing_flags` has THREE measured shapes, not one, and the view
+-- contract promises consumers a single plain array of strings so nobody has
+-- to branch on axis at read time (design SS4.2, SS7 skill "Traps"):
+--   1. object of gap flags (axis market / idea_vs_market) -- value is USUALLY
+--      `true` but SOMETIMES an array (e.g. "search_failed": ["Q5"]) -- collect
+--      the KEY name of every truthy entry.
+--   2. array of strings -- used as-is (the shape design.md SS4.2 documents
+--      for axis=founder_score).
+--   3. array of OBJECTS shaped `{"criterion_id": "...", "what_would_close_it":
+--      "..."}` -- MEASURED on the live founder_score axis (all 14 rows,
+--      2026-07-19, feature 10 build): design.md SS4.2's own table asserts
+--      founder_score's shape is `["flag", ...]` (case 2), but every row
+--      actually on disk is case 3. Handled defensively here (extract
+--      criterion_id, the natural "flag name" per entry) so the view still
+--      honours the "plain array of strings" contract -- flagged back to the
+--      design as a spec/reality mismatch, not silently matched to the wrong
+--      case. See feature 10's task report.
+-- In every case, `_`-prefixed keys/ids are writer-internal and dropped
+-- (design SS3.1, SS4.2; 07's `_f07_input_fingerprint` is the canonical
+-- example).
+CREATE OR REPLACE FUNCTION f10_normalize_missing_flags(p_missing jsonb)
+RETURNS text[]
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT array_agg(DISTINCT flags.k ORDER BY flags.k)
+      FROM (
+        -- Case 1: object of gap flags -- key name of every truthy entry.
+        SELECT kv.key AS k
+        FROM jsonb_each(p_missing) kv
+        WHERE jsonb_typeof(p_missing) = 'object'
+          AND kv.key NOT LIKE '\_%' ESCAPE '\'
+          AND CASE jsonb_typeof(kv.value)
+                WHEN 'boolean' THEN (kv.value)::text::boolean
+                WHEN 'array'   THEN jsonb_array_length(kv.value) > 0
+                WHEN 'null'    THEN false
+                WHEN 'number'  THEN (kv.value)::text::numeric <> 0
+                WHEN 'string'  THEN (kv.value #>> '{}') <> ''
+                WHEN 'object'  THEN kv.value <> '{}'::jsonb
+                ELSE true
+              END
+
+        UNION ALL
+
+        -- Case 2: array of strings -- used as-is.
+        SELECT elem #>> '{}' AS k
+        FROM jsonb_array_elements(p_missing) elem
+        WHERE jsonb_typeof(p_missing) = 'array'
+          AND jsonb_typeof(elem) = 'string'
+          AND (elem #>> '{}') <> ''
+          AND (elem #>> '{}') NOT LIKE '\_%' ESCAPE '\'
+
+        UNION ALL
+
+        -- Case 3: array of objects (measured founder_score shape) -- the
+        -- flag name is the criterion_id.
+        SELECT elem ->> 'criterion_id' AS k
+        FROM jsonb_array_elements(p_missing) elem
+        WHERE jsonb_typeof(p_missing) = 'array'
+          AND jsonb_typeof(elem) = 'object'
+          AND elem ->> 'criterion_id' IS NOT NULL
+          AND (elem ->> 'criterion_id') NOT LIKE '\_%' ESCAPE '\'
+      ) flags
+    ),
+    '{}'::text[]
+  );
+$$;
+
+-- ---- api_founders (design SS4.1) -------------------------------------------
+--
+-- One row per founder (122 today). Tombstone/opt-out filter is a plain WHERE
+-- on `founders` itself -- the base relation of this view IS `founders`, so
+-- there is no separate table to inner-join-and-accidentally-gut (SS4's
+-- anti-join warning targets api_applications/api_claims, whose subject is
+-- reached only by traversing through founder_company/cards).
+CREATE OR REPLACE VIEW api_founders AS
+WITH radar AS (
+  -- Join source is a plain DISTINCT over radar_candidates, no DISTINCT ON,
+  -- no tiebreak (design SS4.1, rev.3 review M1): every column read here is a
+  -- pure function of founder_id, so duplicate `cards` rows (no unique
+  -- constraint on (founder_id, card_type)) collapse provably.
+  SELECT DISTINCT founder_id, obscurity, obscurity_basis, channel
+  FROM radar_candidates
+),
+first_seen AS (
+  -- Re-derived, not selected: radar_candidates projects only the computed
+  -- `freshness` interval, never the underlying observed_at (design SS4.1,
+  -- review round-2 M2). Mirrors radar_candidates' own earliest_signal CTE
+  -- verbatim.
+  SELECT DISTINCT ON (rs.founder_id) rs.founder_id, rs.observed_at AS first_seen_at
+  FROM raw_signals rs
+  WHERE rs.founder_id IS NOT NULL
+  ORDER BY rs.founder_id, rs.observed_at
+),
+founder_score_latest AS (
+  -- "Latest row" = max(computed_at) WITH id as secondary sort (design rule
+  -- 9 / SS4.1): duplicates written inside one execution can tie on
+  -- computed_at, and scores has no (subject, axis) uniqueness.
+  SELECT DISTINCT ON (s.founder_id)
+    s.founder_id, s.value, s.trend, s.confidence, s.missing_flags, s.computed_at
+  FROM scores s
+  WHERE s.axis = 'founder_score' AND s.founder_id IS NOT NULL
+  ORDER BY s.founder_id, s.computed_at DESC, s.id DESC
+),
+current_company AS (
+  -- company_id comes from founder_company.is_current ONLY, never from
+  -- radar_candidates -- "one source, no unreconciled second" (design SS4.1,
+  -- review M3). DISTINCT ON + id tiebreak guards a founder linked to more
+  -- than one is_current=true row -- the schema's UNIQUE is (founder_id,
+  -- company_id), not a partial unique on is_current, so nothing forbids it.
+  SELECT DISTINCT ON (fc.founder_id)
+    fc.founder_id, fc.company_id
+  FROM founder_company fc
+  WHERE fc.is_current
+  ORDER BY fc.founder_id, fc.created_at DESC, fc.id DESC
+),
+current_application AS (
+  -- application_id resolved through the SAME founder_company path (one
+  -- source, per the rule above) -- the most recently created application of
+  -- the founder's current company. NOTE: founder_company itself carries no
+  -- application_id column, and design.md SS4.1 does not spell out this
+  -- second hop verbatim; applied here by analogy with the "latest row + id
+  -- tiebreak" convention (rule 9) so the view still returns exactly one row
+  -- per founder even where a company has multiple applications (77 of 198
+  -- companies do, live). Flagged in the feature 10 task report as the one
+  -- genuinely underspecified join in SS4.1.
+  SELECT DISTINCT ON (cc.founder_id)
+    cc.founder_id, a.id AS application_id
+  FROM current_company cc
+  JOIN applications a ON a.company_id = cc.company_id
+  ORDER BY cc.founder_id, a.created_at DESC, a.id DESC
+)
+SELECT
+  f.id                                             AS founder_id,
+  f.full_name,
+  f.headline,
+  f.is_synthetic,
+  fsl.value                                        AS founder_score,
+  fsl.trend                                        AS founder_score_trend,
+  fsl.confidence                                   AS founder_score_confidence,
+  f10_normalize_missing_flags(fsl.missing_flags)   AS founder_score_missing,
+  -- A founder with no score row is normal, not an error (03 gotcha 1;
+  -- REQ-003) -- score_assessed=false and founder_score=NULL, NEVER 0.
+  (fsl.founder_id IS NOT NULL)                     AS score_assessed,
+  fsl.computed_at                                  AS scored_at,
+  r.obscurity,
+  r.obscurity_basis,
+  r.channel,
+  fs.first_seen_at,
+  cc.company_id,
+  co.name                                          AS company_name,
+  ca.application_id,
+  -- Task A1b (design correction, TRACKER.md), appended at the end of the
+  -- column list on purpose -- CREATE OR REPLACE VIEW cannot insert a column
+  -- mid-list without a DROP (Postgres: "cannot change name of view column"),
+  -- and this file's convention is additive-only, never DROP. Sibling of
+  -- founder_score_missing above: that column is the uniform plain-string-
+  -- array contract every axis shares; this one preserves the rich form --
+  -- criterion_id AND what_would_close_it intact, the most investor-useful
+  -- field in the structure ("here is exactly what would close this gap") --
+  -- rather than throwing it away at the id. Raw pass-through, no
+  -- normalisation: NULL exactly when there is no score row (same LEFT JOIN
+  -- as founder_score above).
+  fsl.missing_flags                                AS founder_score_gaps
+FROM founders f
+LEFT JOIN radar               r   ON r.founder_id   = f.id
+LEFT JOIN first_seen          fs  ON fs.founder_id   = f.id
+LEFT JOIN founder_score_latest fsl ON fsl.founder_id  = f.id
+LEFT JOIN current_company     cc  ON cc.founder_id   = f.id
+LEFT JOIN companies           co  ON co.id           = cc.company_id
+LEFT JOIN current_application ca  ON ca.founder_id   = f.id
+WHERE f.opt_out_at IS NULL
+  AND f.merged_into_founder_id IS NULL
+-- Default ordering NEVER uses obscurity (design SS4.1, review round-2 S4):
+-- 08's inbound founders have founder cards but no HN anchor, so their radar
+-- fields are NULL, and an obscurity-first sort would float them to the top
+-- as "maximally undiscovered" -- the exact inversion 02 warns against.
+-- full_name is not unique, so founder_id supplies the final total-order key.
+ORDER BY fsl.value DESC NULLS LAST, f.full_name ASC, f.id ASC;
+
+-- ---- api_applications (design SS4.2) ---------------------------------------
+--
+-- One row per application (308 today). Subject resolution per SS4's table:
+-- current founders of the company via founder_company.is_current; excluded
+-- ONLY when every current founder is opted out or a merge-tombstone;
+-- RETAINED when there are none. The two-branch WHERE below is that rule
+-- written out logically (NOT the single-founder anti-join template verbatim
+-- -- this view's subject can be zero-or-many founders, not one).
+CREATE OR REPLACE VIEW api_applications AS
+WITH current_founders AS (
+  SELECT fc.company_id, fc.founder_id
+  FROM founder_company fc
+  WHERE fc.is_current
+),
+score_founder_latest AS (
+  SELECT DISTINCT ON (s.application_id)
+    s.application_id, s.value, s.trend, s.confidence, s.missing_flags
+  FROM scores s
+  WHERE s.application_id IS NOT NULL AND s.axis = 'founder'
+  ORDER BY s.application_id, s.computed_at DESC, s.id DESC
+),
+score_market_latest AS (
+  SELECT DISTINCT ON (s.application_id)
+    s.application_id, s.value, s.trend, s.confidence, s.missing_flags
+  FROM scores s
+  WHERE s.application_id IS NOT NULL AND s.axis = 'market'
+  ORDER BY s.application_id, s.computed_at DESC, s.id DESC
+),
+score_idea_vs_market_latest AS (
+  SELECT DISTINCT ON (s.application_id)
+    s.application_id, s.value, s.trend, s.confidence, s.missing_flags
+  FROM scores s
+  WHERE s.application_id IS NOT NULL AND s.axis = 'idea_vs_market'
+  ORDER BY s.application_id, s.computed_at DESC, s.id DESC
+),
+thesis_latest AS (
+  -- Current thesis fit resolves through thesis_evaluations, NEVER a direct
+  -- `scores` read (design SS4.2 -- 07's QA reproduced a stale 100.00 that
+  -- way; reproduced again live for this build, application
+  -- 07f00002-0000-0000-0000-000000000004: a naive latest-scores(axis=
+  -- thesis_fit) read returns 8.10 from a PRIOR run, while the current
+  -- thesis_evaluations row for that application has score_id NULL, i.e. "not
+  -- assessed this run"). thesis_id is part of the identity because several
+  -- theses can be active at once -- but live data shows every application
+  -- with any thesis_evaluations rows has exactly one distinct thesis_id
+  -- across them, matching applications.thesis_id 1:1, so resolving by
+  -- application_id alone (latest row) is safe here.
+  SELECT DISTINCT ON (te.application_id)
+    te.application_id, te.thesis_id, te.verdict, te.score_id,
+    te.coverage, te.missing_fields, te.fired_rules
+  FROM thesis_evaluations te
+  ORDER BY te.application_id, te.created_at DESC, te.id DESC
+),
+memo_latest AS (
+  SELECT DISTINCT ON (m.application_id)
+    m.application_id, m.version
+  FROM memos m
+  ORDER BY m.application_id, m.version DESC, m.id DESC
+)
+SELECT
+  a.id                                              AS application_id,
+  a.company_id,
+  co.name                                           AS company_name,
+  co.domain                                         AS company_domain,
+  co.stage,
+  co.category,
+  a.kind,
+  a.status,
+  -- applications has no submitted_at column; created_at is the ingest-time
+  -- business timestamp the schema actually carries (submitted_by is the only
+  -- sibling field), so it is aliased here rather than left undocumented.
+  a.created_at                                      AS submitted_at,
+  a.artifact_links,
+  -- Three screening axes stay three separate objects -- REQ-002 / invariant
+  -- #1. There is deliberately NO overall_score column anywhere in this view.
+  jsonb_build_object(
+    'value', sf.value, 'trend', sf.trend, 'confidence', sf.confidence,
+    'missing', to_jsonb(f10_normalize_missing_flags(sf.missing_flags)),
+    'assessed', (sf.application_id IS NOT NULL)
+  )                                                  AS score_founder,
+  jsonb_build_object(
+    'value', sm.value, 'trend', sm.trend, 'confidence', sm.confidence,
+    'missing', to_jsonb(f10_normalize_missing_flags(sm.missing_flags)),
+    'assessed', (sm.application_id IS NOT NULL)
+  )                                                  AS score_market,
+  jsonb_build_object(
+    'value', si.value, 'trend', si.trend, 'confidence', si.confidence,
+    'missing', to_jsonb(f10_normalize_missing_flags(si.missing_flags)),
+    'assessed', (si.application_id IS NOT NULL)
+  )                                                  AS score_idea_vs_market,
+  tl.thesis_id,
+  th.name                                           AS thesis_name,
+  -- thesis_verdict is reported even when score_id is NULL (insufficient
+  -- coverage this run) -- only thesis_fit below goes NULL in that case.
+  tl.verdict                                        AS thesis_verdict,
+  ts.value                                          AS thesis_fit,
+  tl.coverage                                        AS thesis_coverage,
+  -- Native text[], populated on every thesis_evaluations row regardless of
+  -- verdict (design SS4.2, review M2) -- NOT read from missing_flags.
+  tl.missing_fields                                 AS thesis_missing_fields,
+  tl.fired_rules                                    AS thesis_fired_rules,
+  ml.version                                        AS memo_version,
+  -- False for every row today (06 not built, memos empty) -- a truthful
+  -- column, not a placeholder (design SS6.4).
+  (ml.application_id IS NOT NULL)                   AS memo_available
+FROM applications a
+LEFT JOIN companies                    co ON co.id = a.company_id
+LEFT JOIN score_founder_latest         sf ON sf.application_id = a.id
+LEFT JOIN score_market_latest          sm ON sm.application_id = a.id
+LEFT JOIN score_idea_vs_market_latest  si ON si.application_id = a.id
+LEFT JOIN thesis_latest                tl ON tl.application_id = a.id
+LEFT JOIN theses                       th ON th.id = tl.thesis_id
+LEFT JOIN scores                       ts ON ts.id = tl.score_id
+LEFT JOIN memo_latest                  ml ON ml.application_id = a.id
+WHERE
+  -- Retained when the company has no current founders at all...
+  NOT EXISTS (SELECT 1 FROM current_founders cf WHERE cf.company_id = a.company_id)
+  -- ...or when at least one current founder is neither opted out nor a
+  -- merge-tombstone. Excluded only when current founders exist AND every one
+  -- of them fails that check (design SS4 subject-resolution table).
+  OR EXISTS (
+    SELECT 1
+    FROM current_founders cf
+    JOIN founders f ON f.id = cf.founder_id
+    WHERE cf.company_id = a.company_id
+      AND f.opt_out_at IS NULL
+      AND f.merged_into_founder_id IS NULL
+  );
+
+-- ---- api_claims (design SS4.3) -- the Agentic Traceability deliverable ----
+--
+-- One row per claim (724 today), evidence folded into a JSON array. Subject
+-- is the card's founder_id WHEN NON-NULL; a card with no founder (company-
+-- scoped evidence -- 04's market.*/competition.* and 07's company.*, 109
+-- rows live) is RETAINED, not dropped. This is the literal anti-join
+-- template from design SS4's "Global rule", unmodified: when cd.founder_id
+-- IS NULL, `f.id = cd.founder_id` matches no row for any founder, so
+-- NOT EXISTS is vacuously true and the claim passes through untouched --
+-- no special-casing required, which is exactly why SS4 prescribes this shape
+-- over an inner join.
+CREATE OR REPLACE VIEW api_claims AS
+SELECT
+  c.id             AS claim_id,
+  c.card_id,
+  cd.founder_id,
+  cd.company_id,
+  cd.application_id,
+  c.topic,
+  c.axis,
+  c.text_verbatim,
+  c.value,
+  c.source_kind,
+  c.base_confidence,
+  -- verification_status='missing' claims are deliberate data with human-
+  -- readable text_verbatim, not empty rows (04 contract 4) -- served, never
+  -- filtered.
+  c.verification_status,
+  c.created_at,
+  COALESCE(ev.evidence, '[]'::jsonb) AS evidence
+FROM claims c
+JOIN cards cd ON cd.id = c.card_id
+LEFT JOIN LATERAL (
+  SELECT jsonb_agg(
+           jsonb_build_object(
+             'tier', e.tier,
+             'relation', e.relation,
+             'strength', e.strength,
+             'quote_verbatim', e.quote_verbatim,
+             'source_url', e.source_url,
+             'raw_signal_id', e.raw_signal_id,
+             'captured_at', e.captured_at
+           )
+           ORDER BY e.captured_at DESC, e.id DESC
+         ) AS evidence
+  FROM evidence e
+  WHERE e.claim_id = c.id
+) ev ON true
+WHERE NOT EXISTS (
+  SELECT 1 FROM founders f
+  WHERE f.id = cd.founder_id
+    AND (f.opt_out_at IS NOT NULL OR f.merged_into_founder_id IS NOT NULL)
+);

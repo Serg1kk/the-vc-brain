@@ -1600,4 +1600,327 @@ BEGIN
   END IF;
 END $$;
 
+-- ============================================================================
+-- Feature 10 (api/cli/skill) -- api_founders / api_applications / api_claims
+-- view assertions, plus a regression guard for the radar_candidates
+-- log-domain bug (task A1a, a Feature 10 fix to a Feature 02 object -- see
+-- TRACKER.md). docs/backlog/10-api-cli-skill/design.md SS4, SS9.
+-- Id prefix 10f00001-... (non-overlapping with the 00000000-... and
+-- 02f00001-... ranges used above).
+--
+-- Order matters and is the load-bearing lesson of this section (design SS9,
+-- rev.2/rev.3 changelog B1): the rev.2 design shipped an INVERTED opt-out
+-- filter (`opt_out_at IS NOT NULL` instead of `IS NULL`) that would have made
+-- all three views return zero rows for everyone -- and it survived review
+-- because the only planned test asserted opted-out founders were *absent*,
+-- which passes trivially against a view returning nothing. Positive
+-- "something is actually in here" assertions run FIRST, before any
+-- absence/negative case.
+-- ============================================================================
+
+-- Positive 1/3: api_founders returns > 0 rows, and exactly one row per
+-- founder -- the count(*) = count(distinct founder_id) invariant design SS4.1
+-- proves structurally (plain DISTINCT over radar_candidates, founder_company
+-- resolved via DISTINCT ON), asserted here at the view boundary regardless
+-- of how many fixture founders any earlier section in this file has added.
+DO $$
+DECLARE
+  v_total    int;
+  v_distinct int;
+BEGIN
+  SELECT count(*), count(DISTINCT founder_id) INTO v_total, v_distinct FROM api_founders;
+  IF v_total = 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: api_founders returned 0 rows -- the exact B1 regression shape (an inverted opt-out filter serves nobody)';
+  END IF;
+  IF v_total <> v_distinct THEN
+    RAISE EXCEPTION 'smoke FAIL: api_founders returned % rows but only % distinct founder_id -- one-row-per-founder violated', v_total, v_distinct;
+  END IF;
+END $$;
+
+-- Positive 2/3: api_claims returns > 0 rows WITH founder_id IS NULL --
+-- company-scoped evidence (04's market.*/competition.*, 07's company.*) must
+-- survive the anti-join, not be dropped by an inner join in disguise
+-- (design SS4, review round-3 F1).
+DO $$
+DECLARE
+  v_company_scoped int;
+BEGIN
+  SELECT count(*) INTO v_company_scoped FROM api_claims WHERE founder_id IS NULL;
+  IF v_company_scoped = 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: api_claims returned 0 company-scoped (founder_id IS NULL) rows -- an inner join to founders would produce exactly this';
+  END IF;
+END $$;
+
+-- Positive 3/3: api_applications returns > 0 rows.
+DO $$
+DECLARE
+  v_total int;
+BEGIN
+  SELECT count(*) INTO v_total FROM api_applications;
+  IF v_total = 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: api_applications returned 0 rows -- the exact B1 regression shape';
+  END IF;
+END $$;
+
+-- Fixture: an opted-out founder, sole current founder of a company with one
+-- application, holding one founder-scoped claim -- exercises the exclusion
+-- rule against all three views in one shape (design SS4 subject-resolution
+-- table: api_applications excludes only when EVERY current founder is
+-- opted out, and this founder is the company's only current founder).
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name, opt_out_at)
+    VALUES ('10f00001-0000-0000-0000-000000000001', 'Smoke Opt-Out Founder', now());
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000002', 'Smoke Opt-Out Co', 'pre_seed');
+  INSERT INTO founder_company (founder_id, company_id, role, is_current)
+    VALUES ('10f00001-0000-0000-0000-000000000001', '10f00001-0000-0000-0000-000000000002', 'founder', true);
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000004', '10f00001-0000-0000-0000-000000000002', 'radar_activated');
+  INSERT INTO cards (id, card_type, founder_id)
+    VALUES ('10f00001-0000-0000-0000-000000000005', 'founder', '10f00001-0000-0000-0000-000000000001');
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+    VALUES ('10f00001-0000-0000-0000-000000000006', '10f00001-0000-0000-0000-000000000005',
+            'founder.expertise.vertical_tenure', 'Smoke fixture claim for an opted-out founder.', 'public');
+END $$;
+
+-- Negative 1/2: opt_out_at excludes the founder, its sole-current-founder
+-- application, AND its founder-scoped claim from all three views.
+DO $$
+DECLARE
+  v_founder_present     int;
+  v_application_present int;
+  v_claim_present       int;
+BEGIN
+  SELECT count(*) INTO v_founder_present FROM api_founders
+    WHERE founder_id = '10f00001-0000-0000-0000-000000000001';
+  SELECT count(*) INTO v_application_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000004';
+  SELECT count(*) INTO v_claim_present FROM api_claims
+    WHERE claim_id = '10f00001-0000-0000-0000-000000000006';
+
+  IF v_founder_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: opted-out founder is present in api_founders, expected excluded';
+  END IF;
+  IF v_application_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: application whose sole current founder opted out is present in api_applications, expected excluded';
+  END IF;
+  IF v_claim_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: founder-scoped claim of an opted-out founder is present in api_claims, expected excluded';
+  END IF;
+END $$;
+
+-- Fixture: a canonical founder plus a merge-tombstone duplicate
+-- (merged_into_founder_id -> canonical), the duplicate again the sole
+-- current founder of its own company/application, holding one claim.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name)
+    VALUES ('10f00001-0000-0000-0000-000000000011', 'Smoke Merge Canonical Founder');
+  INSERT INTO founders (id, full_name, merged_into_founder_id)
+    VALUES ('10f00001-0000-0000-0000-000000000012', 'Smoke Merge Duplicate Founder', '10f00001-0000-0000-0000-000000000011');
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000013', 'Smoke Merge Tombstone Co', 'pre_seed');
+  INSERT INTO founder_company (founder_id, company_id, role, is_current)
+    VALUES ('10f00001-0000-0000-0000-000000000012', '10f00001-0000-0000-0000-000000000013', 'founder', true);
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000014', '10f00001-0000-0000-0000-000000000013', 'radar_activated');
+  INSERT INTO cards (id, card_type, founder_id)
+    VALUES ('10f00001-0000-0000-0000-000000000015', 'founder', '10f00001-0000-0000-0000-000000000012');
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+    VALUES ('10f00001-0000-0000-0000-000000000016', '10f00001-0000-0000-0000-000000000015',
+            'founder.expertise.vertical_tenure', 'Smoke fixture claim for a merge-tombstone founder.', 'public');
+END $$;
+
+-- Negative 2/2: merged_into_founder_id excludes the duplicate (and
+-- everything reached only through it) the same way opt_out_at does, while
+-- the canonical founder -- untouched by either flag -- stays visible, proving
+-- the filter is precise rather than a blanket exclusion of anything nearby.
+DO $$
+DECLARE
+  v_duplicate_present     int;
+  v_canonical_present     int;
+  v_application_present   int;
+  v_claim_present         int;
+BEGIN
+  SELECT count(*) INTO v_duplicate_present FROM api_founders
+    WHERE founder_id = '10f00001-0000-0000-0000-000000000012';
+  SELECT count(*) INTO v_canonical_present FROM api_founders
+    WHERE founder_id = '10f00001-0000-0000-0000-000000000011';
+  SELECT count(*) INTO v_application_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000014';
+  SELECT count(*) INTO v_claim_present FROM api_claims
+    WHERE claim_id = '10f00001-0000-0000-0000-000000000016';
+
+  IF v_duplicate_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: merge-tombstone founder is present in api_founders, expected excluded';
+  END IF;
+  IF v_canonical_present <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: canonical founder (untouched by either flag) expected present in api_founders, got % rows', v_canonical_present;
+  END IF;
+  IF v_application_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: application whose sole current founder is a merge tombstone is present in api_applications, expected excluded';
+  END IF;
+  IF v_claim_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: founder-scoped claim of a merge-tombstone founder is present in api_claims, expected excluded';
+  END IF;
+END $$;
+
+-- Invariant #1 / REQ-002: the three screening axes never collapse into one
+-- number -- api_applications carries no overall_score column, and none is
+-- to be added (design SS4.2, SS8.1).
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'api_applications' AND column_name = 'overall_score';
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: api_applications has an overall_score column -- REQ-002 / invariant #1 violated';
+  END IF;
+END $$;
+
+-- Fixture: a founder with NO scores(axis='founder_score') row at all -- the
+-- common case (119 of 122 live founders today), fixtured here so the
+-- assertion does not depend on that live proportion holding.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name)
+    VALUES ('10f00001-0000-0000-0000-000000000021', 'Smoke Unscored Founder');
+END $$;
+
+-- Positive: no score row is normal, not an error -- founder_score IS NULL
+-- AND score_assessed = false, NEVER 0 (03 gotcha 1; REQ-003; design SS4.1).
+DO $$
+DECLARE
+  v_founder_score  numeric;
+  v_score_assessed boolean;
+BEGIN
+  SELECT founder_score, score_assessed INTO v_founder_score, v_score_assessed
+  FROM api_founders WHERE founder_id = '10f00001-0000-0000-0000-000000000021';
+
+  IF v_founder_score IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: unscored founder founder_score expected NULL, got % (0-substitution would invert REQ-003)', v_founder_score;
+  END IF;
+  IF v_score_assessed IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'smoke FAIL: unscored founder score_assessed expected false, got %', v_score_assessed;
+  END IF;
+END $$;
+
+-- Positive: founder_score_missing is a plain text[] of strings on every LIVE
+-- row where it is non-empty -- no raw JSON object leaking through (the
+-- regression this guards: founder_score's actual missing_flags shape is an
+-- array of {criterion_id, what_would_close_it} objects, not the array-of-
+-- strings design SS4.2 originally claimed -- task A1 finding 2, corrected in
+-- design), and no element is an internal "_"-prefixed key. Column type alone
+-- (text[]) cannot catch a regression where the extractor casts a whole jsonb
+-- object to text instead of pulling criterion_id -- this checks the actual
+-- string shape of every element.
+DO $$
+DECLARE
+  v_row      record;
+  v_elem     text;
+  v_checked  int := 0;
+BEGIN
+  FOR v_row IN
+    SELECT founder_id, founder_score_missing FROM api_founders
+    WHERE founder_score_missing IS NOT NULL AND array_length(founder_score_missing, 1) > 0
+  LOOP
+    v_checked := v_checked + 1;
+    FOREACH v_elem IN ARRAY v_row.founder_score_missing LOOP
+      IF v_elem LIKE '{%' OR v_elem LIKE '[%' THEN
+        RAISE EXCEPTION 'smoke FAIL: founder_score_missing leaked a raw JSON-shaped element % for founder %', v_elem, v_row.founder_id;
+      END IF;
+      IF v_elem LIKE '\_%' ESCAPE '\' THEN
+        RAISE EXCEPTION 'smoke FAIL: founder_score_missing leaked an internal "_"-prefixed key % for founder %', v_elem, v_row.founder_id;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  IF v_checked = 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: no api_founders row had a non-empty founder_score_missing to check -- assertion is vacuous';
+  END IF;
+END $$;
+
+-- Fixture: the exact stale-thesis-fit regression shape (task A1 finding,
+-- reproduced live 2026-07-19 against application 07f00002-...-04), rebuilt
+-- self-contained here rather than depended on by live id -- that application
+-- is live operational data written during the hackathon, not seeded by
+-- db/apply.sh, and will not exist after the documented cold-start reset
+-- (CLAUDE.md > "Полный сброс с нуля"). Two thesis_evaluations rows for the
+-- SAME (application_id, thesis_id): an OLDER one carrying a score_id (a
+-- deliberately high/stale scores.value, 99.99), a NEWER one with score_id
+-- NULL (this run did not reach a score). A naive "latest scores(axis=
+-- thesis_fit) for this application" read would return the stale 99.99;
+-- api_applications must instead resolve through thesis_evaluations and
+-- report NULL.
+DO $$
+DECLARE
+  v_default_thesis_id uuid;
+BEGIN
+  SELECT id INTO v_default_thesis_id FROM theses WHERE name = 'default' AND active LIMIT 1;
+  IF v_default_thesis_id IS NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: no active default thesis found (db/seed.sql should have inserted one)';
+  END IF;
+
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000031', 'Smoke Stale Thesis Fit Co', 'pre_seed');
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000032', '10f00001-0000-0000-0000-000000000031', 'radar_activated');
+  INSERT INTO scores (id, application_id, axis, value, computed_at)
+    VALUES ('10f00001-0000-0000-0000-000000000033', '10f00001-0000-0000-0000-000000000032', 'thesis_fit', 99.99, now() - interval '1 hour');
+  INSERT INTO thesis_evaluations (id, application_id, thesis_id, thesis_version, input_fingerprint, evaluation_mode, verdict, score_id, created_at)
+    VALUES ('10f00001-0000-0000-0000-000000000034', '10f00001-0000-0000-0000-000000000032',
+            v_default_thesis_id, 1, 'smoke-f10-thesis-eval-old', 'full', 'borderline',
+            '10f00001-0000-0000-0000-000000000033', now() - interval '1 hour');
+  INSERT INTO thesis_evaluations (id, application_id, thesis_id, thesis_version, input_fingerprint, evaluation_mode, verdict, score_id, created_at)
+    VALUES ('10f00001-0000-0000-0000-000000000035', '10f00001-0000-0000-0000-000000000032',
+            v_default_thesis_id, 1, 'smoke-f10-thesis-eval-new', 'full', 'insufficient_evidence',
+            NULL, now());
+END $$;
+
+-- Positive: thesis_verdict/thesis_fit resolve through the LATEST
+-- thesis_evaluations row for (application_id, thesis_id), never a direct
+-- `scores` read -- verdict is still reported, thesis_fit is NULL because
+-- the latest row's score_id is NULL (design SS4.2; 07's QA reproduced this
+-- exact "stale 100.00" class of bug via a direct scores read).
+DO $$
+DECLARE
+  v_thesis_verdict text;
+  v_thesis_fit     numeric;
+BEGIN
+  SELECT thesis_verdict, thesis_fit INTO v_thesis_verdict, v_thesis_fit
+  FROM api_applications WHERE application_id = '10f00001-0000-0000-0000-000000000032';
+
+  IF v_thesis_verdict IS DISTINCT FROM 'insufficient_evidence' THEN
+    RAISE EXCEPTION 'smoke FAIL: expected thesis_verdict=insufficient_evidence (the latest thesis_evaluations row), got %', v_thesis_verdict;
+  END IF;
+  IF v_thesis_fit IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: thesis_fit expected NULL (latest row has score_id NULL), got % -- stale-scores-read regression', v_thesis_fit;
+  END IF;
+END $$;
+
+-- Regression guard (task A1a, TRACKER.md): radar_candidates must survive
+-- materialising `obscurity` for every row. Founder d2e2c8fb-3abc-4f31-9c65-
+-- 66ecc16066e4 ("shlokkshahh", real data) has hn_karma=-2 -- HN karma
+-- legitimately goes negative for a downvoted user -- and log() of a
+-- non-positive argument used to raise "cannot take logarithm of a negative
+-- number", aborting any statement that reads `obscurity` across all rows.
+-- `count(*)` alone does NOT exercise this (the planner prunes the unused
+-- column), which is exactly why 02's own smoke tests never caught it and why
+-- this assertion explicitly selects count(obscurity) too. Left uncaught on
+-- purpose, same convention as the thesis_evaluations purge regression above:
+-- if the log-domain bug is ever reintroduced, this statement itself raises
+-- and aborts the suite loudly -- that IS the regression signal.
+DO $$
+DECLARE
+  v_total     int;
+  v_with_obscurity int;
+BEGIN
+  SELECT count(*), count(obscurity) INTO v_total, v_with_obscurity FROM radar_candidates;
+  IF v_total = 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates returned 0 rows';
+  END IF;
+END $$;
+
 ROLLBACK;

@@ -1,0 +1,278 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NL-Search Resolver output — query plan",
+  "description": "Structured query plan emitted by the resolver LLM and consumed by the deterministic executor in lib/f10/. The executor re-validates every field against the live catalogue; this schema is the contract, not the trust boundary.",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/plan"
+    },
+    {
+      "$ref": "#/definitions/error"
+    }
+  ],
+  "definitions": {
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attributes",
+        "unresolvable"
+      ],
+      "properties": {
+        "attributes": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 12,
+          "description": "Typed, executable attributes. May be empty when nothing in the query is resolvable — the executor then falls back to an explained default list rather than returning nothing.",
+          "items": {
+            "$ref": "#/definitions/attribute"
+          }
+        },
+        "unresolvable": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 12,
+          "description": "Fragments of the query that cannot be answered with the data that exists. First-class output: reporting these is what stops the search from silently answering a different question.",
+          "items": {
+            "$ref": "#/definitions/unresolvableItem"
+          }
+        }
+      }
+    },
+    "attribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "kind",
+        "polarity",
+        "target",
+        "op"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,47}$",
+          "description": "Stable snake_case identifier, unique within the plan. Echoed back to the caller in the response so an agent can correlate attribute states across queries."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "The investor's own words for this attribute, preserved verbatim. Shown to the human so they can see how their phrasing was interpreted."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "provenance",
+            "structural"
+          ],
+          "description": "Determines the executor's weight. THIS BUILD SUPPORTS TWO KINDS: provenance=who the person is and what they built (weight 25); structural=geography/sector/business model/stage (weight 20). 'negative' is NOT a kind - it is a polarity; a negative attribute carries the kind of its subject matter. 'velocity' and 'text' are cut from this build; fragments needing them go to unresolvable with reason 'not_testable'."
+        },
+        "polarity": {
+          "type": "string",
+          "enum": [
+            "positive",
+            "negative"
+          ],
+          "description": "'negative' when the investor requires an absence, 'positive' otherwise. Polarity is the SOLE negation marker. Only positive attributes generate candidates; negatives are scorers only, and a matched negative takes tier_credit 1.0 since there is no claim to read a tier from."
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "claim_topic",
+                "metric",
+                "column",
+                "fts"
+              ],
+              "description": "claim_topic must exist in catalogue.claim_topics (or be a '.*' prefix of one); metric must exist in catalogue.metric_kinds; column is permitted only when catalogue.structural_fields reports filled > 0; fts is the free-text fallback and is never valid for a negative attribute."
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "exists",
+            "eq",
+            "contains",
+            "gte",
+            "lte",
+            "not_exists"
+          ],
+          "description": "A negative-polarity attribute must use not_exists."
+        },
+        "value": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Required for eq / contains / gte / lte. For eq on a closed-vocabulary target the value must come from catalogue.vocabularies; country values are ISO-3166-1 alpha-2."
+        },
+        "broadening": {
+          "type": "string",
+          "enum": [
+            "city→country",
+            "country→region",
+            "specific→family"
+          ],
+          "description": "Set ONLY when the attribute had to be widened to be answerable at all — e.g. the investor asked for a city and the corpus records only countries. Any attribute carrying this renders as state 'matched_broadened' rather than 'matched', so the caller sees that the match is looser than the words they used. Omitting it when broadening occurred is silent scope drift: a Munich founder returned as a match for 'Berlin'."
+        },
+        "resolved_as": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Human-readable statement of what the attribute actually became, e.g. 'company.geography_country = DE'. Required whenever `broadening` is present."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "polarity": {
+                "const": "negative"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "op": {
+                "const": "not_exists"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "eq",
+                  "contains",
+                  "gte",
+                  "lte"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        }
+      ]
+    },
+    "unresolvableItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "reason"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "The investor's own words for the fragment that could not be resolved."
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "no_data_source",
+            "not_testable",
+            "out_of_scope"
+          ],
+          "description": "no_data_source = nothing in the corpus records this, including the load-bearing case of a negative whose subject matter is never recorded. not_testable = too vague to evaluate. out_of_scope = outside what this system collects, including cap tables, financials, and every protected or personal characteristic."
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error_code",
+        "message"
+      ],
+      "properties": {
+        "error_code": {
+          "type": "string",
+          "enum": [
+            "empty_query",
+            "no_catalogue"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "attributes": [
+        {
+          "id": "technical_founder",
+          "label": "technical founder",
+          "kind": "provenance",
+          "polarity": "positive",
+          "target": {
+            "type": "claim_topic",
+            "value": "founder.expertise.*"
+          },
+          "op": "exists"
+        },
+        {
+          "id": "geo_berlin",
+          "label": "Berlin",
+          "kind": "structural",
+          "polarity": "positive",
+          "target": {
+            "type": "claim_topic",
+            "value": "company.geography_country"
+          },
+          "op": "eq",
+          "value": "DE"
+        }
+      ],
+      "unresolvable": [
+        {
+          "label": "no prior VC backing",
+          "reason": "no_data_source"
+        }
+      ]
+    },
+    {
+      "attributes": [],
+      "unresolvable": [
+        {
+          "label": "great",
+          "reason": "not_testable"
+        },
+        {
+          "label": "young",
+          "reason": "out_of_scope"
+        }
+      ]
+    },
+    {
+      "error_code": "empty_query",
+      "message": "query was empty or whitespace only"
+    }
+  ]
+}
