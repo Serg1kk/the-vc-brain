@@ -39,7 +39,17 @@ interface AxisMiniBarProps {
   className?: string;
 }
 
-/** The 48px-wide feed-row axis cell (brief §8.2). */
+/**
+ * The 48px-wide feed-row axis cell (brief §8.2).
+ *
+ * Confidence below 0.2 renders hollow, not solid — the same cutoff and the same
+ * reasoning as `AxisScoreHero` (scoring-ux.md §2.7(a), that document's own
+ * highest-severity requirement): an unresearched or barely-evidenced value and a
+ * well-evidenced one must never be visually interchangeable, and this is the
+ * default view a judge sees first. A 48px cell has no room for a hover affordance to
+ * carry that distinction, so both the bar and the numeral carry it redundantly —
+ * it has to survive a glance and a screenshot, not just a tooltip.
+ */
 export function AxisMiniBar({
   label,
   assessed,
@@ -51,8 +61,9 @@ export function AxisMiniBar({
   onClick,
   className,
 }: AxisMiniBarProps) {
+  const lowConfidence = assessed && confidence != null && confidence < 0.2;
   const title = assessed
-    ? `${label}: value ${value}${confidence != null ? ` · confidence ${confidence}` : ""}${coverage ? ` · coverage ${coverage}` : ""}`
+    ? `${label}: value ${value}${confidence != null ? ` · confidence ${confidence}` : ""}${coverage ? ` · coverage ${coverage}` : ""}${lowConfidence ? " — confidence below 0.2, rendered hollow" : ""}`
     : `${label}: Not assessed${notAssessedReason ? ` — ${notAssessedReason}` : ""}`;
 
   return (
@@ -65,12 +76,24 @@ export function AxisMiniBar({
         <>
           <span className="relative block h-1 bg-[color:var(--color-track)]">
             <span
-              className="absolute inset-y-0 left-0 bg-[color:var(--color-text)]"
+              className={cn(
+                "absolute inset-y-0 left-0",
+                lowConfidence
+                  ? "border border-[color:var(--color-text)] bg-transparent"
+                  : "bg-[color:var(--color-text)]",
+              )}
               style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
             />
           </span>
           <span className="mt-[3px] flex justify-between font-mono text-[10px] text-[color:var(--color-text-muted)]">
-            <span>{Math.round(value)}</span>
+            <span
+              className={cn(
+                lowConfidence &&
+                  "text-transparent [-webkit-text-stroke:0.5px_var(--color-text-muted)]",
+              )}
+            >
+              {Math.round(value)}
+            </span>
             <span aria-hidden="true">{trend ? TREND_ARROW[trend] : ""}</span>
           </span>
         </>

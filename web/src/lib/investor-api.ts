@@ -767,8 +767,10 @@ export interface ThesisConfig {
     risk_appetite: string;
     /** Recorded, not yet applied to scoring. */
     check_size_usd: { min: number; max: number };
-    /** Recorded, not yet applied to scoring. */
-    ownership_target_pct: number;
+    /** Recorded, not yet applied to scoring. Nullable — the live seeded default
+     * carries `null` (unset), not `0`; the two mean different things ("no target
+     * recorded" vs "0% target"). */
+    ownership_target_pct: number | null;
   };
   /** NOT inert, and must not be labelled as such — read at runtime by market research
    * to build search queries, even though it does nothing for the thesis rules. */
@@ -985,23 +987,45 @@ export async function getCurrentMemo(applicationId: string): Promise<Result<Memo
 // ---------------------------------------------------------------------------
 
 /**
- * ⏳ Request/response body not yet frozen upstream. The card's "Suggest follow-up
- * questions" action reads the card's gaps alone — there is no manager-notes input
- * (cut, brief §6, no notes table exists). Re-verify against the live workflow before
- * wiring; fix this one call site rather than guessing again elsewhere.
+ * ✅ Frozen and verified live — n8n/workflows/README-f09.md. The card's gaps alone
+ * drive this (manager notes were cut, brief §6, no notes table exists): three gap
+ * sources (contradictions, founder-score gaps, missing claims) are read and ranked
+ * in code — the model only phrases two of them into a spoken question, it never
+ * selects. Errors are feature 08's §4.5 shape (`{error:{code,message}}`), already
+ * handled generically by `n8nPost`; the live `code` values are `invalid_input` (400),
+ * `not_found` (404), `internal` (500).
  */
 export interface SuggestFollowUpRequest {
   application_id: string;
 }
 
 export interface SuggestFollowUpQuestion {
+  /** ≤160 chars, exactly one `?`. */
   question: string;
-  closes_gap: string;
+  /** One line stating what this question closes. */
+  why: string;
+  /** `contradiction` items reuse stored text verbatim (▦-equivalent); the other two
+   * are model-phrased from a deterministically-selected input (▦◇-equivalent). Do
+   * NOT render this as a trust/quality signal — it is provenance of the phrasing,
+   * not of the underlying evidence. */
+  source: "contradiction" | "founder_score_gap" | "missing_claim";
 }
 
 export interface SuggestFollowUpResponse {
+  application_id: string;
+  company_name: string;
+  generated_at: string;
+  /** 0–7 items, in this order: contradictions, then founder-score gaps, then
+   * missing claims. An empty array is a real, honest finding — see `empty_reason`. */
   questions: SuggestFollowUpQuestion[];
-  email_preview: { subject: string; body: string };
+  /** A draft only — there is no founder email address anywhere in this schema, so
+   * there is no `to` field. Present only when `questions.length > 0`; render the
+   * send button as `Not sent — email delivery is not enabled in this build.`
+   * (brief §9.4), never a fake sent confirmation. */
+  email_preview: { subject: string; body: string } | null;
+  /** Non-null exactly when `questions` is empty — names which of the three sources
+   * came back empty and why. Never fabricates generic questions to fill the modal. */
+  empty_reason: string | null;
 }
 
 /** Slow write (brief §12.5): no optimistic UI — disable the control while in flight
@@ -1017,23 +1041,112 @@ export function suggestFollowUp(
 }
 
 /**
- * ⏳ Request/response body not yet frozen upstream (owned by feature 11). Modelled as
- * a confirm-and-erase call against a single founder; re-verify field names before
- * wiring.
+ * ✅ Frozen and verified live — n8n/workflows/README-f11.md. `founder_id` is the only
+ * accepted field: a single well-formed UUID, no arrays, no `"all"`/`"*"`, no default
+ * when missing. This is destructive and irreversible on exactly one identified person
+ * — the caller must confirm before invoking this, naming exactly what will be erased
+ * (brief §9.7).
  */
 export interface PurgeFounderRequest {
   founder_id: string;
+}
+
+/** Before/after/retained counts for one table (or table+entity_type category — e.g.
+ * `events_founder` vs `events_application` are reported separately). `reason` is
+ * present exactly when `retained > 0`. */
+export interface PurgeTableReceipt {
+  before: number;
+  deleted: number;
+  retained: number;
   reason?: string;
 }
 
-export interface PurgeFounderResponse {
-  purged: boolean;
-  /** e.g. `["claims", "score_components", "events"]`. */
-  erased: string[];
+export interface PurgeAuditEvent {
+  id: string;
+  /** `"founder_purged"` — the one anonymized row `purge_founder()` itself writes;
+   * carries no PII in its payload. */
+  event_type: string;
+  created_at: string;
 }
 
-/** GDPR delete-on-request (brief §9.7). Irreversible — the caller must confirm before
- * invoking this, naming exactly what will be erased. */
+export interface PurgeStorageReceipt {
+  attempted: number;
+  deleted: number;
+  /** Never silently swallowed — a missing bucket/object lands here and does not fail
+   * the overall request (a missing deck file is not a reason to fail an otherwise-
+   * successful database erasure). Shape of a failure entry isn't frozen; treat as
+   * opaque and render `storage.failed.length > 0` as an honest partial-cleanup note. */
+  failed: unknown[];
+}
+
+export interface PurgeRetainedItem {
+  table: string;
+  count: number;
+  reason: string;
+}
+
+/**
+ * Known keys of `.tables` today (`tables` is typed as a `Record` rather than these
+ * exact literals so the receipt never needs a cast if the schema owner adds a
+ * category later — iterate with `Object.entries` for the expandable "details"
+ * affordance the README describes).
+ */
+export const PURGE_TABLE_KEYS = [
+  "founders",
+  "founder_identities",
+  "founder_company",
+  "companies",
+  "applications",
+  "cards",
+  "claims",
+  "evidence",
+  "scores",
+  "score_components",
+  "ai_runs",
+  "raw_signals",
+  "metric_observations",
+  "watchlist",
+  "interviews",
+  "voice_artifacts",
+  "memos",
+  "thesis_evaluations",
+  "events_founder",
+  "events_application",
+] as const;
+
+export interface PurgeFounderResponse {
+  ok: boolean;
+  founder_id: string;
+  purged_at: string;
+  /** THE boolean the UI gates the confirmation copy on — true only if EVERY captured
+   * row was actually removed. Never round `complete: false` up to a success message;
+   * render `retained[]`'s reasons verbatim instead. Known live gap today (schema fix
+   * proposed, not yet landed): `events` rows written with `entity_type='application'`
+   * by feature 05's verification/contradiction pipelines are outside
+   * `purge_founder()`'s current reach, so `complete` is `false` and `retained`
+   * non-empty on every call until that lands — this is the workflow reporting a real
+   * gap honestly, not a workflow defect. */
+  complete: boolean;
+  audit_event: PurgeAuditEvent;
+  tables: Record<string, PurgeTableReceipt>;
+  storage: PurgeStorageReceipt;
+  /** Same information as `.tables`, pre-filtered to only the rows that need a
+   * user-facing callout — render this list directly rather than deriving it from
+   * `.tables` yourself. */
+  retained: PurgeRetainedItem[];
+}
+
+/**
+ * GDPR delete-on-request (brief §9.7). Irreversible — the caller must confirm before
+ * invoking this, naming exactly what will be erased.
+ *
+ * Error codes (feature 08's §4.5 shape, already handled generically): 400
+ * `invalid_input` (missing/malformed `founder_id`, including any wildcard/bulk
+ * attempt), 404 `not_found`, 500 `purge_failed`. **A 500 here means nothing was
+ * deleted** — `purge_founder()`'s exception rolls back its own transaction — render
+ * it as "erasure did not run", never as an ambiguous or partial state. Never a stack
+ * trace or raw Postgres error string in any of the three.
+ */
 export function purgeFounderData(
   payload: PurgeFounderRequest,
 ): Promise<Result<PurgeFounderResponse>> {
@@ -1054,6 +1167,10 @@ export interface NlSearchEvidence {
 
 export interface NlSearchAttribute {
   id: string;
+  /** Human-readable form of `id` (e.g. `"technical founder"` for
+   * `"technical_founder"`) — present on the live endpoint though not shown in
+   * data-contracts.md's own example; render this, never the raw `id`. */
+  label: string;
   state: NlAttributeState;
   weight: number;
   tier_credit?: number;

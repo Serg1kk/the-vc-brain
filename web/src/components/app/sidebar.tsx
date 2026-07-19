@@ -49,8 +49,14 @@ export function Sidebar() {
       </Link>
       {/* No route or data source exists for a watchlist yet (table has no writer) —
           shown as a static label so the sidebar structure matches the design without
-          pretending a destination that isn't built. */}
-      <div className="px-5 py-1.5 text-[13px] font-medium text-[color:var(--color-text-muted)]">
+          pretending a destination that isn't built. Visibly non-interactive (dimmed,
+          not-allowed cursor) rather than merely unlinked — a label that looks
+          clickable and isn't reads as broken; one that reads as "not in this build"
+          reads as scoped. */}
+      <div
+        title="Not built in this version"
+        className="cursor-not-allowed px-5 py-1.5 text-[13px] font-medium text-[color:var(--color-text-muted)] opacity-50"
+      >
         Watchlist
       </div>
 

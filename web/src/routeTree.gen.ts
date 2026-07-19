@@ -14,9 +14,13 @@ import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ATokenRouteImport } from './routes/a.$token'
 import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as AppFeedRouteImport } from './routes/app/feed'
+import { Route as AppThesisRouteImport } from './routes/app/thesis'
 import { Route as ApplyIndexRouteImport } from './routes/apply.index'
 import { Route as ApplyQuestionsRouteImport } from './routes/apply.questions'
 import { Route as ApplyStatusRouteImport } from './routes/apply.status'
+import { Route as AppFApplicationIdRouteImport } from './routes/app/f.$applicationId'
+import { Route as AppFApplicationIdMemoRouteImport } from './routes/app/f.$applicationId_.memo'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -43,6 +47,16 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppFeedRoute = AppFeedRouteImport.update({
+  id: '/feed',
+  path: '/feed',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppThesisRoute = AppThesisRouteImport.update({
+  id: '/thesis',
+  path: '/thesis',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const ApplyIndexRoute = ApplyIndexRouteImport.update({
   id: '/apply/',
   path: '/apply/',
@@ -58,25 +72,43 @@ const ApplyStatusRoute = ApplyStatusRouteImport.update({
   path: '/apply/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppFApplicationIdRoute = AppFApplicationIdRouteImport.update({
+  id: '/f/$applicationId',
+  path: '/f/$applicationId',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppFApplicationIdMemoRoute = AppFApplicationIdMemoRouteImport.update({
+  id: '/f/$applicationId_/memo',
+  path: '/f/$applicationId/memo',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
+  '/app/feed': typeof AppFeedRoute
+  '/app/thesis': typeof AppThesisRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
   '/app/': typeof AppIndexRoute
   '/apply/': typeof ApplyIndexRoute
+  '/app/f/$applicationId': typeof AppFApplicationIdRoute
+  '/app/f/$applicationId/memo': typeof AppFApplicationIdMemoRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
+  '/app/feed': typeof AppFeedRoute
+  '/app/thesis': typeof AppThesisRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
   '/app': typeof AppIndexRoute
   '/apply': typeof ApplyIndexRoute
+  '/app/f/$applicationId': typeof AppFApplicationIdRoute
+  '/app/f/$applicationId/memo': typeof AppFApplicationIdMemoRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -84,10 +116,14 @@ export interface FileRoutesById {
   '/app': typeof AppRouteRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
+  '/app/feed': typeof AppFeedRoute
+  '/app/thesis': typeof AppThesisRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
   '/app/': typeof AppIndexRoute
   '/apply/': typeof ApplyIndexRoute
+  '/app/f/$applicationId': typeof AppFApplicationIdRoute
+  '/app/f/$applicationId_/memo': typeof AppFApplicationIdMemoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,29 +132,41 @@ export interface FileRouteTypes {
     | '/app'
     | '/privacy'
     | '/a/$token'
+    | '/app/feed'
+    | '/app/thesis'
     | '/apply/questions'
     | '/apply/status'
     | '/app/'
     | '/apply/'
+    | '/app/f/$applicationId'
+    | '/app/f/$applicationId/memo'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/privacy'
     | '/a/$token'
+    | '/app/feed'
+    | '/app/thesis'
     | '/apply/questions'
     | '/apply/status'
     | '/app'
     | '/apply'
+    | '/app/f/$applicationId'
+    | '/app/f/$applicationId/memo'
   id:
     | '__root__'
     | '/'
     | '/app'
     | '/privacy'
     | '/a/$token'
+    | '/app/feed'
+    | '/app/thesis'
     | '/apply/questions'
     | '/apply/status'
     | '/app/'
     | '/apply/'
+    | '/app/f/$applicationId'
+    | '/app/f/$applicationId_/memo'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -168,6 +216,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/feed': {
+      id: '/app/feed'
+      path: '/feed'
+      fullPath: '/app/feed'
+      preLoaderRoute: typeof AppFeedRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/thesis': {
+      id: '/app/thesis'
+      path: '/thesis'
+      fullPath: '/app/thesis'
+      preLoaderRoute: typeof AppThesisRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/apply/': {
       id: '/apply/'
       path: '/apply'
@@ -189,15 +251,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplyStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/f/$applicationId': {
+      id: '/app/f/$applicationId'
+      path: '/f/$applicationId'
+      fullPath: '/app/f/$applicationId'
+      preLoaderRoute: typeof AppFApplicationIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/f/$applicationId_/memo': {
+      id: '/app/f/$applicationId_/memo'
+      path: '/f/$applicationId/memo'
+      fullPath: '/app/f/$applicationId/memo'
+      preLoaderRoute: typeof AppFApplicationIdMemoRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
   }
 }
 
 interface AppRouteRouteChildren {
+  AppFeedRoute: typeof AppFeedRoute
+  AppThesisRoute: typeof AppThesisRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppFApplicationIdRoute: typeof AppFApplicationIdRoute
+  AppFApplicationIdMemoRoute: typeof AppFApplicationIdMemoRoute
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppFeedRoute: AppFeedRoute,
+  AppThesisRoute: AppThesisRoute,
   AppIndexRoute: AppIndexRoute,
+  AppFApplicationIdRoute: AppFApplicationIdRoute,
+  AppFApplicationIdMemoRoute: AppFApplicationIdMemoRoute,
 }
 
 const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
