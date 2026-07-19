@@ -117,6 +117,19 @@ remote data — cleaner demo beat than migrating the 16 local test memos. If ope
 local memos too, that folds into a FINAL-SYNC (fresh dump → restore → re-run deterministic
 anonymize+dedup scripts → re-export seed) — scripts are being built re-runnable for exactly this.
 
+## URGENT SEED PATH (operator, ~15:15 — «2 минуты») — done by orchestrator inline
+
+Operator ordered: export anonymized remote data, replace the local DB with it, ship seed+loader to
+GitHub — without waiting for the anonymizer. Executed inline (time-forced deviation from
+subagent-only): remote pg_dump → **full 717-id mapping sweep over the file** → 10 survivors
+hand-scrubbed (levelsio/levels.io/Pieter Levels/photoai/nomadlist/clipmaker/kim0/northwind/rudo/
+IP14 — all → mapped fakes) → file verified ZERO real identifiers → `db/fixtures/demo-seed.sql`
+(21.7MB) + `db/load-demo.sh` created → **local DB truncated + reloaded with the anonymized set**
+(operator order; verified fake names local) → @devops pushed as **`e2b6886`** (secret-scan clean;
+`.ru.md` correctly excluded per repo policy). The 10 survivors were scrubbed in the FILE — the
+REMOTE still had them at dump time; anonymizer given the exact target list to finish the remote
+sweep, then dedup. Seed may be re-exported after dedup if data changes materially.
+
 ## Event log
 - 2026-07-19 ~13:05 · Recon complete (server + local + web target). design.md + plan.md written.
 - 2026-07-19 ~13:xx · Dispatching S0-A (@database-engineer) ∥ S0-B (@devops).

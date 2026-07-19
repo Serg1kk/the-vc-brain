@@ -18,8 +18,9 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  generateMemo,
   getApplications,
   getClaimTrust,
   getClaims,
@@ -645,6 +646,12 @@ function Memo() {
     queryFn: () => getCurrentMemo(applicationId),
   });
 
+  // Generate-memo control on the empty state. Slow write (1–3 min, four LLM
+  // section writers) — no optimistic UI, one in-flight call at a time.
+  const [genState, setGenState] = useState<
+    { state: "idle" } | { state: "pending" } | { state: "error"; message: string }
+  >({ state: "idle" });
+
   const memo = memoQ.data?.ok ? memoQ.data.data : null;
   const citedIds = useMemo(() => memo?.cited_claim_ids ?? [], [memo]);
 
@@ -896,8 +903,30 @@ function Memo() {
             <p className="mx-auto mt-2 max-w-[440px] text-[13px] text-[color:var(--color-text-muted)]">
               Memo generation reads this application's evidence, trust and thesis fit and writes a new
               versioned memo row via the <span className="font-mono">f06-generate-memo</span> workflow.
-              Trigger it from the backend for this application, then reload.
             </p>
+            <button
+              type="button"
+              disabled={genState.state === "pending"}
+              onClick={() => {
+                setGenState({ state: "pending" });
+                generateMemo(applicationId).then((res) => {
+                  if (res.ok) {
+                    setGenState({ state: "idle" });
+                    memoQ.refetch();
+                  } else {
+                    setGenState({ state: "error", message: res.error.message });
+                  }
+                });
+              }}
+              className="mt-4 cursor-pointer bg-[color:var(--color-accent)] px-4.5 py-2 text-[13px] font-medium text-[color:var(--color-accent-foreground)] disabled:cursor-default disabled:opacity-60"
+            >
+              {genState.state === "pending" ? "Generating… takes 1–3 minutes" : "Generate memo"}
+            </button>
+            {genState.state === "error" ? (
+              <p className="mx-auto mt-3 max-w-[440px] text-[13px] text-[color:var(--color-danger,#b00020)]">
+                {genState.message}
+              </p>
+            ) : null}
           </div>
         )}
       </div>

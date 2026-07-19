@@ -1034,6 +1034,20 @@ export interface SuggestFollowUpResponse {
   empty_reason: string | null;
 }
 
+/** Slow write, same rules as suggestFollowUp but slower still: f06 runs the context
+ * pack, four LLM section writers and the deterministic decision core — 1–3 minutes
+ * end to end. Disable the control and label the wait; on success the caller refetches
+ * the memo (f06 writes a new versioned `memos` row, it does not return the memo body
+ * in a UI-consumable shape). */
+const MEMO_GENERATE_TIMEOUT_MS = 300_000;
+export function generateMemo(applicationId: string): Promise<Result<unknown>> {
+  return n8nPost<unknown>(
+    "/webhook/f06-generate-memo",
+    { application_id: applicationId },
+    MEMO_GENERATE_TIMEOUT_MS,
+  );
+}
+
 /** Slow write (brief §12.5): no optimistic UI — disable the control while in flight
  * and show a labelled pending state; this calls a model and takes real seconds. */
 export function suggestFollowUp(
