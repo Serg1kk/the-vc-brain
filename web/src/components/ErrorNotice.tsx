@@ -5,11 +5,7 @@ interface Props {
 
 export function ErrorNotice({ message, onRetry }: Props) {
   return (
-    <div
-      role="alert"
-      className="rounded-md border p-4"
-      style={{ borderColor: "var(--color-warn)", background: "color-mix(in oklab, var(--color-warn) 8%, transparent)" }}
-    >
+    <div role="alert" className="ms-rule">
       <p className="text-[14px] text-[color:var(--color-text)]">{message}</p>
       {onRetry ? (
         <button

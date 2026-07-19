@@ -2,8 +2,7 @@ export function DisclosureBanner() {
   return (
     <div
       role="note"
-      className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 pl-5"
-      style={{ borderLeft: "3px solid var(--color-warn)" }}
+      className="ms-rule"
     >
       <p className="text-[14px] text-[color:var(--color-text)]">
         An AI system reviews your application. It reads your deck and public information about

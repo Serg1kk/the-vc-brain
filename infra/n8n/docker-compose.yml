@@ -16,7 +16,10 @@ services:
       # browser and nowhere else -- curl tests stay green, which is what makes
       # it expensive to discover. Verified by preflight: OPTIONS with
       # Origin: http://localhost:5173 returns 204 + Access-Control-Allow-Origin.
-      - N8N_CORS_ALLOW_ORIGIN=http://localhost:5173,http://localhost:3000
+      # :8080 added after the frontend was found running there — a browser submit
+      # from an unlisted origin fails silently in the browser and nowhere else,
+      # which is exactly the failure we do not want to meet during a demo recording.
+      - N8N_CORS_ALLOW_ORIGIN=http://localhost:5173,http://localhost:3000,http://localhost:8080
       # Payload ceiling for feature 08: the intake contract carries the deck
       # plus up to three extra files as base64 in one JSON request; the default
       # is 16 MB. Operator chose to raise the limit rather than change the

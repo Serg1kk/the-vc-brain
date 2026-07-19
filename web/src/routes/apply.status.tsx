@@ -141,8 +141,7 @@ function Status() {
         {state.deckWarning === "image_only_deck" ? (
           <div
             role="note"
-            className="rounded-md border p-4"
-            style={{ borderColor: "var(--color-warn)", background: "color-mix(in oklab, var(--color-warn) 8%, transparent)" }}
+            className="ms-rule"
           >
             <p className="text-[14px]">
               We could not read text from your deck — it looks like the slides are images.
@@ -158,8 +157,7 @@ function Status() {
         {state.deckWarning === "extraction_failed" ? (
           <div
             role="note"
-            className="rounded-md border p-4"
-            style={{ borderColor: "var(--color-warn)", background: "color-mix(in oklab, var(--color-warn) 8%, transparent)" }}
+            className="ms-rule"
           >
             <p className="text-[14px]">We couldn't read this file at all.</p>
             <p className="mt-2 text-[14px]">

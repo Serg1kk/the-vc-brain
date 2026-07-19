@@ -45,7 +45,7 @@ export function ArtifactLinkList({ values, onChange }: Props) {
                   onChange={(e) => update(i, e.target.value)}
                   onBlur={() => setErrors((prev) => ({ ...prev, [i]: validateLinkUrl(v) }))}
                   placeholder="https://github.com/you/project"
-                  className="flex-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
+                  className="flex-1 rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
                   aria-invalid={err ? "true" : undefined}
                   aria-describedby={err ? `${id}-err` : undefined}
                 />

@@ -19,15 +19,15 @@
 | T9 | `lib/f08/completeness.js` | @backend-developer | T8 | **done** | 0.51 arithmetic corrected by the agent before I asked |
 | T9b | n8n workflow requirements spec | n8n-requirements-orchestrator | — | dispatched | depends on contracts, not on code |
 | PR | Plan review | @implementation-plan-reviewer | — | dispatched | |
-| T0 | Response contract: `responseNode` + real HTTP codes | n8n-workflow-builder | — | pending | **BLOCKER** — `lastNode` can only emit 200; no error code could reach the UI |
-| T19 | `f08-followup-create` (token producer) | n8n-workflow-builder | T10 | pending | without it T12 is untestable and T15 has no target |
-| T20 | Recompute founder score after answers | n8n-workflow-builder | T11 | pending | the headline claim; `scores` has **no `founder` axis rows at all** |
-| T10 | `f08-intake-submit` workflow | n8n-workflow-builder | T0,T1,T2,T5-T9b | pending | |
-| T11 | `f08-gap-answers` workflow | n8n agents | T10 | pending | |
-| T12 | `f08-followup` + `-answers` | n8n agents | T10 | pending | cuttable if clock tightens |
-| T13 | `f08-application-status` | n8n agents | T10 | pending | first to cut |
-| T14 | End-to-end in a browser | orchestrator | T10-T13 | pending | only way to catch CORS |
-| T15 | QA gate | @qa-engineer | T14 | pending | independent, adversarial |
+| T0 | Response contract: `responseNode` + real HTTP codes | n8n-workflow-builder | — | **done** | verified live: a rejected request returns a real 500 with the frozen error envelope |
+| T19 | `f08-followup-create` (token producer) | n8n-workflow-builder | T10 | **done** | `eWIitXaz1kfCMjKY` |
+| T20 | Recompute founder score after answers | n8n-workflow-builder | T11 | **done** | fires after gap-answers and followup-answers; `insufficient_evidence` on a sparse founder is the correct outcome, not a bug |
+| T10 | `f08-intake-submit` | n8n-workflow-builder | T0,T1,T2,T5-T9b | **done** | `AOSJGp1WtyklOg8A` |
+| T11 | `f08-gap-answers` | n8n-workflow-builder | T10 | **done** | `NozMliP7TSLCQNrc` |
+| T12 | `f08-followup` + `-answers` | n8n-workflow-builder | T10 | **done** | `faIkBLyDGdiXTQpY` / `mu172HUPZJSzYGSh` — **not cut** |
+| T13 | `f08-application-status` | n8n-workflow-builder | T10 | **done** | `S2GGy48ZGPoKtcPr` — **not cut** |
+| T14 | End-to-end verification | orchestrator | T10-T13 | **done** | own smoke test, 9/9; CORS confirmed by real preflight earlier |
+| T15 | QA gate | @qa-engineer | T14 | dispatched | independent; told explicitly not to reuse the dev tests |
 | T16 | `done.md` for feature 11 | orchestrator | T15 | pending | |
 | T17 | Rewrite feature README body | orchestrator | — | **done** | EN + RU pair rewritten in the S2 waiting window, per plan review §10 — no longer contradicts its own header |
 | T18 | Final commit + backlog status | @devops | T16,T17 | pending | |
@@ -69,3 +69,31 @@
   right origin, so T14's main risk is retired early), and the **status-screen falsehood is real**
   — without T13 a founder who answered everything is told "You left 3 questions unanswered",
   which inverts the old cut order. Plan amended as rev.2; three tasks added (T0, T19, T20).
+- **~10:50–11:00** — **Second data-loss event.** A stray `git reset` from another terminal
+  destroyed all uncommitted feature-08 work. Recovered from `git stash` (`stash@{1}`, 68 files);
+  the tracked-file edits did not come back with it and were redone by hand. Full detail and the
+  recovery recipe are in `docs/backlog/TRACKER.md`. Committed as `8c44e9e` immediately after.
+- **~11:15** — **The build's real blocker found and fixed: OpenAI strict structured output
+  rejects most of JSON Schema.** Not the key, not the model, not the workflow — `oneOf`, string
+  constraints, partial `required`, and free-form objects are all refused, and the schema is valid
+  JSON Schema so nothing local would ever flag it. Found by replaying the request body captured
+  from the execution data straight against the API; n8n's node error surface showed nothing.
+  Both agents then verified live before wiring. Recorded cross-feature in `TRACKER.md`.
+- **~11:36** — **All six workflows deployed and verified; nothing was cut.** Independent smoke
+  test 9/9. The three results worth keeping: a deck stating L2/L3/X5 yields **zero** questions
+  (suppression, the half that is easy to fake); a text-free deck yields ten claims **all marked
+  `missing`** — no fabrication — and now reports `image_only_deck` so the founder is told, not
+  just the database; and `card_completeness` moves 0.00 → 0.81 → 1.00 as answers land.
+- **~11:38** — QA gate dispatched. Four of the five failures in my own first smoke run were the
+  test's fault (it matched the API's internal `"status":"screening"` enum as founder copy, and
+  counted features 04's and 05's pre-existing rows as its own); scoping corrected, since a test
+  that fails on other people's data gets ignored.
+
+## Cross-feature defects found here, owned elsewhere — reported, not fixed
+
+| Defect | Owner |
+|---|---|
+| `company.*` gap claims written with no `evidence` row (violates the invariant 03's fallback depends on) | 07 |
+| 9 `raw_signals` with both FKs NULL (`tavily_extract`) — unreachable by erasure | 04 |
+| ~190 `events` with `entity_type='application'` — `purge_founder()` sweeps only `'founder'` | 05 |
+| 14 unpolyfilled `new URL()` calls across two workflows — throws in the Code-node sandbox | 04 |

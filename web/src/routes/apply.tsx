@@ -164,8 +164,16 @@ function Apply() {
           <ErrorNotice message={apiError} />
         ) : null}
 
-        <form onSubmit={onSubmit} noValidate className="space-y-8" aria-busy={submitting}>
-          <fieldset className="space-y-4" disabled={submitting}>
+        <form
+          onSubmit={onSubmit}
+          noValidate
+          className="space-y-6"
+          aria-busy={submitting}
+        >
+          <fieldset
+            className="ms-rule space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 sm:p-8 shadow-[0_1px_2px_rgba(10,15,60,0.04),0_20px_40px_-24px_rgba(10,15,60,0.15)]"
+            disabled={submitting}
+          >
             <legend className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-text-muted)]">
               Your company
             </legend>
@@ -185,7 +193,7 @@ function Apply() {
                 required
                 aria-invalid={companyErr ? "true" : undefined}
                 aria-describedby={companyErr ? "company-err" : undefined}
-                className="mt-2 w-full rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
+                className="mt-2 w-full rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
               />
               {companyErr ? (
                 <p id="company-err" className="mt-1 text-[13px]" style={{ color: "var(--color-warn)" }}>
@@ -209,7 +217,7 @@ function Apply() {
                 required
                 aria-invalid={emailErr ? "true" : undefined}
                 aria-describedby={emailErr ? "email-err" : undefined}
-                className="mt-2 w-full rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
+                className="mt-2 w-full rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px] focus:border-[color:var(--color-accent)] focus:outline-none"
               />
               {emailErr ? (
                 <p id="email-err" className="mt-1 text-[13px]" style={{ color: "var(--color-warn)" }}>
@@ -219,7 +227,10 @@ function Apply() {
             </div>
           </fieldset>
 
-          <fieldset disabled={submitting}>
+          <fieldset
+            className="ms-rule rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 sm:p-8 shadow-[0_1px_2px_rgba(10,15,60,0.04),0_20px_40px_-24px_rgba(10,15,60,0.15)]"
+            disabled={submitting}
+          >
             <legend className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-text-muted)]">
               Your deck
             </legend>
@@ -238,7 +249,10 @@ function Apply() {
             </div>
           </fieldset>
 
-          <fieldset disabled={submitting}>
+          <fieldset
+            className="ms-rule rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 sm:p-8 shadow-[0_1px_2px_rgba(10,15,60,0.04),0_20px_40px_-24px_rgba(10,15,60,0.15)]"
+            disabled={submitting}
+          >
             <legend className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-text-muted)]">
               Links <span className="ml-1 font-medium normal-case tracking-normal text-[color:var(--color-text-muted)]">— Optional</span>
             </legend>
@@ -250,7 +264,10 @@ function Apply() {
             </div>
           </fieldset>
 
-          <fieldset disabled={submitting}>
+          <fieldset
+            className="ms-rule rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 sm:p-8 shadow-[0_1px_2px_rgba(10,15,60,0.04),0_20px_40px_-24px_rgba(10,15,60,0.15)]"
+            disabled={submitting}
+          >
             <legend className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-text-muted)]">
               Anything else <span className="ml-1 font-medium normal-case tracking-normal text-[color:var(--color-text-muted)]">— Optional</span>
             </legend>
@@ -274,8 +291,11 @@ function Apply() {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-[6px] px-4 py-2.5 text-[14px] font-medium text-white disabled:opacity-70"
-              style={{ background: "var(--color-accent)" }}
+              className="rounded-full px-7 py-3 text-[14px] font-medium disabled:opacity-70 transition-opacity"
+              style={{
+                background: "var(--color-accent-soft)",
+                color: "var(--color-accent-soft-foreground)",
+              }}
             >
               {submitting ? "Reading your deck…" : "Submit application"}
             </button>

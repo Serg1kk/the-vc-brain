@@ -61,7 +61,7 @@ export function FileDropzone({ file, onFile, accept, error, label, hint, id }: P
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="mt-2 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-1.5 text-[13px] font-medium hover:border-[color:var(--color-accent)]"
+            className="mt-2 rounded-[6px] border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[13px] font-medium hover:border-[color:var(--color-accent)]"
           >
             Choose a file
           </button>
@@ -76,7 +76,7 @@ export function FileDropzone({ file, onFile, accept, error, label, hint, id }: P
           />
         </div>
       ) : (
-        <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2.5">
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2.5">
           <div className="min-w-0">
             <p className="truncate text-[14px] text-[color:var(--color-text)]">{file.name}</p>
             <p className="text-[12px] text-[color:var(--color-text-muted)]">{formatBytes(file.size)}</p>

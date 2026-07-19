@@ -266,6 +266,15 @@ An image-only deck is stored, labelled, and written as a `missing` claim **with 
 (§4). Declaring that we could not read it scores better against the rubric's Data criterion
 ("honest about what it does not know") than silently demoing only clean text PDFs.
 
+**The `warning` flag is derived from surviving claims, not from character count** (build
+finding, 2026-07-19). `deck.warning = 'image_only_deck'` is set when the vision branch produced
+**zero substantive claims** — every one of the five founder topics ended as a `missing` marker
+and nothing survived span verification. An earlier proposal keyed it on `chars_extracted === 0`,
+which is wrong: vision fires when the text layer is *insufficient*, not necessarily empty, so a
+small nonzero character count can still mean we learned nothing. `extraction_mode` and `warning`
+answer different questions — which path we took, versus whether we should tell the founder we
+came up empty. Verified live: the honest notice reaches the screen, not only the database.
+
 Non-PDF extra files are stored and labelled "not parsed in this version" (DEC-003 permits this
 explicitly), never implied to be analysed.
 

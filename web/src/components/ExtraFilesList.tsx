@@ -49,7 +49,7 @@ export function ExtraFilesList({ files, errors, onFiles, onErrors }: Props) {
           {files.map((f) => (
             <li
               key={f.name}
-              className="flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] bg-white px-3 py-2.5"
             >
               <div className="min-w-0">
                 <p className="truncate text-[14px]">{f.name}</p>
@@ -78,7 +78,7 @@ export function ExtraFilesList({ files, errors, onFiles, onErrors }: Props) {
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-1.5 text-[13px] font-medium hover:border-[color:var(--color-accent)]"
+            className="rounded-[6px] border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[13px] font-medium hover:border-[color:var(--color-accent)]"
           >
             Add a file
           </button>
