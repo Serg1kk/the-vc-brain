@@ -57,3 +57,13 @@ INSERT INTO metric_kinds (slug, label, unit) VALUES
   ('hn_points',        'Hacker News points',                    'count'),
   ('site_updated',     'Days since personal site last updated', 'days')
 ON CONFLICT (slug) DO NOTHING;
+
+-- ============================================================================
+-- Feature 04 (outbound sourcing): additional signal_sources rows.
+-- New source, not a migration -- same extensibility stance as Task 3 above.
+-- ============================================================================
+
+INSERT INTO signal_sources (slug, label, base_tier) VALUES
+  ('tavily_search',  'Tavily Search',         'discovered'),
+  ('tavily_news',    'Tavily Search (news)',  'discovered')
+ON CONFLICT (slug) DO NOTHING;

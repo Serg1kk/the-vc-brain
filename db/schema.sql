@@ -772,6 +772,15 @@ BEGIN
   DELETE FROM interviews WHERE id = ANY (v_sole_interview_ids);
   DELETE FROM memos WHERE application_id = ANY (v_sole_app_ids);
   DELETE FROM scores WHERE application_id = ANY (v_sole_app_ids);
+
+  -- Application/company-scoped AI receipts: ai_runs.application_id and
+  -- .company_id are ON DELETE RESTRICT, so these must go before the
+  -- applications/companies deletes below. The founder_id sweep further down
+  -- does not cover rows written with founder_id NULL (feature 04 onwards).
+  DELETE FROM ai_runs
+   WHERE application_id = ANY (v_sole_app_ids)
+      OR company_id     = ANY (v_sole_company_ids);
+
   DELETE FROM applications WHERE id = ANY (v_sole_app_ids);
   DELETE FROM raw_signals WHERE company_id = ANY (v_sole_company_ids);
   DELETE FROM metric_observations WHERE company_id = ANY (v_sole_company_ids);

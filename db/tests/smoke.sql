@@ -111,27 +111,58 @@ END $$;
 -- ============================================================================
 
 -- Positive: all 4 registries queryable with seed rows.
+--
+-- Registries are extensible by INSERT, never by migration (feature 01
+-- design.md SS4.1) -- score_axes, signal_sources and card_types are all
+-- expected to grow across later features (e.g. 05/06 adding axes, 02/08/11
+-- adding signal sources) without any schema change. An exact-count assertion
+-- would re-break on every such INSERT (it already did: feature 04 adding
+-- tavily_search/tavily_news tripped `signal_sources <> 6`), so these three
+-- check presence of the canonical seed vocabulary PLUS a floor (>=) -- same
+-- style already used below for metric_kinds. Do not tighten back to `<>`.
 DO $$
 DECLARE
   v_score_axes      int;
   v_signal_sources  int;
   v_card_types      int;
   v_metric_kinds    int;
+  v_missing         text[];
 BEGIN
   SELECT count(*) INTO v_score_axes     FROM score_axes;
   SELECT count(*) INTO v_signal_sources FROM signal_sources;
   SELECT count(*) INTO v_card_types     FROM card_types;
   SELECT count(*) INTO v_metric_kinds   FROM metric_kinds;
 
-  IF v_score_axes <> 5 THEN
-    RAISE EXCEPTION 'smoke FAIL: expected 5 score_axes seed rows, got %', v_score_axes;
+  SELECT array_agg(expected.slug) INTO v_missing
+  FROM unnest(ARRAY['founder', 'market', 'idea_vs_market', 'trust', 'founder_score']) AS expected(slug)
+  WHERE expected.slug NOT IN (SELECT slug FROM score_axes);
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: score_axes missing canonical slug(s): %', v_missing;
   END IF;
-  IF v_signal_sources <> 6 THEN
-    RAISE EXCEPTION 'smoke FAIL: expected 6 signal_sources seed rows, got %', v_signal_sources;
+  IF v_score_axes < 5 THEN
+    RAISE EXCEPTION 'smoke FAIL: expected at least 5 score_axes seed rows, got %', v_score_axes;
   END IF;
-  IF v_card_types <> 3 THEN
-    RAISE EXCEPTION 'smoke FAIL: expected 3 card_types seed rows, got %', v_card_types;
+
+  SELECT array_agg(expected.slug) INTO v_missing
+  FROM unnest(ARRAY['github_api', 'hn_algolia', 'tavily_extract', 'deck_parse', 'interview_answer', 'manual']) AS expected(slug)
+  WHERE expected.slug NOT IN (SELECT slug FROM signal_sources);
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: signal_sources missing canonical slug(s): %', v_missing;
   END IF;
+  IF v_signal_sources < 6 THEN
+    RAISE EXCEPTION 'smoke FAIL: expected at least 6 signal_sources seed rows, got %', v_signal_sources;
+  END IF;
+
+  SELECT array_agg(expected.slug) INTO v_missing
+  FROM unnest(ARRAY['company', 'founder', 'team']) AS expected(slug)
+  WHERE expected.slug NOT IN (SELECT slug FROM card_types);
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: card_types missing canonical slug(s): %', v_missing;
+  END IF;
+  IF v_card_types < 3 THEN
+    RAISE EXCEPTION 'smoke FAIL: expected at least 3 card_types seed rows, got %', v_card_types;
+  END IF;
+
   IF v_metric_kinds < 5 THEN
     RAISE EXCEPTION 'smoke FAIL: expected at least 5 metric_kinds seed rows, got %', v_metric_kinds;
   END IF;
@@ -949,6 +980,54 @@ BEGIN
   END IF;
   IF v_anon_events <> 1 THEN
     RAISE EXCEPTION 'smoke FAIL: expected exactly 1 anonymized founder_purged event, got %', v_anon_events;
+  END IF;
+END $$;
+
+-- Regression (found during feature 04, 2026-07-19): ai_runs.application_id
+-- and .company_id are ON DELETE RESTRICT, but purge_founder() used to delete
+-- applications/companies BEFORE touching ai_runs, and its ai_runs sweep only
+-- matched founder_id = ANY(...) -- a row written with founder_id NULL (the
+-- shape feature 04 onwards writes for application/company-scoped AI runs)
+-- was never reached, so the applications delete above hit 23503. The
+-- exhaustive fixture above never caught this because its own ai_runs row
+-- has founder_id set. Minimal fixture: a second sole-founder
+-- founder+company+application with one ai_runs row keyed by application_id,
+-- founder_id NULL.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name)
+    VALUES ('00000000-0000-0000-0000-000000000931', 'Purge Fixture Founder (ai_runs regression)');
+  INSERT INTO companies (id, name, stage)
+    VALUES ('00000000-0000-0000-0000-000000000932', 'Purge Fixture Co (ai_runs regression)', 'pre_seed');
+  INSERT INTO founder_company (founder_id, company_id, role)
+    VALUES ('00000000-0000-0000-0000-000000000931', '00000000-0000-0000-0000-000000000932', 'founder');
+  INSERT INTO applications (id, company_id, kind, deck_storage_path)
+    VALUES ('00000000-0000-0000-0000-000000000933', '00000000-0000-0000-0000-000000000932', 'inbound', 's3://decks/purge-fixture-ai-runs.pdf');
+  INSERT INTO ai_runs (id, task_type, application_id, model)
+    VALUES ('00000000-0000-0000-0000-000000000934', 'market_intel', '00000000-0000-0000-0000-000000000933', 'test-model');
+END $$;
+
+-- Uncaught on purpose: pre-fix, this call itself raises 23503 (the bug this
+-- case exists to catch) and aborts the suite loudly -- that IS the
+-- regression signal, not something to wrap in a sub-block.
+DO $$
+BEGIN
+  PERFORM purge_founder('00000000-0000-0000-0000-000000000931');
+END $$;
+
+DO $$
+DECLARE
+  v_remaining int;
+BEGIN
+  SELECT
+    (SELECT count(*) FROM founders WHERE id = '00000000-0000-0000-0000-000000000931') +
+    (SELECT count(*) FROM companies WHERE id = '00000000-0000-0000-0000-000000000932') +
+    (SELECT count(*) FROM applications WHERE id = '00000000-0000-0000-0000-000000000933') +
+    (SELECT count(*) FROM ai_runs WHERE id = '00000000-0000-0000-0000-000000000934')
+  INTO v_remaining;
+
+  IF v_remaining <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: purge_founder left % row(s) behind for the application-scoped ai_runs regression fixture, expected 0', v_remaining;
   END IF;
 END $$;
 
