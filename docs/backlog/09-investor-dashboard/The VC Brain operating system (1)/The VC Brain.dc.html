@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=DM+Sans:wght@400;500;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF;color:#0A0F3C;font-family:Inter,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#0A0F3C}a:hover{color:#5B6079}
+::selection{background:#D3C7F5}
+input:focus,select:focus{outline:1px solid #0A0F3C}
+</style>
+</helmet>
+<div style="display:flex;min-height:100vh;font-size:15px;line-height:1.6">
+
+<div data-screen-label="Sidebar" style="width:240px;flex:none;border-right:1px solid #E4E0D6;height:100vh;position:sticky;top:0;display:flex;flex-direction:column;padding:22px 0 18px;box-sizing:border-box;background:#FFFFFF">
+  <div onClick="{{ navFeed }}" style="padding:0 20px 10px;cursor:pointer">
+    <img src="https://cdn.prod.website-files.com/65f0e1f5f3958fb8dc4bc51b/65f0e1f5f3958fb8dc4bc58b_Group%20(21).svg" alt="Maschmeyer Group" style="height:15px;display:block"></img>
+    <div style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;letter-spacing:0.02em;color:#5B6079;margin-top:5px">The VC Brain</div>
+  </div>
+  <div style="height:2px;background:#0A0F3C;margin:0 20px 14px"></div>
+  <div style="padding:0 20px 6px;font-size:13px;font-weight:500">Feed</div>
+  <div style="display:flex;gap:4px;padding:0 20px 14px">
+    <sc-for list="{{ feedFilters }}" as="ff" hint-placeholder-count="3">
+      <span onClick="{{ ff.on }}" style="{{ ff.style }}">{{ ff.label }}</span>
+    </sc-for>
+  </div>
+  <div onClick="{{ navWatch }}" style="padding:6px 20px;font-size:13px;font-weight:500;cursor:pointer;display:flex;justify-content:space-between" style-hover="background:#F1EEE8"><span>Watchlist</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">3</span></div>
+  <div style="border-top:1px solid #E4E0D6;margin:14px 20px 10px"></div>
+  <div style="padding:0 20px 6px;font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Source channels · 2 live, 3 documented</div>
+  <sc-for list="{{ channels }}" as="ch" hint-placeholder-count="5">
+    <div onClick="{{ ch.on }}" style="display:flex;align-items:center;gap:8px;padding:4px 20px;cursor:pointer;font-size:13px" style-hover="background:#F1EEE8">
+      <span style="{{ ch.nameStyle }}">{{ ch.n }}</span>
+      <span style="flex:1"></span>
+      <sc-if value="{{ ch.live }}" hint-placeholder-val="{{ true }}">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">{{ ch.count }}</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px">✓</span>
+      </sc-if>
+      <sc-if value="{{ ch.locked }}" hint-placeholder-val="{{ false }}">
+        <svg width="10" height="12" viewBox="0 0 10 12"><rect x="0.75" y="5.25" width="8.5" height="6" fill="none" stroke="#5B6079" stroke-width="1.5"></rect><path d="M2.5 5V3.5a2.5 2.5 0 0 1 5 0V5" fill="none" stroke="#5B6079" stroke-width="1.5"></path></svg>
+      </sc-if>
+    </div>
+  </sc-for>
+  <div style="flex:1"></div>
+  <div style="border-top:1px solid #E4E0D6;margin:0 20px;padding:12px 0 0">
+    <div style="font-size:11px;color:#5B6079">Active thesis</div>
+    <div onClick="{{ navThesis }}" style="font-size:13px;font-weight:500;cursor:pointer;text-decoration:underline;text-decoration-color:#E4E0D6;text-underline-offset:3px">Thesis v3 — EU technical pre-seed</div>
+  </div>
+</div>
+
+<div style="flex:1;min-width:0">
+
+<sc-if value="{{ isFeed }}" hint-placeholder-val="{{ true }}">
+<div data-screen-label="Feed" style="padding:28px 36px 64px;max-width:1160px">
+  <div style="display:flex;align-items:baseline;gap:16px">
+    <h1 style="font-family:'DM Sans',sans-serif;font-size:36px;font-weight:500;letter-spacing:-0.02em;margin:0;line-height:1.15">Feed</h1>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#5B6079">40 new · 19 Jul 2026, 09:04</span>
+    <span style="flex:1"></span>
+    <span style="font-size:13px;color:#5B6079">Lens: <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#0A0F3C">Thesis v3</span></span>
+  </div>
+  <div style="height:2px;background:#0A0F3C;margin:14px 0 18px"></div>
+
+  <input style="width:100%;box-sizing:border-box;border:1px solid #E4E0D6;padding:11px 14px;font-family:Inter,sans-serif;font-size:14px;color:#0A0F3C;outline:none;background:#FFFFFF" defaultValue="technical founder, Berlin, AI infra, enterprise traction, no prior VC backing, top-tier accelerator"></input>
+
+  <sc-if value="{{ showPlan }}" hint-placeholder-val="{{ true }}">
+  <div data-screen-label="Parsed plan" style="border:1px solid #E4E0D6;border-top:none;background:#F1EEE8;padding:14px 16px;font-size:13px">
+    <div style="display:grid;grid-template-columns:96px 1fr;gap:8px 14px;align-items:start">
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;padding-top:4px">Understood</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <sc-for list="{{ understood }}" as="u" hint-placeholder-count="3">
+          <span style="display:inline-flex;align-items:center;gap:7px;background:#FFFFFF;border:1px solid #E4E0D6;padding:3px 9px">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12px">{{ u.g }}</span>
+            <span>{{ u.t }} <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">→ {{ u.m }}</span></span>
+            <sc-if value="{{ u.w }}" hint-placeholder-val="{{ false }}"><span onClick="{{ u.onInfo }}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079;border-bottom:1px dotted #5B6079;cursor:pointer">ⓘ {{ u.w }}</span></sc-if>
+            <span style="color:#5B6079;cursor:pointer;font-size:12px;padding-left:2px" title="Understood chips are removable">×</span>
+          </span>
+        </sc-for>
+      </div>
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;padding-top:4px">Not searched</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <sc-for list="{{ unresolved }}" as="u" hint-placeholder-count="3">
+          <span title="Unresolved fragments are never hidden and cannot be removed" style="display:inline-flex;align-items:baseline;gap:7px;border:1px dashed #C9C4B8;padding:3px 9px;color:#5B6079">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12px">○</span>
+            <span>{{ u.t }}</span>
+            <span style="font-size:11.5px;font-style:italic">{{ u.r }}</span>
+          </span>
+        </sc-for>
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:#5B6079">3 of 6 fragments resolved. Unresolved fragments cost nothing in ranking and are never silently dropped — a search that hid them would answer a different question than the one asked.</div>
+  </div>
+  </sc-if>
+
+  <div style="display:grid;grid-template-columns:24px 170px 1fr 92px 236px 64px 84px;gap:0 12px;align-items:center;padding:18px 8px 6px;font-size:10.5px;font-weight:600;letter-spacing:0.06em;color:#5B6079">
+    <span></span><span>COMPANY</span><span></span><span>COVERAGE · FIT</span>
+    <span style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+      <span onClick="{{ exFounderAxis }}" style="cursor:pointer" title="Founder — rule on model input">F <span style="font-family:'IBM Plex Mono',monospace;background:#F1EEE8;border:1px dashed #5B6079;padding:0 3px;font-weight:400">▦◇</span></span>
+      <span onClick="{{ exMarket }}" style="cursor:pointer" title="Market — model judgement">M <span style="font-family:'IBM Plex Mono',monospace;color:#5B6079;border:1px solid #E4E0D6;border-radius:999px;padding:0 4px;font-weight:400">◇</span></span>
+      <span onClick="{{ exIdea }}" style="cursor:pointer" title="Idea-vs-Market — model judgement">I <span style="font-family:'IBM Plex Mono',monospace;color:#5B6079;border:1px solid #E4E0D6;border-radius:999px;padding:0 4px;font-weight:400">◇</span></span>
+      <span onClick="{{ exClaimTrust }}" style="cursor:pointer" title="Trust — published formula over stored inputs">T <span style="font-family:'IBM Plex Mono',monospace;background:#F1EEE8;padding:0 3px;font-weight:400">▦</span></span>
+    </span>
+    <span>SOURCE</span><span>SEEN</span>
+  </div>
+
+  <sc-for list="{{ lanes }}" as="lane" hint-placeholder-count="4">
+    <div style="{{ lane.wrapStyle }}">
+      <div style="display:flex;align-items:baseline;gap:12px;padding:10px 8px 6px">
+        <span style="font-size:11.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase">{{ lane.title }}</span>
+        <span style="font-size:12px;color:#5B6079">{{ lane.note }}</span>
+      </div>
+      <sc-for list="{{ lane.rows }}" as="row" hint-placeholder-count="2">
+        <div style="border-top:1px solid #E4E0D6">
+          <div onClick="{{ row.toggle }}" style="display:grid;grid-template-columns:24px 170px 1fr 92px 236px 64px 84px;gap:0 12px;align-items:center;min-height:56px;padding:4px 8px;cursor:pointer" style-hover="background:rgba(211,199,245,0.14)">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">{{ row.chev }}</span>
+            <span>
+              <span onClick="{{ row.open }}" style="display:block;font-weight:500;font-size:14px;line-height:1.3;text-decoration:underline;text-decoration-color:#E4E0D6;text-underline-offset:3px">{{ row.name }}</span>
+              <span style="display:block;font-size:12px;color:#5B6079;line-height:1.3">{{ row.founder }}</span>
+            </span>
+            <span style="font-size:13px;color:#5B6079;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px">{{ row.desc }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.5"><span style="display:block;color:#5B6079">{{ row.cov }}</span><span style="display:block">{{ row.fit }}</span></span>
+            <span style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+              <sc-for list="{{ row.bars }}" as="bar" hint-placeholder-count="4">
+                <span title="{{ bar.title }}" onClick="{{ bar.onEx }}" style="display:block;padding-top:2px">
+                  <span style="{{ bar.trackStyle }}"><sc-if value="{{ bar.hasFill }}" hint-placeholder-val="{{ false }}"><span style="{{ bar.fillStyle }}"></span></sc-if></span>
+                  <sc-if value="{{ bar.hasVal }}" hint-placeholder-val="{{ true }}"><span style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#5B6079;margin-top:3px"><span>{{ bar.valTxt }}</span><span>{{ bar.trend }}</span></span></sc-if>
+                  <sc-if value="{{ bar.isNa }}" hint-placeholder-val="{{ false }}"><span style="display:block;font-size:8.5px;font-style:italic;color:#5B6079;margin-top:3px">not assessed</span></sc-if>
+                </span>
+              </sc-for>
+            </span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#5B6079">{{ row.source }}</span>
+            <span style="font-size:11px;color:#5B6079">{{ row.fresh }}<sc-if value="{{ row.syn }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block;margin-left:5px;font-family:'IBM Plex Mono',monospace;font-size:9px;border:1px solid #E4E0D6;padding:0 3px;color:#5B6079">SYNTH</span></sc-if></span>
+          </div>
+          <sc-if value="{{ row.expanded }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:2px 8px 14px 44px;font-size:12.5px">
+              <sc-for list="{{ row.preview }}" as="pl" hint-placeholder-count="3">
+                <div style="padding:2px 0 2px 12px;border-left:1px solid #E4E0D6;color:#5B6079"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#0A0F3C">{{ pl.k }}</span>&nbsp; {{ pl.t }}</div>
+              </sc-for>
+              <div onClick="{{ row.open }}" style="display:inline-block;margin:6px 0 0 12px;font-size:12.5px;font-weight:500;cursor:pointer;text-decoration:underline;text-decoration-color:#E4E0D6;text-underline-offset:3px">Open founder card →</div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </sc-for>
+
+  <div style="margin-top:28px;border-top:2px solid #0A0F3C;padding-top:12px">
+    <div style="font-size:11.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase">Below the confidence floor</div>
+    <div style="font-size:12.5px;color:#5B6079;margin-bottom:8px">Too little assessed to rank fairly. Shown, not dropped.</div>
+    <sc-for list="{{ floorRows }}" as="fr" hint-placeholder-count="3">
+      <div style="display:grid;grid-template-columns:200px 160px 1fr;gap:12px;align-items:baseline;border-top:1px solid #E4E0D6;padding:9px 8px;font-size:13px">
+        <span style="font-weight:500">{{ fr.name }}<span style="display:block;font-size:12px;font-weight:400;color:#5B6079">{{ fr.founder }}</span></span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079">{{ fr.cov }}</span>
+        <span style="color:#5B6079">{{ fr.note }}</span>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isWatch }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Watchlist" style="padding:28px 36px;max-width:1160px">
+  <h1 style="font-family:'DM Sans',sans-serif;font-size:36px;font-weight:500;letter-spacing:-0.02em;margin:0;line-height:1.15">Watchlist</h1>
+  <div style="height:2px;background:#0A0F3C;margin:14px 0 4px"></div>
+  <sc-for list="{{ watchRows }}" as="w" hint-placeholder-count="3">
+    <div style="display:grid;grid-template-columns:200px 1fr 240px;gap:12px;align-items:baseline;border-bottom:1px solid #E4E0D6;padding:12px 8px;font-size:13.5px">
+      <span onClick="{{ w.open }}" style="font-weight:500;cursor:pointer;text-decoration:underline;text-decoration-color:#E4E0D6;text-underline-offset:3px">{{ w.name }}</span>
+      <span style="color:#5B6079">{{ w.cond }}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079">{{ w.next }}</span>
+    </div>
+  </sc-for>
+  <div style="font-size:12.5px;color:#5B6079;margin-top:12px">A watchlist entry is an alert condition with a next-check time — a genuinely different object from a feed row, which is why it is a separate destination.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isFounder }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Founder card" style="padding:28px 36px 64px;max-width:1160px">
+  <div style="display:flex;align-items:center;gap:14px;font-size:13px">
+    <span onClick="{{ navFeed }}" style="cursor:pointer;color:#5B6079">← Feed</span>
+    <span style="flex:1"></span>
+    <button onClick="{{ navMemo }}" style="font-family:'DM Sans',sans-serif;background:#0A0F3C;color:#FFFFFF;border:none;border-radius:0;padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer">Open memo</button>
+  </div>
+  <div style="display:flex;align-items:baseline;gap:14px;margin-top:12px;flex-wrap:wrap">
+    <h1 style="font-family:'DM Sans',sans-serif;font-size:36px;font-weight:500;letter-spacing:-0.02em;margin:0;line-height:1.15">Ferrite</h1>
+    <span onClick="{{ exFounderScore }}" style="display:inline-flex;align-items:center;gap:7px;border:1px solid #E4E0D6;border-radius:8px;padding:3px 10px;font-size:12.5px;cursor:pointer" title="Person-scoped — this chip follows Mira Voss across companies"><span style="font-family:'IBM Plex Mono',monospace">⌾</span> Mira Voss · person-scoped</span>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#5B6079">hn_algolia · github_api · first seen 2h ago</span>
+  </div>
+  <div style="font-size:15px;color:#5B6079;margin-top:2px">Rust-native inference gateway for on-prem LLM fleets · Berlin, DE</div>
+  <div style="font-size:12px;color:#5B6079">Found by outbound scanning — this founder has not applied.</div>
+  <div style="height:2px;background:#0A0F3C;margin:16px 0 0"></div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1.4fr;border-bottom:1px solid #E4E0D6">
+    <div onClick="{{ exFounderAxis }}" style="padding:18px 20px 16px;border-right:1px solid #E4E0D6;cursor:pointer">
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Founder <span style="font-family:'IBM Plex Mono',monospace;background:#F1EEE8;border:1px dashed #5B6079;padding:0 3px;font-weight:400;text-transform:none">▦◇</span></div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:500;line-height:1.25">72</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079;line-height:1.5">confidence 0.61<br></br>assessed 3 of 3 inputs</div>
+    </div>
+    <div onClick="{{ exMarket }}" style="padding:18px 20px 16px;border-right:1px solid #E4E0D6;cursor:pointer">
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Market <span style="font-family:'IBM Plex Mono',monospace;color:#5B6079;border:1px solid #E4E0D6;border-radius:999px;padding:0 4px;font-weight:400;text-transform:none">◇</span></div>
+      <div title="Confidence below 0.2 — the numeral renders hollow" style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:500;line-height:1.25;color:transparent;-webkit-text-stroke:1.2px #0A0F3C">52</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079;line-height:1.5">confidence 0.19<br></br>assessed 2 of 5 inputs</div>
+    </div>
+    <div onClick="{{ exIdea }}" style="padding:18px 20px 16px;border-right:1px solid #E4E0D6;cursor:pointer">
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Idea-vs-Market <span style="font-family:'IBM Plex Mono',monospace;color:#5B6079;border:1px solid #E4E0D6;border-radius:999px;padding:0 4px;font-weight:400;text-transform:none">◇</span></div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:500;line-height:1.25">31</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079;line-height:1.5">confidence 0.58<br></br>assessed 3 of 4 inputs</div>
+    </div>
+    <div onClick="{{ exCardTrust }}" style="padding:18px 20px 16px;cursor:pointer">
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Trust — per-claim rollup <span style="font-family:'IBM Plex Mono',monospace;background:#F1EEE8;padding:0 3px;font-weight:400;text-transform:none">▦</span></div>
+      <div style="display:flex;height:14px;margin:14px 0 6px;max-width:280px">
+        <div onClick="{{ segVerified }}" style="width:47%;background:#0A0F3C;cursor:pointer" title="139 verified — click to open the claim ledger"></div>
+        <div onClick="{{ segRefuted }}" style="width:2%;background:repeating-linear-gradient(-45deg,#0A0F3C 0,#0A0F3C 2px,#FFFFFF 2px,#FFFFFF 4px);cursor:pointer" title="4 contradicted — click to see the four claims"></div>
+        <div onClick="{{ segNotDisclosed }}" style="width:12%;background:#D3C7F5;cursor:pointer" title="36 not disclosed — click to see the declared gaps"></div>
+        <div onClick="{{ segUnchecked }}" style="flex:1;background:repeating-linear-gradient(45deg,#E4E0D6 0,#E4E0D6 1.5px,#FFFFFF 1.5px,#FFFFFF 5px);cursor:pointer" title="108 not yet checked — the dynamic-check queue caps at 5 paid checks per run"></div>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079;line-height:1.5">63% · coverage 64% (189 of 297 checkable)<br></br>139 verified · 4 contradicted · 0 conflicting · 36 not disclosed</div>
+    </div>
+  </div>
+
+  <div style="background:#ECE7F7;border:1px solid #E4E0D6;border-top:none;padding:14px 20px;display:flex;gap:14px;align-items:baseline">
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0.06em">AXES DISAGREE</span>
+    <span style="font-size:14.5px">Strong founder, weak idea-vs-market fit. <span style="font-weight:600">That gap is the thing to probe on the call.</span></span>
+  </div>
+
+  <div style="border:1px solid #0A0F3C;margin-top:14px">
+    <div onClick="{{ toggleContra }}" style="display:flex;align-items:baseline;gap:10px;padding:11px 16px;cursor:pointer">
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">{{ contraChev }}</span>
+      <span style="font-weight:500;font-size:14px">2 contradictions found — worth raising on the call</span>
+      <span style="font-size:12px;color:#5B6079">what the deck says beside what the source says — the juxtaposition is the finding</span>
+    </div>
+    <sc-if value="{{ contraOpen }}" hint-placeholder-val="{{ false }}">
+      <sc-for list="{{ contradictions }}" as="c" hint-placeholder-count="2">
+        <div style="border-top:1px solid #E4E0D6;padding:14px 16px">
+          <div style="font-size:14px;font-weight:500;margin-bottom:10px">{{ c.q }}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div style="border-left:2px solid #0A0F3C;padding-left:12px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;color:#5B6079;text-transform:uppercase">The deck says</div>
+              <div style="font-size:13.5px;margin:4px 0">“{{ c.deck }}”</div>
+              <a href="{{ c.deckUrl }}" style="font-family:'IBM Plex Mono',monospace;font-size:11px">{{ c.deckSrc }}</a>
+            </div>
+            <div style="border-left:2px solid #0A0F3C;padding-left:12px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;color:#5B6079;text-transform:uppercase">The source says</div>
+              <div style="font-size:13.5px;margin:4px 0">“{{ c.src }}”</div>
+              <a href="{{ c.srcUrl }}" style="font-family:'IBM Plex Mono',monospace;font-size:11px">{{ c.srcName }}</a>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </sc-if>
+  </div>
+
+  <div data-screen-label="Founder score" style="border:1px solid #E4E0D6;margin-top:14px;padding:16px 20px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid #E4E0D6;border-radius:8px;padding:2px 9px;font-size:11.5px"><span style="font-family:'IBM Plex Mono',monospace">⌾</span> FOUNDER SCORE · person-scoped</span>
+      <span style="flex:1"></span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">formula_v1</span>
+      <span onClick="{{ toggleScore }}" style="font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;border:1px solid #E4E0D6;padding:1px 7px">{{ scoreChev }}</span>
+    </div>
+    <sc-if value="{{ scoreScored }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:180px 1fr 220px;gap:24px;align-items:start;margin-top:14px">
+        <div>
+          <div onClick="{{ exFounderScore }}" style="font-family:'IBM Plex Mono',monospace;font-size:38px;font-weight:500;line-height:1.1;cursor:pointer">67.96</div>
+          <div style="font-size:11px;color:#5B6079;line-height:1.45;margin-top:4px">weighted score over 7 assessed criteria — not a percentage, not a prediction</div>
+        </div>
+        <div>
+          <div style="display:flex;gap:2px;height:9px;max-width:300px">
+            <div style="width:54%;background:#0A0F3C" title="coverage 0.54"></div>
+            <div style="width:14%;background:#D3C7F5" title="evidence quality"></div>
+            <div style="flex:1;background:#F1EEE8"></div>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#5B6079;margin-top:5px">coverage │ evidence quality → confidence 0.63 · segmented, never smooth</div>
+          <div style="font-size:12px;color:#5B6079;margin-top:8px;border-top:1px solid #E4E0D6;padding-top:8px">This number is computed from the evidence we hold. No AI model reports its own confidence anywhere in this system.</div>
+        </div>
+        <div style="font-size:12.5px;line-height:1.6">
+          <div><span style="font-family:'IBM Plex Mono',monospace">●</span> 7 of 12 assessed</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">coverage 0.54</div>
+          <div onClick="{{ toggleScore }}" style="cursor:pointer;margin-top:6px;font-weight:500">5 gaps ▸ what would close them</div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ scoreEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:1fr 220px;gap:24px;align-items:start;margin-top:14px">
+        <div>
+          <div style="font-family:'DM Sans',sans-serif;font-size:24px;font-weight:500;line-height:1.2">Not enough evidence to score</div>
+          <div style="width:220px;height:2px;background:#0A0F3C;margin:8px 0"></div>
+          <div style="font-size:14px;font-weight:500">We looked. We are not guessing.</div>
+          <div onClick="{{ toggleScore }}" style="cursor:pointer;margin-top:10px;font-size:13px;font-weight:500">▸ 11 things that would produce a score</div>
+        </div>
+        <div style="font-size:12.5px;line-height:1.6">
+          <div><span style="font-family:'IBM Plex Mono',monospace">●</span> 1 of 12 assessed</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">coverage 0.06<br></br>below the 0.25 threshold</div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ scoreOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:16px;border-top:1px solid #E4E0D6">
+        <sc-for list="{{ ledger }}" as="fam" hint-placeholder-count="3">
+          <div style="display:flex;justify-content:space-between;padding:12px 0 4px;font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079"><span>{{ fam.name }}</span><span style="font-family:'IBM Plex Mono',monospace;font-weight:400;text-transform:none">weight {{ fam.w }}</span></div>
+          <sc-for list="{{ fam.rows }}" as="cr" hint-placeholder-count="3">
+            <div style="border-top:1px solid #E4E0D6;padding:8px 0 8px 4px">
+              <div style="display:grid;grid-template-columns:26px 1fr 130px 80px;gap:10px;align-items:baseline">
+                <span style="{{ cr.markStyle }}" title="{{ cr.markTitle }}">{{ cr.mark }}</span>
+                <span style="font-size:13.5px">{{ cr.label }} <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:#5B6079;border:1px solid #E4E0D6;padding:0 3px">{{ cr.id }}</span></span>
+                <span style="font-size:12px;color:#5B6079">{{ cr.tier }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right">{{ cr.contrib }}</span>
+              </div>
+              <sc-if value="{{ cr.demoted }}" hint-placeholder-val="{{ false }}">
+                <div style="margin:4px 0 0 36px;font-size:12px"><span style="font-family:'IBM Plex Mono',monospace">⚑</span> demoted by {{ cr.demoted }}</div>
+              </sc-if>
+              <sc-if value="{{ cr.quote }}" hint-placeholder-val="{{ false }}">
+                <div style="margin:4px 0 0 36px;font-size:12.5px;border-left:2px solid #D3C7F5;padding-left:10px">“{{ cr.quote }}” <a href="{{ cr.quoteUrl }}" style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">↗ {{ cr.quoteSrc }}</a></div>
+              </sc-if>
+              <sc-if value="{{ cr.interp }}" hint-placeholder-val="{{ false }}">
+                <div style="margin:3px 0 0 36px;font-size:11.5px;color:#5B6079"><span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;border:1px solid #E4E0D6;border-radius:999px;padding:0 6px">model interpretation ◇</span> {{ cr.interp }}</div>
+              </sc-if>
+              <sc-if value="{{ cr.close }}" hint-placeholder-val="{{ false }}">
+                <div style="margin:4px 0 0 36px;font-size:12px;color:#5B6079">▸ What would close it: {{ cr.close }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </sc-for>
+        <div style="border-top:2px solid #0A0F3C;padding:9px 4px;display:flex;justify-content:flex-end;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:12.5px">Σ contributions = 67.96 <span style="color:#15803D">✓ verified</span></div>
+        <div style="background:#F1EEE8;padding:12px 16px;margin-top:10px">
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Pedigree (not scored)</div>
+          <div style="font-size:13px;margin-top:3px">Ex-employer and serial-founder status are collected and shown for context. They are excluded from the score: models built on founder pedigree were the strongest predictor of underperforming investments in a 16,000-startup study.</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079;margin-top:6px">ex-SUSE · first-time founder</div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <div style="display:flex;gap:2px;margin-top:22px;border-bottom:1px solid #E4E0D6">
+    <sc-for list="{{ tabs }}" as="tb" hint-placeholder-count="5">
+      <span onClick="{{ tb.on }}" style="{{ tb.style }}">{{ tb.label }}</span>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ tabEvidence }}" hint-placeholder-val="{{ true }}">
+  <div data-screen-label="Evidence tab" style="padding-top:16px">
+    <div style="background:#F1EEE8;border-top:2px solid #0A0F3C;padding:13px 16px;font-size:13.5px;margin-bottom:16px">58% of the claims on this company are judgements — how the founder writes, what they know, how they lead. We show the evidence behind them and where it came from, but we do not issue verdicts on judgement. That is a deliberate limit, not a gap.</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      <sc-for list="{{ evFilters }}" as="f" hint-placeholder-count="5">
+        <span onClick="{{ f.on }}" style="{{ f.style }}">{{ f.label }}</span>
+      </sc-for>
+      <span style="flex:1"></span>
+      <span style="font-size:12px;color:#5B6079;align-self:center">{{ evShowing }}</span>
+    </div>
+    <sc-for list="{{ evTopics }}" as="topic" hint-placeholder-count="3">
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;padding:12px 0 4px">{{ topic.name }}</div>
+      <sc-for list="{{ topic.rows }}" as="ev" hint-placeholder-count="3">
+        <div onClick="{{ ev.onEx }}" style="display:grid;grid-template-columns:1fr 120px 110px 190px 130px 64px;gap:10px;align-items:baseline;border-top:1px solid #E4E0D6;padding:8px 4px;cursor:pointer" style-hover="background:rgba(211,199,245,0.14)">
+          <span style="font-size:13.5px">{{ ev.claim }}</span>
+          <a href="{{ ev.url }}" style="font-family:'IBM Plex Mono',monospace;font-size:11px">{{ ev.src }}</a>
+          <span style="font-size:11.5px;color:#5B6079">{{ ev.tier }}</span>
+          <span><span style="{{ ev.badgeStyle }}">{{ ev.verdict }}</span></span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:2px" title="{{ ev.pipsNote }}">{{ ev.pips }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5B6079">{{ ev.date }}</span>
+        </div>
+      </sc-for>
+    </sc-for>
+    <div style="font-size:12px;color:#5B6079;margin-top:10px">Trust per claim is a four-pip meter: has support · documented tier · one independent source · two or more. The raw number appears only inside the explain panel, next to the equation that produced it.</div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ tabMarket }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Market tab" style="padding-top:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span onClick="{{ exMarket }}" style="border:1px solid #E4E0D6;padding:3px 10px;font-size:13px;cursor:pointer">Developer infrastructure <span style="border-bottom:1px dotted #5B6079;color:#5B6079;font-size:11.5px;margin-left:6px">inferred from application, not researched</span></span>
+      <span style="font-size:12px;color:#5B6079">the category was set before any search ran — every downstream query is framed by it</span>
+    </div>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:28px;margin-top:20px;align-items:start">
+      <div onClick="{{ exMarket }}" style="border:1px solid #E4E0D6;padding:16px 18px;cursor:pointer">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Market score <span style="font-family:'IBM Plex Mono',monospace;color:#5B6079;border:1px solid #E4E0D6;border-radius:999px;padding:0 4px;font-weight:400;text-transform:none">◇</span></div>
+        <div title="Confidence below 0.2 — the numeral renders hollow, so a screenshot carries the caveat" style="font-family:'IBM Plex Mono',monospace;font-size:46px;font-weight:500;line-height:1.15;color:transparent;-webkit-text-stroke:1.4px #0A0F3C">52</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079">confidence 0.19 · 2 of 5 inputs</div>
+        <div style="font-size:11.5px;color:#5B6079;margin-top:6px">an unresearched market and a middling one both score exactly 50 — only this block tells them apart</div>
+      </div>
+      <div>
+        <div style="max-width:420px">
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#5B6079;padding:0 2px"><span>bear</span><span>neutral</span><span>bullish</span></div>
+          <div style="position:relative;height:18px;margin-top:2px">
+            <div style="position:absolute;left:0;right:0;top:8px;height:1px;background:#0A0F3C"></div>
+            <div style="position:absolute;left:0;top:4px;width:1px;height:9px;background:#0A0F3C"></div>
+            <div style="position:absolute;right:0;top:4px;width:1px;height:9px;background:#0A0F3C"></div>
+            <div title="hollow ring — low confidence" style="position:absolute;left:52%;top:2px;width:11px;height:11px;border:2px solid #0A0F3C;border-radius:50%;background:#FFFFFF;transform:translateX(-50%)"></div>
+            <div style="position:absolute;left:52%;top:18px;transform:translateX(-50%);font-family:'IBM Plex Mono',monospace;font-size:11px">52</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#5B6079;margin-top:26px">Hollow marker = low confidence. Had no TAM been established, this track would be replaced by a dashed empty rail reading “not assessed — no TAM established”.</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:8px">trend ↑ improving · 6 recent vs 3 prior (90d) · 8 undated events excluded</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #E4E0D6;margin-top:22px;max-width:640px">
+      <div style="padding:14px 18px;border-right:1px solid #E4E0D6">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Market size</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:19px;font-style:italic;margin-top:4px">TAM ~$1.2B – $2.8B</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;background:#0A0F3C;color:#FFFFFF;padding:1px 8px">PASS</span><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-style:italic;border:1px solid #E4E0D6;border-radius:999px;padding:0 7px;color:#5B6079;background:#ECE7F7">FORECAST</span></div>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Reachability</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:19px;font-style:italic;margin-top:4px">Implied exit ~$24M</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;border:1.5px solid #0A0F3C;padding:0 7px">FAIL</span><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-style:italic;border:1px solid #E4E0D6;border-radius:999px;padding:0 7px;color:#5B6079;background:#ECE7F7">FORECAST</span></div>
+      </div>
+      <div style="grid-column:1 / -1;border-top:1px solid #E4E0D6;padding:10px 18px;font-size:13px">same market, different answer — 2% of 500k+ long-tail buyers is not 2% of 4,000 enterprises</div>
+    </div>
+    <div style="font-size:12px;color:#5B6079;margin-top:10px;max-width:640px">Market-size numerals are italic with a leading ~ and a persistent Forecast label: they are projections and never receive a verdict. A verified revenue figure would not look like this.</div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ tabCompetition }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Competition tab" style="padding-top:18px">
+    <div style="border:1px solid #0A0F3C;background:#ECE7F7;padding:14px 18px">
+      <div style="font-size:14.5px;font-weight:600">Found and not mentioned by the founder — 4</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;margin-top:3px">vLLM · NVIDIA Triton · BentoML · AWS SageMaker</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.2fr 1fr 100px 120px 90px 80px;gap:10px;padding:14px 4px 5px;font-size:10.5px;font-weight:600;letter-spacing:0.06em;color:#5B6079">
+      <span>NAME</span><span>CATEGORY</span><span>MENTIONED</span><span>THREAT</span><span>SWITCHING</span><span>SOURCES</span>
+    </div>
+    <sc-for list="{{ competitors }}" as="co" hint-placeholder-count="4">
+      <div style="display:grid;grid-template-columns:1.2fr 1fr 100px 120px 90px 80px;gap:10px;align-items:baseline;border-top:1px solid #E4E0D6;padding:8px 4px;font-size:13.5px">
+        <span style="font-weight:500">{{ co.name }}</span>
+        <span style="color:#5B6079;font-size:12.5px">{{ co.cat }}</span>
+        <span style="{{ co.menStyle }}">{{ co.mentioned }}</span>
+        <span style="{{ co.threatStyle }}" title="Threat is a word, never a number — the underlying 1–4 scale is inverted (1 is the best position for the startup)">{{ co.threat }}</span>
+        <span style="font-size:12.5px;color:#5B6079">{{ co.switch }}</span>
+        <span onClick="{{ co.onEx }}" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;cursor:pointer;text-decoration:underline;text-decoration-color:#E4E0D6">{{ co.sources }}</span>
+      </div>
+    </sc-for>
+    <div style="border-top:2px solid #0A0F3C;margin-top:2px;padding:9px 4px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079">Adjacent: searched, none found · Build-vs-buy: found · Named-by-founder: 2 of 6</div>
+    <div style="font-size:12px;color:#5B6079;margin-top:6px">This footer renders even when the table is full — without it, an empty competitor table reads as “no competition”, the exact founder claim this analysis exists to contradict.</div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ tabInterview }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Interview tab" style="padding-top:18px;max-width:760px">
+    <div style="font-size:13px;color:#5B6079;margin-bottom:14px">Where to dig — each question closes a named gap. The gap strings come from the data; the questions are what makes thirty minutes enough.</div>
+    <sc-for list="{{ digQuestions }}" as="q" hint-placeholder-count="5">
+      <div style="border-top:2px solid #0A0F3C;padding:12px 4px 14px;display:grid;grid-template-columns:34px 1fr;gap:12px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5B6079">{{ q.n }}</span>
+        <span>
+          <span style="display:block;font-size:15.5px;font-weight:500;line-height:1.45">{{ q.q }}</span>
+          <span style="display:block;font-size:12.5px;color:#5B6079;margin-top:4px">closes: {{ q.gap }}</span>
+        </span>
+      </div>
+    </sc-for>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ tabUnknown }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="What we don't know tab" style="padding-top:18px;max-width:860px">
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin-bottom:8px">Searched — nothing found</div>
+    <div style="border:1px solid #E4E0D6;padding:16px 18px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="display:inline-block;width:13px;height:13px;border:1.5px solid #0A0F3C;border-radius:50%;transform:translateY(1px)"></span>
+        <span style="font-size:15px;font-weight:500">We looked and found nothing</span>
+      </div>
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:3px 16px;margin:12px 0 0 23px;font-size:13px">
+        <span style="color:#5B6079">Checked</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">GitHub API · <a href="https://github.com/miravoss/ferrite">github.com/miravoss/ferrite</a></span>
+        <span style="color:#5B6079">When</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">19 Jul 2026, 14:22</span>
+        <span style="color:#5B6079">Looking for</span><span>commit history predating the Show HN post</span>
+        <span style="color:#5B6079">Result</span><span>no commit-level data available</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin:12px 0 0 23px">
+        <span style="font-size:13.5px;font-weight:500">This does not count against the founder.</span>
+        <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079;cursor:pointer;border:1px solid #E4E0D6;padding:1px 8px">details</span>
+      </div>
+    </div>
+    <div style="border:1px solid #E4E0D6;border-top:none;padding:10px 18px;font-size:13px;color:#5B6079"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px">⃝</span> Provenance: checked 74 claims across GitHub, no commit history available. <span style="font-size:12px">— collapsed; 74 identical cards would be noise, not transparency</span></div>
+
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:22px 0 4px">Not checked yet</div>
+    <sc-for list="{{ notChecked }}" as="nc" hint-placeholder-count="2">
+      <div style="border-top:1px solid #E4E0D6;padding:9px 4px;display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13.5px">
+        <span style="font-style:italic;color:#5B6079">{{ nc.what }}</span>
+        <span style="font-size:12.5px;color:#5B6079">would trigger a check: {{ nc.trigger }}</span>
+      </div>
+    </sc-for>
+
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:22px 0 4px">Not disclosed</div>
+    <sc-for list="{{ notDisclosed }}" as="nd" hint-placeholder-count="3">
+      <div style="border-top:1px solid #E4E0D6;padding:10px 4px">
+        <div style="font-size:13.5px;font-weight:500">{{ nd.what }} <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:#ECE7F7;padding:1px 6px;font-weight:400;margin-left:6px">NOT DISCLOSED</span></div>
+        <div style="font-size:13px;color:#5B6079;margin-top:3px;max-width:680px">{{ nd.closes }}</div>
+      </div>
+    </sc-for>
+    <div style="font-size:12px;color:#5B6079;margin-top:10px">Neutral, informational — never phrased as the founder’s fault.</div>
+  </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMemo }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Memo" style="padding:28px 36px 80px">
+  <div style="max-width:760px;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:14px;font-size:13px">
+      <span onClick="{{ navFounder }}" style="cursor:pointer;color:#5B6079">← Founder card</span>
+      <span style="flex:1"></span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#5B6079;border:1px solid #E4E0D6;border-radius:999px;padding:1px 8px">prose ◇ model-written</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;background:#F1EEE8;padding:1px 8px">recommendation ▦ rule</span>
+    </div>
+    <h1 style="font-family:'DM Sans',sans-serif;font-size:36px;font-weight:500;letter-spacing:-0.02em;margin:14px 0 0;line-height:1.15">Investment memo — Ferrite</h1>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079;margin-top:4px">v1 · 19 Jul 2026 · Thesis v3 — EU technical pre-seed</div>
+    <div style="height:2px;background:#0A0F3C;margin:16px 0 0"></div>
+
+    <div style="background:#F1EEE8;padding:18px 22px;margin-top:0">
+      <div style="display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:'DM Sans',sans-serif;font-size:22px;font-weight:700">WATCH</span>
+        <span style="font-size:12.5px;color:#5B6079">deterministic rule over the thesis — not a model’s call</span>
+        <span style="flex:1"></span>
+        <span onClick="{{ exFit }}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;background:#FFFFFF;border:1px solid #E4E0D6;padding:1px 7px;cursor:pointer">▦ RULE · why this fit</span>
+      </div>
+      <div style="border-top:1px solid #E4E0D6;margin-top:10px;padding-top:10px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.8">
+        M_sector — satisfied (ai-infra) · w20<br></br>
+        M_geography — satisfied (DE) · w20<br></br>
+        M_stage — satisfied (pre-seed) · w20<br></br>
+        M_poskw — satisfied (2 of 4 keywords) · w20<br></br>
+        M_negkw — could not be evaluated · never folded into pass or miss
+      </div>
+    </div>
+
+    <h2 style="font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;margin:30px 0 0">Company snapshot</h2>
+    <div style="height:2px;background:#0A0F3C;margin:6px 0 12px"></div>
+    <p style="margin:0 0 10px;text-wrap:pretty">Ferrite is a Rust-native inference gateway for on-prem LLM fleets, built and maintained by a single founder in Berlin <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span>. The repository shows sustained weekly commits over eighteen months <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span> and the project reached the Hacker News front page on 15 July <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span>. Cap table: not disclosed — comparable pre-seeds in this sector run 10–15% ESOP with one prior angel round.</p>
+
+    <h2 style="font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;margin:26px 0 0">Investment hypotheses</h2>
+    <div style="height:2px;background:#0A0F3C;margin:6px 0 12px"></div>
+    <p style="margin:0 0 8px">1 — On-prem inference becomes a compliance requirement in EU regulated sectors, and the gateway layer is where the budget lands <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;border:1px solid #E4E0D6;border-radius:999px;padding:1px 6px;color:#5B6079;cursor:pointer">JUDGEMENT — NOT VERIFIABLE</span></p>
+    <p style="margin:0 0 8px">2 — The founder’s systems depth is the moat; the market is crowded but the on-prem niche is underserved <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;border:1px solid #E4E0D6;border-radius:999px;padding:1px 6px;color:#5B6079;cursor:pointer">JUDGEMENT — NOT VERIFIABLE</span></p>
+    <p style="margin:0">3 — Open-source pull converts to enterprise contracts within two quarters <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:#5B6079;cursor:pointer">NOT VERIFIED</span></p>
+
+    <h2 style="font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;margin:26px 0 0">SWOT</h2>
+    <div style="height:2px;background:#0A0F3C;margin:6px 0 12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;font-size:14px">
+      <div><span style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;color:#5B6079">STRENGTHS</span><br></br>Sustained shipping cadence <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span>; measured community pull (14.2k stars, 210 contributors) <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span></div>
+      <div><span style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;color:#5B6079">WEAKNESSES</span><br></br>Traction claims conflict with the repository’s own README <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;border:1px dashed #0A0F3C;padding:1px 6px;cursor:pointer">CONFLICTING EVIDENCE</span>; no evidenced enterprise selling experience</div>
+      <div><span style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;color:#5B6079">OPPORTUNITIES</span><br></br>Nothing evidenced beyond the market forecast — this section has nothing to say and says so.</div>
+      <div><span style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;color:#5B6079">THREATS</span><br></br>Four unmentioned competitors, two intercepting <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span></div>
+    </div>
+
+    <h2 style="font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;margin:26px 0 0">Problem &amp; product</h2>
+    <div style="height:2px;background:#0A0F3C;margin:6px 0 12px"></div>
+    <p style="margin:0">Routing and observability for self-hosted model fleets is done today with ad-hoc scripts; Ferrite claims sub-millisecond routing overhead at p99, reproduced in the repository’s benchmark suite <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span>. The buyer and the deployment story remain the founder’s account only <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:#5B6079;cursor:pointer">NOT VERIFIED</span>.</p>
+
+    <h2 style="font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;margin:26px 0 0">Traction &amp; KPIs</h2>
+    <div style="height:2px;background:#0A0F3C;margin:6px 0 12px"></div>
+    <p style="margin:0 0 10px">Repo clones grew 40% week-over-week since the Show HN post <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:#F1EEE8;padding:1px 6px;cursor:pointer">VERIFIED</span>. “Nine design partners in production” conflicts with the README’s “closed alpha, two pilot deployments” <span onClick="{{ exClaimTrust }}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;border:1px dashed #0A0F3C;padding:1px 6px;cursor:pointer">CONFLICTING EVIDENCE</span>. Revenue: not disclosed. Pre-revenue is a fine answer; we need it stated.</p>
+
+    <h2 style="font-family:'DM Sans',sans-serif;font-size:20px;font-weight:500;margin:26px 0 0">Where to dig</h2>
+    <div style="height:2px;background:#0A0F3C;margin:6px 0 0"></div>
+    <sc-for list="{{ digQuestions }}" as="q" hint-placeholder-count="5">
+      <div style="border-bottom:1px solid #E4E0D6;padding:12px 0;display:grid;grid-template-columns:34px 1fr;gap:12px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#5B6079">{{ q.n }}</span>
+        <span>
+          <span style="display:block;font-size:15px;font-weight:500;line-height:1.45">{{ q.q }}</span>
+          <span style="display:block;font-size:12.5px;color:#5B6079;margin-top:3px">closes: {{ q.gap }}</span>
+        </span>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isThesis }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Thesis form" style="padding:28px 36px 80px;max-width:900px">
+  <h1 style="font-family:'DM Sans',sans-serif;font-size:36px;font-weight:500;letter-spacing:-0.02em;margin:0;line-height:1.15">Thesis v3 — EU technical pre-seed</h1>
+  <div style="font-size:13px;color:#5B6079;margin-top:4px">The fund’s configurable mandate. Changing the active thesis re-sorts the feed live.</div>
+  <div style="height:2px;background:#0A0F3C;margin:16px 0 20px"></div>
+
+  <div style="font-size:11.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase">Applied to scoring</div>
+  <div style="display:grid;grid-template-columns:170px 1fr;gap:14px 20px;margin-top:12px;font-size:13.5px;align-items:baseline">
+    <span style="color:#5B6079">Sectors</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">ai-infra · devtools · data</span>
+    <span style="color:#5B6079">Geographies<br></br><span style="font-size:11px">Used by market research to build search queries</span></span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">DE · FR · NL · SE · DK · FI</span>
+    <span style="color:#5B6079">Stages</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">pre-seed</span>
+    <span style="color:#5B6079">Positive keywords</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">infrastructure · developer · on-prem · open-source</span>
+    <span style="color:#5B6079">Negative keywords</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">gambling · adtech</span>
+    <span style="color:#5B6079">Fit tuning</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">base 50 · mandate_weight 20 · strong_threshold 70 · soft_deal_breaker_penalty 30 · min_coverage 0.5</span>
+  </div>
+
+  <div style="background:#ECE7F7;border:1px solid #E4E0D6;padding:14px 18px;margin-top:18px">
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079">Compiled — read-only, updates live</div>
+    <div style="font-size:13.5px;margin-top:4px">Your mandate compiles to 5 soft rules:</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;margin-top:3px">M_sector (w20) · M_geography (w20) · M_stage (w20) · M_poskw (w20) · M_negkw (deal-breaker, w0) &nbsp;·&nbsp; Total weight: 105</div>
+    <div style="font-size:12px;color:#5B6079;margin-top:5px">Clear a keyword list and watch a rule disappear — this preview is what makes the tuning fields legible.</div>
+  </div>
+
+  <div style="font-size:11.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-top:28px">Rules</div>
+  <div style="display:grid;grid-template-columns:1.4fr 1fr 110px 90px 70px;gap:10px;padding:10px 4px 5px;font-size:10.5px;font-weight:600;letter-spacing:0.06em;color:#5B6079">
+    <span>LABEL</span><span>CONDITION</span><span>KIND</span><span>ENFORCE</span><span>WEIGHT</span>
+  </div>
+  <sc-for list="{{ rules }}" as="r" hint-placeholder-count="2">
+    <div style="display:grid;grid-template-columns:1.4fr 1fr 110px 90px 70px;gap:10px;align-items:baseline;border-top:1px solid #E4E0D6;padding:8px 4px;font-size:13px">
+      <span>{{ r.label }}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079">{{ r.cond }}</span>
+      <span style="font-size:12px">{{ r.kind }}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px">{{ r.enf }}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px">{{ r.w }}</span>
+    </div>
+  </sc-for>
+  <div style="border-top:1px solid #E4E0D6;border-bottom:1px solid #E4E0D6;padding:12px 4px;margin-top:0">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input placeholder="New rule label" style="border:1px solid #E4E0D6;padding:7px 10px;font-family:Inter,sans-serif;font-size:13px;width:220px"></input>
+      <input placeholder="field op value" style="border:1px solid #E4E0D6;padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:12px;width:170px"></input>
+      <select style="border:1px solid #E4E0D6;padding:7px 8px;font-family:Inter,sans-serif;font-size:13px;background:#FFFFFF"><option>focus</option><option>must_have</option><option>deal_breaker</option></select>
+      <select onChange="{{ onEnf }}" style="border:1px solid #E4E0D6;padding:7px 8px;font-family:Inter,sans-serif;font-size:13px;background:#FFFFFF"><option value="soft">soft</option><option value="hard">hard</option></select>
+      <button style="font-family:'DM Sans',sans-serif;background:#FFFFFF;color:#0A0F3C;border:1px solid #0A0F3C;padding:7px 14px;font-size:13px;cursor:pointer">Add rule</button>
+    </div>
+    <sc-if value="{{ enfHard }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#F1EEE8;padding:12px 14px;margin-top:10px;font-size:13px">
+        <div style="font-weight:500">A hard rule requires justification:</div>
+        <label style="display:block;margin-top:6px"><input type="radio" name="hj"></input> Legally or contractually excluded</label>
+        <label style="display:block"><input type="radio" name="hj"></input> Fraud or misrepresentation</label>
+        <div style="color:#5B6079;margin-top:8px">A hard rule auto-rejects. It fires only when the attribute was actually observed; an unread deck can never trigger it.</div>
+      </div>
+    </sc-if>
+  </div>
+
+  <div style="font-size:11.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-top:28px;color:#5B6079">Recorded only <span style="font-weight:400;text-transform:none;letter-spacing:0">— Recorded, not yet applied to scoring</span></div>
+  <div style="display:grid;grid-template-columns:170px 1fr;gap:10px 20px;margin-top:10px;font-size:13.5px;color:#5B6079;background:#F1EEE8;padding:14px 18px">
+    <span>Check size</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">$50,000 – $100,000</span>
+    <span>Ownership target</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">7%</span>
+    <span>Risk appetite</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px">balanced</span>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:14px;margin-top:26px">
+    <button style="font-family:'DM Sans',sans-serif;background:#0A0F3C;color:#FFFFFF;border:none;border-radius:0;padding:11px 22px;font-size:14px;font-weight:500;cursor:pointer">Publish new version — creates v4</button>
+    <span style="font-size:12.5px;color:#5B6079">Never “Save” — every change is a new version; scores are stamped with the version that produced them.</span>
+  </div>
+</div>
+</sc-if>
+
+</div>
+
+<sc-if value="{{ explainOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;z-index:50">
+  <div onClick="{{ closeExplain }}" style="position:absolute;inset:0;background:rgba(10,15,60,0.08)"></div>
+  <div data-screen-label="Explain panel" style="position:absolute;top:0;right:0;bottom:0;width:420px;background:#FFFFFF;border-left:2px solid #0A0F3C;overflow-y:auto;padding:22px 24px 44px;box-sizing:border-box;font-size:13.5px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'DM Sans',sans-serif;font-size:17px;font-weight:500;flex:1">{{ exp.title }}</span>
+      <span onClick="{{ closeExplain }}" style="cursor:pointer;font-size:16px;color:#5B6079" title="Esc">×</span>
+    </div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:18px 0 5px;border-top:2px solid #0A0F3C;padding-top:10px">What this number is</div>
+    <div>{{ exp.what }}</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:18px 0 5px;border-top:1px solid #E4E0D6;padding-top:10px">How it was produced</div>
+    <div style="margin-bottom:8px"><span style="{{ exp.chipStyle }}">{{ exp.chipLabel }}</span></div>
+    <sc-if value="{{ exp.isFormula }}" hint-placeholder-val="{{ false }}">
+      <div style="border:1px solid #E4E0D6;padding:10px 12px">
+        <sc-for list="{{ exp.formula }}" as="fl" hint-placeholder-count="4">
+          <div onClick="{{ fl.onEx }}" style="display:grid;grid-template-columns:16px 150px 60px 1fr;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;padding:2px 0;cursor:pointer;border-top:{{ fl.bt }}" style-hover="background:#F1EEE8">
+            <span>{{ fl.op }}</span><span>{{ fl.t }}</span><span>{{ fl.v }}</span><span style="font-family:Inter,sans-serif;font-size:11.5px;color:#5B6079">{{ fl.n }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{ exp.model }}" hint-placeholder-val="{{ false }}">
+      <div style="border:1px solid #E4E0D6;padding:10px 12px;font-size:13px">
+        <div><span style="color:#5B6079">Model</span> &nbsp;<span style="font-family:'IBM Plex Mono',monospace;font-size:12px">{{ exp.modelName }}</span></div>
+        <div style="margin-top:5px"><span style="color:#5B6079">Asked</span> &nbsp;{{ exp.modelAsked }}</div>
+        <div style="margin-top:5px"><span style="color:#5B6079">Shown</span> &nbsp;{{ exp.modelShown }}</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ exp.hyb }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#F1EEE8;padding:10px 12px;margin-top:8px;font-size:12.5px">This number is computed from the evidence we hold. No AI model reports its own confidence anywhere in this system.</div>
+    </sc-if>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:18px 0 5px;border-top:1px solid #E4E0D6;padding-top:10px">Evidence</div>
+    <sc-for list="{{ exp.evidence }}" as="er" hint-placeholder-count="2">
+      <div style="border-bottom:1px solid #E4E0D6;padding:8px 0">
+        <div style="font-size:13px">{{ er.claim }}</div>
+        <sc-if value="{{ er.quote }}" hint-placeholder-val="{{ false }}">
+          <div style="border-left:2px solid #D3C7F5;padding-left:10px;margin-top:4px;font-size:12.5px">“{{ er.quote }}”</div>
+        </sc-if>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#5B6079;margin-top:4px"><a href="{{ er.url }}">↗ {{ er.src }}</a> · {{ er.tier }} · {{ er.verdict }} · {{ er.date }}</div>
+      </div>
+    </sc-for>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:18px 0 5px;border-top:1px solid #E4E0D6;padding-top:10px">What we don’t know</div>
+    <sc-for list="{{ exp.unknowns }}" as="uk" hint-placeholder-count="2">
+      <div style="padding:5px 0">
+        <div style="font-size:13px;font-weight:500">{{ uk.gap }}</div>
+        <div style="font-size:12.5px;color:#5B6079">{{ uk.closes }}</div>
+      </div>
+    </sc-for>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#5B6079;margin:18px 0 5px;border-top:1px solid #E4E0D6;padding-top:10px">Audit</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#5B6079;line-height:1.8">checked &nbsp;{{ exp.auditWhen }}<br></br>check &nbsp;&nbsp;&nbsp;{{ exp.auditCheck }}<br></br>run &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ exp.auditRun }}</div>
+  </div>
+</div>
+</sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;feed&quot;,&quot;founder&quot;,&quot;memo&quot;,&quot;thesis&quot;,&quot;watch&quot;],&quot;default&quot;:&quot;feed&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;View&quot;},&quot;founderScoreState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;scored&quot;,&quot;insufficient&quot;],&quot;default&quot;:&quot;scored&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;States&quot;},&quot;showParsedPlan&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;States&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, tab: 'evidence', evFilter: 'All', expanded: null, explain: null, scoreOpen: false, contraOpen: true, feedFilter: 'All', enfHard: false };
+
+  componentDidMount() {
+    this._esc = (e) => { if (e.key === 'Escape') this.setState({ explain: null }); };
+    window.addEventListener('keydown', this._esc);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._esc); }
+
+  MONO = "'IBM Plex Mono',monospace";
+
+  bar(v, na, trend, conf, cov, reason) {
+    const track = { display: 'block', height: '4px', position: 'relative', background: '#E4E0D6' };
+    if (na) return { isNa: true, hasVal: false, hasFill: false, trackStyle: { display: 'block', height: '3px', position: 'relative', background: 'repeating-linear-gradient(45deg,#E4E0D6 0,#E4E0D6 1.5px,#FFFFFF 1.5px,#FFFFFF 4.5px)', border: '1px solid #E4E0D6' }, title: 'Not assessed — ' + (reason || 'no score row exists. Sorted as absent, never as zero.') };
+    return { isNa: false, hasVal: true, hasFill: true, trackStyle: track, fillStyle: { position: 'absolute', left: 0, top: 0, bottom: 0, width: v + '%', background: '#0A0F3C' }, valTxt: String(v), trend: trend || '', title: 'value ' + v + ' · confidence ' + conf + ' · coverage ' + cov };
+  }
+
+  vbadge(v) {
+    const M = this.MONO;
+    const map = {
+      'VERIFIED': { fontFamily: M, fontSize: '10px', background: '#F1EEE8', padding: '1px 6px', letterSpacing: '0.04em' },
+      'CONTRADICTED': { fontFamily: M, fontSize: '10px', border: '1.5px solid #0A0F3C', fontWeight: 600, padding: '0 5px', letterSpacing: '0.04em' },
+      'CONFLICTING EVIDENCE': { fontFamily: M, fontSize: '10px', border: '1px dashed #0A0F3C', padding: '1px 6px', letterSpacing: '0.04em' },
+      'NOT VERIFIED': { fontSize: '12px', color: '#5B6079' },
+      'NOT DISCLOSED': { fontFamily: M, fontSize: '10px', background: '#ECE7F7', padding: '1px 6px', letterSpacing: '0.04em' },
+      'FORECAST': { fontFamily: M, fontSize: '10px', fontStyle: 'italic', border: '1px solid #E4E0D6', borderRadius: '999px', padding: '1px 8px', color: '#5B6079', background: '#ECE7F7' },
+      'JUDGEMENT — NOT VERIFIABLE': { fontFamily: M, fontSize: '9.5px', border: '1px solid #E4E0D6', borderRadius: '999px', padding: '1px 8px', color: '#5B6079' },
+      'SEARCHED — NOTHING FOUND': { fontFamily: M, fontSize: '10px', color: '#5B6079' }
+    };
+    return map[v] || map['NOT VERIFIED'];
+  }
+
+  feedRows() {
+    const b = this.bar.bind(this);
+    const naF = 'founder score below coverage threshold';
+    const rows = {
+      ex: [
+        { id: 'hearth', name: 'Hearthside Robotics', founder: 'Priya Anand', desc: 'Home eldercare robots with clinician-in-the-loop monitoring', cov: 'assessed 3 of 4', fit: 'outside mandate', source: 'inbound', fresh: '3h', syn: false, bars: [b(91, false, '', '0.72', '9 of 12'), b(null, true, '', '', '', 'no TAM established — category could not be researched'), b(44, false, '', '0.41', '2 of 4'), b(71, false, '', '', 'coverage 58%')], preview: [{ k: 'VERIFIED', t: '“shipped v2 of the clinical alert loop with Charité pilot ward” — github.com/panand/hearth' }, { k: 'FOUNDER', t: 'top band (91, confidence 0.72) — shown here so a strong founder is never silently filtered out' }, { k: 'GAP', t: 'consumer hardware is outside the mandate; thesis rules M_sector missed' }] }
+      ],
+      inT: [
+        { id: 'ferrite', name: 'Ferrite', founder: 'Mira Voss', desc: 'Rust-native inference gateway for on-prem LLM fleets', cov: 'assessed 4 of 4', fit: 'fit 81', source: 'hn_algolia', fresh: '2h', syn: false, bars: [b(72, false, '', '0.61', '7 of 12'), b(52, false, '↑', '0.19', '2 of 5'), b(31, false, '', '0.58', '3 of 4'), b(63, false, '', '', 'coverage 64%')], preview: [{ k: 'CONTRADICTED', t: '“six years payments infrastructure at scale” vs LinkedIn export “Store manager, EDEKA Südwest — 2015–2021”' }, { k: 'VERIFIED', t: '“412 commits in trailing 12 months; longest gap 9 days” — github.com/miravoss/ferrite' }, { k: 'DISAGREE', t: 'strong founder, weak idea-vs-market — the gap to probe on the call' }] },
+        { id: 'quench', name: 'Quenchline', founder: 'Tomas Eriksen', desc: 'Streaming ETL for industrial sensor backhaul', cov: 'assessed 3 of 4', fit: 'fit 74', source: 'hn_algolia', fresh: '5h', syn: false, bars: [b(64, false, '', '0.55', '6 of 12'), b(58, false, '↑', '0.44', '3 of 5'), b(null, true, '', '', '', 'no competitor set could be established for this category'), b(55, false, '', '', 'coverage 41%')], preview: [{ k: 'VERIFIED', t: '“processing 2.1M sensor events/day at two paper mills” — customer case page' }, { k: 'GAP', t: 'idea-vs-market not assessed: competitor search returned no scorable set' }, { k: 'NOT DISCLOSED', t: 'prior funding — a yes/no from the founder closes this in one email' }] },
+        { id: 'parcel', name: 'Parcelform', founder: 'Ada Nkemelu', desc: 'Customs pre-clearance API for EU micro-exporters', cov: 'assessed 3 of 4', fit: 'fit 69', source: 'inbound', fresh: '1d', syn: false, bars: [b(58, false, '', '0.49', '5 of 12'), b(null, true, '', '', '', 'market research skipped: robots.txt blocked the two primary sources'), b(66, false, '', '0.52', '3 of 4'), b(49, false, '', '', 'coverage 37%')], preview: [{ k: 'VERIFIED', t: '“HS-code classification accuracy 94.1% on the public benchmark” — repo eval' }, { k: 'SEARCHED', t: 'checked EU tender registry — no filings found; this does not count against the founder' }, { k: 'GAP', t: 'market not assessed — crawl skipped (robots.txt), an event records why' }] },
+        { id: 'cinder', name: 'Cinderbox', founder: 'Jules Marchand', desc: 'Firmware fuzzing as a managed service', cov: 'assessed 2 of 4', fit: 'fit 61', source: 'github_api', fresh: '9h', syn: true, bars: [b(61, false, '', '0.47', '5 of 12'), b(47, false, '→', '0.33', '2 of 5'), b(null, true, '', '', '', 'no scorable defensibility inputs'), b(null, true, '', '', '', 'below the 25% checkable-claims floor — no rollup row written')], preview: [{ k: 'SYNTH', t: 'synthetic fixture — badged so it never ranks unlabelled beside real people' }, { k: 'VERIFIED', t: '“3 CVEs credited across two RTOS vendors” — MITRE records' }, { k: 'GAP', t: 'trust not assessed: 4 of 60 checkable claims examined (7%)' }] },
+        { id: 'loom', name: 'Loomcell', founder: 'Hana Sato', desc: 'Fine-tune orchestration for regulated data rooms', cov: 'assessed 3 of 4', fit: 'fit 57', source: 'inbound', fresh: '1d', syn: false, bars: [b(55, false, '', '0.51', '6 of 12'), b(null, true, '', '', '', 'no dated funding events — under the 3-event floor, we refuse to call it'), b(51, false, '', '0.46', '3 of 4'), b(58, false, '', '', 'coverage 52%')], preview: [{ k: 'VERIFIED', t: '“SOC 2 Type I report issued 02 Jun 2026” — auditor letter' }, { k: 'GAP', t: 'market trend: 2 dated events of 3 needed — too few to call' }, { k: 'JUDGEMENT', t: 'ICP specificity strong — model judgement, no verdict issued' }] }
+      ],
+      out: [
+        { id: 'bramble', name: 'Bramble Pay', founder: 'Otto Keller', desc: 'Allowance cards for teens, DACH-first', cov: 'assessed 4 of 4', fit: 'outside thesis', source: 'inbound', fresh: '2d', syn: false, bars: [b(49, false, '', '0.44', '5 of 12'), b(61, false, '↑', '0.51', '4 of 5'), b(57, false, '', '0.48', '3 of 4'), b(44, false, '', '', 'coverage 46%')], preview: [{ k: 'RULE', t: 'M_sector missed: consumer fintech is outside this fund’s mandate — not a quality judgement' }, { k: 'VERIFIED', t: '“11,400 cards issued, 62% MAU” — payment processor export' }, { k: 'NOTE', t: 'outside thesis means outside this fund’s stated mandate, never “bad company”' }] },
+        { id: 'fernweh', name: 'Fernweh', founder: 'Sofia Ilic', desc: 'Group travel planning with shared budgets', cov: 'assessed 2 of 4', fit: 'outside thesis', source: 'hn_algolia', fresh: '3d', syn: false, bars: [b(41, false, '', '0.38', '4 of 12'), b(null, true, '', '', '', 'category could not be researched'), b(38, false, '', '0.35', '2 of 4'), b(51, false, '', '', 'coverage 33%')], preview: [{ k: 'RULE', t: 'M_sector missed: consumer travel' }, { k: 'GAP', t: 'market not assessed' }, { k: 'NOT DISCLOSED', t: 'team composition' }] },
+        { id: 'copper', name: 'Copperleaf', founder: 'Dan Whittaker', desc: 'D2C cookware with lifetime resurfacing', cov: 'assessed 2 of 4', fit: 'outside thesis', source: 'github_api', fresh: '4d', syn: true, bars: [b(46, false, '', '0.40', '4 of 12'), b(39, false, '↓', '0.36', '2 of 5'), b(null, true, '', '', '', 'no defensibility inputs'), b(47, false, '', '', 'coverage 29%')], preview: [{ k: 'SYNTH', t: 'synthetic fixture' }, { k: 'RULE', t: 'M_sector missed: consumer hardware' }, { k: 'GAP', t: 'idea-vs-market not assessed' }] }
+      ],
+      nya: [
+        { id: 'nightjar', name: 'Nightjar', founder: 'founder not disclosed', desc: 'Stealth — deck only, 4 slides', cov: 'assessed 0 of 4', fit: 'not assessable', source: 'inbound', fresh: '6h', syn: false, bars: [b(null, true, '', '', '', 'no verifiable artifacts — the deck contains no checkable claims'), b(null, true, '', '', '', 'no category could be inferred'), b(null, true, '', '', '', 'nothing to assess'), b(null, true, '', '', '', 'no checkable claims')], preview: [{ k: 'REASON', t: 'no verifiable artifacts yet — the deck contains no checkable claims. We looked; we are not guessing.' }, { k: 'NEXT', t: 'any public artifact (repo, demo URL, filing) triggers a first scoring run' }, { k: 'NOTE', t: 'shown, not hidden — filtering these out is how a fund misses the invisible outlier' }] },
+        { id: 'ossia', name: 'Ossia Labs', founder: 'Karim El-Sayed', desc: 'Applied research — org private', cov: 'assessed 0 of 4', fit: 'not assessable', source: 'github_api', fresh: '12h', syn: false, bars: [b(null, true, '', '', '', 'GitHub org is private — nothing observable'), b(null, true, '', '', '', 'no category inferred'), b(null, true, '', '', '', 'nothing to assess'), b(null, true, '', '', '', 'no checkable claims')], preview: [{ k: 'REASON', t: 'GitHub org private; identity resolution pending founder verification' }, { k: 'NEXT', t: 'founder-confirmed handle link resolves identity at 0.95' }, { k: 'NOTE', t: 'absence of public code is absent data: gap recorded, confidence down, score untouched' }] }
+      ]
+    };
+    return rows;
+  }
+
+  explains() {
+    const evTrust = [
+      { claim: 'Maintainer of tokio-metrics (14.2k stars)', quote: 'miravoss has been a maintainer since v0.3; 41 merged PRs', url: 'https://github.com/tokio-rs/tokio-metrics', src: 'github.com', tier: 'documented', verdict: 'supports', date: '11 Jul 2026' },
+      { claim: 'Independent corroboration', quote: null, url: 'https://news.ycombinator.com/item?id=41', src: 'news.ycombinator.com', tier: 'discovered', verdict: 'supports', date: '15 Jul 2026' }
+    ];
+    return {
+      claimTrust: {
+        title: 'Trust — per-claim', chip: 'rule',
+        what: 'How well one specific statement holds up against the evidence we hold. Per claim, never per company.',
+        formula: [
+          { op: '', t: 'base', v: '0.90', n: 'strongest supporting evidence (documented tier)' },
+          { op: '×', t: 'independence', v: '0.70', n: '1 independent source' },
+          { op: '−', t: 'contradictions', v: '0.00', n: 'no counting contradictions' },
+          { op: '=', t: 'trust', v: '0.63', n: '“confirmed by one documented source” — not “63% sure it is true”' }
+        ],
+        evidence: evTrust,
+        unknowns: [{ gap: 'Second independent source', closes: 'Any non-deck, non-interview source confirming the claim raises independence from 0.70 to 0.85.' }],
+        audit: { when: '19 Jul 2026, 08:41', check: 'evidence_structure_recompute', run: 'run_2026-07-19_0841_c07' }
+      },
+      cardTrust: {
+        title: 'Trust — card rollup', chip: 'rule',
+        what: 'The share of checkable claims that hold up, with the disagreement breakdown built into the bar itself.',
+        formula: [
+          { op: '', t: 'verified', v: '139', n: 'of 297 checkable claims' },
+          { op: '−', t: 'contradicted', v: '4', n: 'documented-tier contradictions' },
+          { op: '·', t: 'coverage', v: '0.64', n: '189 of 297 checkable claims examined' },
+          { op: '=', t: 'rollup', v: '63%', n: 'never sortable on its own; never a gauge' }
+        ],
+        evidence: evTrust,
+        unknowns: [{ gap: '108 checkable claims not yet examined', closes: 'The dynamic-check queue caps at 5 paid checks per card per run; the remainder are scheduled.' }],
+        audit: { when: '19 Jul 2026, 08:41', check: 'trust_rollup', run: 'run_2026-07-19_0841_c07' }
+      },
+      founderScore: {
+        title: 'Founder Score — 67.96', chip: 'hyb',
+        what: 'How much builder-capability we have evidenced for this person — across companies, never reset. An input, not a verdict.',
+        formula: [
+          { op: '', t: 'ships consistently', v: '+18.42', n: 'met · documented' },
+          { op: '+', t: 'systems depth', v: '+15.90', n: 'met · documented' },
+          { op: '+', t: 'reasoning quality', v: '+14.34', n: 'self-asserted · credit 0.3' },
+          { op: '+', t: '0→1 ownership', v: '+10.80', n: 'self-asserted · credit 0.3' },
+          { op: '+', t: 'community pull', v: '+8.50', n: 'met · discovered · credit 0.8' },
+          { op: '+', t: 'enterprise selling', v: '+0.00', n: 'not met — we checked; it isn’t there' },
+          { op: '+', t: 'prior founding', v: '+0.00', n: 'not met' },
+          { op: '=', t: 'score', v: '67.96', n: '5 criteria cannot_assess — out of the denominator, they lower confidence, never the score' }
+        ],
+        evidence: [
+          { claim: 'Ships consistently over long periods', quote: '412 commits in trailing 12 months; longest gap 9 days', url: 'https://github.com/miravoss/ferrite', src: 'github.com', tier: 'documented', verdict: 'met', date: '18 Jul 2026' },
+          { claim: 'Open-source community pull', quote: '14.2k stars, 210 contributors, 890 dependents', url: 'https://github.com/miravoss/ferrite', src: 'github.com', tier: 'discovered', verdict: 'met', date: '18 Jul 2026' }
+        ],
+        unknowns: [
+          { gap: 'Customer commitment (L2 — the heaviest criterion)', closes: 'Evidence of a real customer commitment, such as a paying customer, signed LOI, named organisation running a pilot with an outcome, or measured waitlist conversion.' },
+          { gap: 'Merged PR into a repo they do not own (E1)', closes: 'A GitHub API record of a merged PR authored by the founder into a repository they do not own.' }
+        ],
+        audit: { when: '19 Jul 2026, 07:58', check: 'founder_score formula_v1', run: 'run_2026-07-19_0758_f03' }
+      },
+      founderAxis: {
+        title: 'Founder axis', chip: 'hyb',
+        what: 'The screening axis that combines the person-scoped Founder Score with founder-market fit and competitor knowledge. It is not the Founder Score itself.',
+        formula: [
+          { op: '', t: 'founder score', v: '67.96', n: 'person-scoped, formula_v1' },
+          { op: '+', t: 'founder-mkt fit', v: 'high', n: 'documented tenure in the same vertical' },
+          { op: '+', t: 'competitor knowledge', v: 'mid', n: 'named 2 of 6 found' },
+          { op: '=', t: 'axis', v: '72', n: 'deterministic combination; boolean inputs were model-judged' }
+        ],
+        evidence: [{ claim: 'Documented tenure in the same vertical', quote: 'Senior engineer, SUSE — Linux systems, 2019–2025', url: 'https://github.com/miravoss', src: 'github.com', tier: 'documented', verdict: 'met', date: '17 Jul 2026' }],
+        unknowns: [{ gap: 'Competitor knowledge at insider granularity', closes: 'A claim describing where deals are lost or what breaks in production — pricing-page level does not count.' }],
+        audit: { when: '19 Jul 2026, 07:58', check: 'screening_axis_founder', run: 'run_2026-07-19_0758_f03' }
+      },
+      market: {
+        title: 'Market — 52', chip: 'model',
+        modelName: 'market-researcher (grounded)', modelAsked: 'Given only retrieved documents, estimate TAM range, buyer count and growth for the category “developer infrastructure / on-prem inference”.', modelShown: '11 retrieved documents (5 searches framed by the pre-search category). The retrieved set is the model’s only admissible world.',
+        what: 'A model’s judgement of whether this market supports a $100K check. An unresearched market and a middling one both score 50 — only confidence tells them apart.',
+        evidence: [
+          { claim: 'On-prem inference spend doubling annually', quote: null, url: 'https://example-analyst.com/on-prem-2026', src: 'analyst note', tier: 'discovered', verdict: 'unverified', date: '16 Jul 2026' },
+          { claim: 'Buyer count ≈ 4,000 EU enterprises with self-hosted fleets', quote: 'we estimate 3,800–4,400 organisations run self-hosted inference at production scale in the EU', url: 'https://example-analyst.com/eu-fleet-census', src: 'fleet census', tier: 'discovered', verdict: 'unverified', date: '16 Jul 2026' }
+        ],
+        unknowns: [
+          { gap: 'CAGR — verdict-eligible, not yet checked', closes: 'One dated third-party growth figure enters the verification queue; TAM never does (it is a forecast by construction).' },
+          { gap: '3 of 5 inputs unresearched', closes: 'The category was inferred pre-search; a corrected category re-frames all five queries.' }
+        ],
+        audit: { when: '19 Jul 2026, 08:12', check: 'market_scoring (arithmetic over model booleans)', run: 'run_2026-07-19_0812_m04' }
+      },
+      idea: {
+        title: 'Idea-vs-Market — 31', chip: 'model',
+        modelName: 'competition-researcher (grounded)', modelAsked: 'From retrieved documents only: competitor set, threat level, switching cost, evidenced accumulating advantage.', modelShown: '9 retrieved documents; every competitor record carries at least one source URL — none recalled from model memory.',
+        what: 'Is this product defensible in this market. Starts at 50; moved down by low switching cost, two intercepting competitors, and −10 because the founder named zero competitors while we found four unmentioned.',
+        evidence: [{ claim: 'Founder named 2 competitors; retrieval found 6', quote: null, url: 'https://github.com/miravoss/ferrite#alternatives', src: 'github.com', tier: 'documented', verdict: 'verified', date: '17 Jul 2026' }],
+        unknowns: [{ gap: 'Accumulating advantage', closes: 'Any evidenced network effect, data asset, or switching-cost mechanism — currently the founder’s account only.' }],
+        audit: { when: '19 Jul 2026, 08:19', check: 'idea_vs_market scoring', run: 'run_2026-07-19_0819_i04' }
+      },
+      widen: {
+        title: 'Widened match — Berlin → DE', chip: 'rule',
+        what: 'This fragment matched only after widening the question: founder city is not held, so city was widened to country. A Munich founder returned as a “Berlin” match is scope drift — the widening is shown and it costs 25% of the match credit in ranking.',
+        formula: [
+          { op: '', t: 'asked', v: 'city', n: 'Berlin' },
+          { op: '→', t: 'widened to', v: 'country', n: 'company.geography_country = DE' },
+          { op: '×', t: 'credit', v: '0.75', n: 'broadened matches rank below exact ones' }
+        ],
+        evidence: [{ claim: 'Company registered in Germany', quote: 'Ferrite UG (haftungsbeschränkt), Berlin', url: 'https://github.com/miravoss/ferrite', src: 'imprint', tier: 'documented', verdict: 'verified', date: '17 Jul 2026' }],
+        unknowns: [{ gap: 'Founder city', closes: 'Founder city is held for 0 of 122 founders — any city-level query widens to country by design.' }],
+        audit: { when: '19 Jul 2026, 09:02', check: 'nl_search resolver', run: 'run_2026-07-19_0902_s10' }
+      },
+      fit: {
+        title: 'Thesis fit — why WATCH', chip: 'rule',
+        what: 'Of the things this fund said it cares about, how many does this company demonstrably satisfy? A mandate-alignment measure, not a quality judgement — it changes when the fund edits its thesis.',
+        formula: [
+          { op: '', t: 'earned', v: '65', n: '4 rules satisfied (w20 each), keyword rule partial' },
+          { op: '÷', t: 'total', v: '80', n: 'evaluated weight — unknown rules add to total only' },
+          { op: '=', t: 'fit', v: '81', n: 'below strong_threshold at this coverage → WATCH, not INVEST' }
+        ],
+        evidence: [{ claim: 'Sector observed as ai-infra', quote: 'inference gateway for on-prem LLM fleets', url: 'https://github.com/miravoss/ferrite', src: 'repo README', tier: 'documented', verdict: 'verified', date: '17 Jul 2026' }],
+        unknowns: [{ gap: 'M_negkw could not be evaluated', closes: 'business_model was not extracted from the submitted material. A hard rule fires only on a confirmed match — an unextracted field can never cause a rejection.' }],
+        audit: { when: '19 Jul 2026, 08:30', check: 'thesis_evaluation v3', run: 'run_2026-07-19_0830_t07' }
+      },
+      lockLI: {
+        title: 'LinkedIn — documented, not connected', chip: null,
+        what: 'This channel is specified and scoped but no data flows until the fund authorizes it. No counts are shown because none exist — a zero would imply “connected and empty”.',
+        evidence: [{ claim: 'Why it is not connected', quote: null, url: 'https://www.linkedin.com/legal/user-agreement', src: 'platform terms', tier: 'documented', verdict: 'context', date: '02 Jul 2026' }],
+        unknowns: [{ gap: 'Employment history verification', closes: 'Connecting this channel would let work-history claims be checked against a primary record; today they rely on public filings only.' }],
+        audit: { when: '02 Jul 2026', check: 'channel_review', run: 'design_doc_ch05' }
+      },
+      lockX: {
+        title: 'X — documented, not connected', chip: null,
+        what: 'Specified and scoped; not connected. API pricing makes per-candidate lookups uneconomical at this fund’s volume, and the signal duplicated Hacker News in the pilot corpus.',
+        evidence: [{ claim: 'Pilot finding', quote: null, url: 'https://example.com/ch-review', src: 'channel review', tier: 'discovered', verdict: 'context', date: '02 Jul 2026' }],
+        unknowns: [{ gap: 'Public communication signal', closes: 'HN author replies currently proxy this: a founder’s replies in their own thread are a direct proxy for coachability.' }],
+        audit: { when: '02 Jul 2026', check: 'channel_review', run: 'design_doc_ch05' }
+      },
+      lockPH: {
+        title: 'Product Hunt — documented, not connected', chip: null,
+        what: 'Specified and scoped; not connected. Launch-day metrics are gameable and decay within a week; the pilot found no criterion they could support.',
+        evidence: [{ claim: 'Why it is not connected', quote: null, url: 'https://example.com/ch-review', src: 'channel review', tier: 'discovered', verdict: 'context', date: '02 Jul 2026' }],
+        unknowns: [{ gap: 'Consumer launch traction', closes: 'If the fund’s mandate ever includes consumer, this channel review reopens.' }],
+        audit: { when: '02 Jul 2026', check: 'channel_review', run: 'design_doc_ch05' }
+      }
+    };
+  }
+
+  renderVals() {
+    const S = this.state;
+    const M = this.MONO;
+    const screen = S.screen ?? this.props.screen ?? 'feed';
+    const scoreEmpty = (this.props.founderScoreState ?? 'scored') === 'insufficient';
+    const showPlan = this.props.showParsedPlan ?? true;
+    const nav = (s) => () => this.setState({ screen: s, explain: null });
+    const ex = (k) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ explain: k }); };
+
+    const pill = (active) => ({ fontFamily: M, fontSize: '11px', padding: '2px 8px', cursor: 'pointer', border: '1px solid ' + (active ? '#0A0F3C' : '#E4E0D6'), background: active ? '#0A0F3C' : '#FFFFFF', color: active ? '#FFFFFF' : '#5B6079' });
+    const feedFilters = ['All', 'Inbound', 'Radar'].map(l => ({ label: l, style: pill(S.feedFilter === l), on: () => this.setState({ feedFilter: l, screen: 'feed' }) }));
+
+    const channels = [
+      { n: 'GitHub', live: true, locked: false, count: '28', on: nav('feed') },
+      { n: 'Hacker News', live: true, locked: false, count: '12', on: nav('feed') },
+      { n: 'LinkedIn', live: false, locked: true, on: ex('lockLI') },
+      { n: 'X', live: false, locked: true, on: ex('lockX') },
+      { n: 'Product Hunt', live: false, locked: true, on: ex('lockPH') }
+    ].map(c => ({ ...c, nameStyle: { color: c.live ? '#0A0F3C' : '#5B6079' } }));
+
+    const D = this.feedRows();
+    const srcOf = (r) => r.source === 'inbound' ? 'Inbound' : 'Radar';
+    const filt = (arr) => S.feedFilter === 'All' ? arr : arr.filter(r => srcOf(r) === S.feedFilter);
+    const axisEx = ['founderAxis', 'market', 'idea', 'cardTrust'];
+    const mkRow = (r) => ({
+      ...r,
+      bars: r.bars.map((b, i) => ({ ...b, onEx: ex(axisEx[i]) })),
+      chev: S.expanded === r.id ? '▾' : '▸',
+      expanded: S.expanded === r.id,
+      toggle: () => this.setState({ expanded: S.expanded === r.id ? null : r.id }),
+      open: (e) => { e.stopPropagation(); this.setState({ screen: 'founder', explain: null }); }
+    });
+    const laneWrap = { border: '1px solid #E4E0D6', borderTop: '2px solid #0A0F3C', marginTop: '10px' };
+    const lanes = [
+      { title: 'Off-thesis but exceptional', note: 'outside the stated mandate, but the founder scores in the top band — pinned so the outlier is never silently filtered', rows: filt(D.ex).map(mkRow), wrapStyle: { border: '1px solid #0A0F3C', background: '#ECE7F7', marginTop: '4px' } },
+      { title: 'In thesis', note: 'sorted by fit within confidence bands — never by raw value', rows: filt(D.inT).map(mkRow), wrapStyle: laneWrap },
+      { title: 'Outside thesis', note: 'outside this fund’s mandate, not “bad company” — down-ranked, never hidden', rows: filt(D.out).map(mkRow), wrapStyle: laneWrap },
+      { title: 'Not yet assessable', note: 'with the reason — we looked; we are not guessing', rows: filt(D.nya).map(mkRow), wrapStyle: laneWrap }
+    ].filter(l => l.rows.length > 0);
+
+    const understood = [
+      { g: '●', t: 'technical founder', m: 'founder.expertise', w: null },
+      { g: '◐', t: 'Berlin', m: 'country = DE', w: 'widened: city → country', onInfo: ex('widen') },
+      { g: '●', t: 'AI infra', m: 'sector = ai-infra', w: null }
+    ];
+    const unresolved = [
+      { t: 'enterprise traction', r: 'no way to test this against what we hold' },
+      { t: 'no prior VC backing', r: 'we hold no data of this kind' },
+      { t: 'top-tier accelerator', r: 'we hold no data of this kind' }
+    ];
+
+    const floorRows = [
+      { name: 'Veldt', founder: 'Ines Barbosa', cov: 'assessed 1 of 4', note: 'one matched attribute would rank it 100 — bucket-first ordering keeps the least-known out of the top' },
+      { name: 'Skerry', founder: 'Aleksi Rand', cov: 'assessed 1 of 4', note: 'HN-only identity (no cross-platform link) — the normal branch, not an error' },
+      { name: 'Hollowbeam', founder: 'Grete Vahtra', cov: 'assessed 0 of 4', note: 'nothing recorded on any queried attribute — lowers confidence only, never rank' }
+    ];
+
+    const watchRows = [
+      { name: 'Ferrite', cond: 'alert when: any commit to a pricing page, or L2 customer-commitment evidence appears', next: 'next check 21 Jul, 06:00', open: nav('founder') },
+      { name: 'Quenchline', cond: 'alert when: market trend clears the 3-dated-event floor', next: 'next check 20 Jul, 06:00', open: nav('founder') },
+      { name: 'Hearthside Robotics', cond: 'alert when: thesis v4 activates (mandate review pending)', next: 'on thesis change', open: nav('founder') }
+    ];
+
+    const contradictions = [
+      { q: 'Can you walk us through your work history in retail prior to 2021?', deck: 'Mira spent six years building payments infrastructure at scale.', deckSrc: 'deck, p.3', deckUrl: '#', src: 'Store manager, EDEKA Südwest — 2015–2021.', srcName: 'employment record export · collected 12 Jul 2026', srcUrl: '#' },
+      { q: 'How many design partners are running the gateway in production today?', deck: 'Nine design partners in production.', deckSrc: 'deck, p.7', deckUrl: '#', src: 'Currently in closed alpha with two pilot deployments.', srcName: 'github.com/miravoss/ferrite README · 14 Jul 2026', srcUrl: 'https://github.com/miravoss/ferrite' }
+    ];
+
+    const mk = { met: { fontFamily: M, color: '#0A0F3C', fontWeight: 600, fontSize: '13px' }, half: { fontFamily: M, color: '#0A0F3C', fontSize: '13px' }, notMet: { fontFamily: M, color: '#0A0F3C', fontWeight: 700, fontSize: '12px', border: '1.5px solid #0A0F3C', padding: '0 3px', justifySelf: 'start' }, ring: { display: 'inline-block', width: '10px', height: '10px', border: '1.5px dashed #5B6079', borderRadius: '50%', transform: 'translateY(1px)' } };
+    const ledger = [
+      { name: 'Execution signals', w: '0.40', rows: [
+        { mark: '✓', markStyle: mk.met, markTitle: 'evidenced', label: 'Ships consistently over long periods', id: 'E3', tier: 'documented', contrib: '+18.42', quote: '412 commits in trailing 12 months; longest gap 9 days', quoteSrc: 'github.com/miravoss/ferrite', quoteUrl: 'https://github.com/miravoss/ferrite', interp: 'Sustained cadence over 18 months reads as durable execution, not a launch spike.', close: null, demoted: null },
+        { mark: '✓', markStyle: mk.met, markTitle: 'evidenced', label: 'Live production URL responds', id: 'E4', tier: 'documented', contrib: '+15.90', quote: 'demo.ferrite.dev returns 200; TLS cert issued 03 Feb 2026', quoteSrc: 'direct inspection', quoteUrl: 'https://github.com/miravoss/ferrite', interp: null, close: null, demoted: null },
+        { mark: '✓', markStyle: mk.met, markTitle: 'evidenced (discovered tier, credit 0.8)', label: 'Measured external usage', id: 'E5', tier: 'discovered', contrib: '+8.50', quote: '14.2k stars, 210 contributors, 890 dependents', quoteSrc: 'github.com', quoteUrl: 'https://github.com/miravoss/ferrite', interp: null, close: null, demoted: null },
+        { mark: '○', markStyle: mk.ring, markTitle: 'we haven’t looked — achromatic by design; this is “not yet”, never “no”', label: 'Merged a PR into a repo they do not own', id: 'E1', tier: '— not assessed', contrib: '—', quote: null, interp: null, close: 'A GitHub API record of a merged PR authored by the founder into a repository they do not own.', demoted: null },
+        { mark: '○', markStyle: mk.ring, markTitle: 'we haven’t looked', label: 'Provenance clean (first-commit vs account age)', id: 'E7', tier: '— not assessed', contrib: '—', quote: null, interp: null, close: 'Commit-level history; the GitHub API returned none for this repository (searched, nothing found — recorded as its own event).', demoted: null }
+      ]},
+      { name: 'Expertise signals', w: '0.30', rows: [
+        { mark: '✓', markStyle: mk.met, markTitle: 'evidenced', label: 'Documented tenure in the same vertical', id: 'X1', tier: 'documented', contrib: '+14.34', quote: 'Senior engineer, SUSE — Linux systems, 2019–2025', quoteSrc: 'github.com/miravoss', quoteUrl: 'https://github.com/miravoss', interp: null, close: null, demoted: null },
+        { mark: '◐', markStyle: mk.half, markTitle: 'they say so; nobody else does — self-asserted, credit 0.3', label: 'Substantial work nobody asked for, pre-funding', id: 'X6', tier: 'self-reported', contrib: '+10.80', quote: null, interp: 'The founder describes two years of unpaid nights-and-weekends work; no independent record corroborates the timeline.', close: null, demoted: null },
+        { mark: '○', markStyle: mk.ring, markTitle: 'we haven’t looked', label: 'Describes competitors at insider granularity', id: 'X5', tier: '— not assessed', contrib: '—', quote: null, interp: null, close: 'A claim describing where deals are lost or what breaks in production — pricing-page level does not count.', demoted: null }
+      ]},
+      { name: 'Leadership & sales proxies', w: '0.30', rows: [
+        { mark: '✗', markStyle: mk.notMet, markTitle: 'we checked; it isn’t there — a finding, more confident than the dashed ring', label: 'First customers, LOI, or pilot evidence', id: 'L2', tier: 'documented absence', contrib: '+0.00', quote: null, interp: null, close: 'Evidence of a real customer commitment: a paying customer, signed LOI, named organisation running a pilot with an outcome, or measured waitlist conversion.', demoted: null },
+        { mark: '✗', markStyle: mk.notMet, markTitle: 'we checked; it isn’t there', label: 'ICP specificity (vertical + size + buyer + trigger + alternative)', id: 'L3', tier: 'documented absence', contrib: '+0.00', quote: null, interp: null, close: 'A claim narrow enough for a stranger to identify fifty matching companies.', demoted: 'R4 · claimed capability with no observable artifact' },
+        { mark: '○', markStyle: mk.ring, markTitle: 'we haven’t looked', label: 'Written communication under compression', id: 'L5', tier: '— not assessed', contrib: '—', quote: null, interp: null, close: 'Any written exchange with the founder — the interview flow produces this automatically.', demoted: null },
+        { mark: '○', markStyle: mk.ring, markTitle: 'we haven’t looked', label: 'Insight specificity about the industry', id: 'X2', tier: '— not assessed', contrib: '—', quote: null, interp: null, close: 'A statement about the industry an outsider could not guess, in any collected artifact.', demoted: null },
+        { mark: '○', markStyle: mk.ring, markTitle: 'we haven’t looked', label: 'Consistency of commits (8 of last 12 weeks)', id: 'E3b', tier: '— not assessed', contrib: '—', quote: null, interp: null, close: 'Week-level commit data; the API returned repository totals only.', demoted: null }
+      ]}
+    ];
+
+    const tabDefs = [['evidence', 'Evidence'], ['market', 'Market'], ['competition', 'Competition'], ['interview', 'Interview'], ['unknown', 'What we don’t know']];
+    const tabs = tabDefs.map(([k, l]) => ({ label: l, on: () => this.setState({ tab: k }), style: { padding: '8px 14px', fontSize: '13.5px', cursor: 'pointer', fontWeight: S.tab === k ? 600 : 400, borderBottom: S.tab === k ? '2px solid #0A0F3C' : '2px solid transparent', marginBottom: '-1px', color: S.tab === k ? '#0A0F3C' : '#5B6079' } }));
+
+    const evRows = [
+      { topic: 'Team', claim: 'Six years payments infrastructure at scale', src: 'deck p.3', url: '#', tier: 'self-reported', verdict: 'CONTRADICTED', pips: '●○○○', pipsNote: 'has support only from the deck; 1 documented contradiction', date: '12 Jul' },
+      { topic: 'Team', claim: 'Maintainer of tokio-metrics (14.2k stars)', src: 'github.com', url: 'https://github.com/tokio-rs/tokio-metrics', tier: 'documented', verdict: 'VERIFIED', pips: '●●●○', pipsNote: 'support · documented · 1 independent source', date: '11 Jul' },
+      { topic: 'Team', claim: 'Writes clearly about tradeoffs and failure modes', src: 'personal blog', url: '#', tier: 'inferred', verdict: 'JUDGEMENT — NOT VERIFIABLE', pips: '', pipsNote: 'judgement claims never carry a verdict', date: '11 Jul' },
+      { topic: 'Traction', claim: 'Nine design partners in production', src: 'deck p.7', url: '#', tier: 'self-reported', verdict: 'CONFLICTING EVIDENCE', pips: '●○○○', pipsNote: 'deck support vs README contradiction', date: '14 Jul' },
+      { topic: 'Traction', claim: 'Repo clones +40% week over week', src: 'github API', url: 'https://github.com/miravoss/ferrite', tier: 'documented', verdict: 'VERIFIED', pips: '●●○○', pipsNote: 'support · documented · no independent source yet', date: '14 Jul' },
+      { topic: 'Traction', claim: 'Two enterprise pilots signed', src: 'deck p.7', url: '#', tier: 'self-reported', verdict: 'NOT VERIFIED', pips: '●○○○', pipsNote: 'self-reported support only — not verified is the default state of most claims, not a warning', date: '14 Jul' },
+      { topic: 'Traction', claim: 'Cap table', src: 'requested 15 Jul', url: '#', tier: 'nothing received', verdict: 'NOT DISCLOSED', pips: '', pipsNote: 'declared gap — can never be reclassified as an accusation', date: '15 Jul' },
+      { topic: 'Market', claim: 'TAM $2.8B by 2028', src: 'deck p.9', url: '#', tier: 'self-reported', verdict: 'FORECAST', pips: '', pipsNote: 'forecasts never receive a verdict — optimistic TAM is expected noise at pre-seed, not a punishable lie', date: '13 Jul' },
+      { topic: 'Market', claim: 'On-prem inference spend doubling annually', src: 'analyst note', url: '#', tier: 'discovered', verdict: 'NOT VERIFIED', pips: '●●○○', pipsNote: 'discovered support, no independent source', date: '16 Jul' },
+      { topic: 'Product', claim: 'Sub-millisecond routing overhead at p99', src: 'repo benchmarks', url: 'https://github.com/miravoss/ferrite', tier: 'documented', verdict: 'VERIFIED', pips: '●●●○', pipsNote: 'support · documented · 1 independent reproduction', date: '12 Jul' },
+      { topic: 'Product', claim: 'Commit history predating the Show HN post', src: 'github API', url: 'https://github.com/miravoss/ferrite', tier: 'missing', verdict: 'SEARCHED — NOTHING FOUND', pips: '', pipsNote: 'we looked and found nothing — a positive finding; this does not count against the founder', date: '19 Jul' }
+    ];
+    const fmap = { 'All': () => true, 'Refuted': r => r.verdict === 'CONTRADICTED', 'Conflicting': r => r.verdict === 'CONFLICTING EVIDENCE', 'Not disclosed': r => r.verdict === 'NOT DISCLOSED', 'Searched — nothing found': r => r.verdict === 'SEARCHED — NOTHING FOUND' };
+    const evTotals = { 'All': 297, 'Refuted': 4, 'Conflicting': 0, 'Not disclosed': 36, 'Searched — nothing found': 103 };
+    const evFilters = Object.keys(fmap).map(l => ({ label: l === 'All' ? 'All' : l + ' · ' + evTotals[l], style: pill(S.evFilter === l), on: () => this.setState({ evFilter: l }) }));
+    const vis = evRows.filter(fmap[S.evFilter]);
+    const evShowing = 'showing ' + vis.length + ' of ' + evTotals[S.evFilter] + (S.evFilter === 'All' ? ' claims' : ' in this state');
+    const topics = [];
+    vis.forEach(r => {
+      let t = topics.find(t => t.name === r.topic);
+      if (!t) { t = { name: r.topic, rows: [] }; topics.push(t); }
+      t.rows.push({ ...r, badgeStyle: this.vbadge(r.verdict), verdict: r.verdict === 'SEARCHED — NOTHING FOUND' ? '⃝ SEARCHED — NOTHING FOUND' : r.verdict, onEx: ex('claimTrust') });
+    });
+
+    const tw = (w) => ({ fontFamily: M, fontSize: '11px', padding: '1px 7px', justifySelf: 'start', ...(w === 'Red ocean' ? { border: '1.5px solid #0A0F3C', fontWeight: 600 } : w === 'Intercepting' ? { background: '#F1EEE8' } : w === 'Disruptive' ? { border: '1px solid #E4E0D6' } : w === 'Niche' ? { border: '1px dashed #E4E0D6', color: '#5B6079' } : { color: '#5B6079' }) });
+    const men = (m) => ({ fontFamily: M, fontSize: '11px', ...(m === 'No' ? { fontWeight: 600 } : { color: '#5B6079' }) });
+    const competitors = [
+      { name: 'vLLM', cat: 'open-source serving', mentioned: 'No', threat: 'Red ocean', switch: 'zero differentiation', sources: '5 →', menStyle: men('No'), threatStyle: tw('Red ocean'), onEx: ex('idea') },
+      { name: 'NVIDIA Triton', cat: 'inference server', mentioned: 'No', threat: 'Intercepting', switch: '10–20% better', sources: '4 →', menStyle: men('No'), threatStyle: tw('Intercepting'), onEx: ex('idea') },
+      { name: 'AWS SageMaker', cat: 'cloud ML platform', mentioned: 'No', threat: 'Intercepting', switch: 'crosses 10×', sources: '4 →', menStyle: men('No'), threatStyle: tw('Intercepting'), onEx: ex('idea') },
+      { name: 'BentoML', cat: 'ML deployment', mentioned: 'No', threat: 'Niche', switch: '10–20% better', sources: '3 →', menStyle: men('No'), threatStyle: tw('Niche'), onEx: ex('idea') },
+      { name: 'Modal', cat: 'serverless GPU', mentioned: 'Yes', threat: 'Disruptive', switch: 'crosses 10×', sources: '2 →', menStyle: men('Yes'), threatStyle: tw('Disruptive'), onEx: ex('idea') },
+      { name: 'Baseten', cat: 'model hosting', mentioned: 'Yes', threat: '— not assessable', switch: '— not assessable', sources: '1 →', menStyle: men('Yes'), threatStyle: tw(null), onEx: ex('idea') }
+    ];
+
+    const digQuestions = [
+      { n: '01', q: 'Can you walk us through your work history in retail prior to 2021?', gap: 'the contradiction between the deck’s “six years payments infrastructure” and the employment record' },
+      { n: '02', q: 'How many design partners are running the gateway in production today, and which ones can we call?', gap: 'the conflict between “nine design partners” (deck) and “closed alpha, two pilots” (README)' },
+      { n: '03', q: 'Who owns the buying decision for on-prem inference at your two pilots?', gap: 'enterprise traction — not searchable; no data source can test it' },
+      { n: '04', q: 'Have you raised before, on any terms?', gap: 'prior funding — not disclosed; a yes/no closes it in one email' },
+      { n: '05', q: 'What breaks first at 10× fleet size, and how do you know?', gap: 'insider-granularity insight (X5) — never assessed; this answer would produce the evidence' }
+    ];
+
+    const notChecked = [
+      { what: 'Employment history against a primary record', trigger: 'LinkedIn channel authorization (documented, not connected)' },
+      { what: 'Public communication under pressure', trigger: 'the interview flow — its transcript feeds criterion L5 automatically' }
+    ];
+    const notDisclosed = [
+      { what: 'Cap table', closes: 'A cap table or SAFE summary from the founder would close this. Comparable pre-seeds in this sector run 10–15% ESOP with one prior angel round.' },
+      { what: 'Revenue', closes: 'Any signed order form or a paid-invoice export would close this. Pre-revenue is a fine answer; we just need it stated.' },
+      { what: 'Prior funding', closes: 'A yes/no from the founder closes this in one email.' }
+    ];
+
+    const rules = [
+      { label: 'Excluded sector: gambling, adtech', cond: 'sector in [gambling, adtech]', kind: 'deal_breaker', enf: 'hard', w: 'flag' },
+      { label: 'B2B focus', cond: 'business_model eq b2b', kind: 'focus', enf: 'soft', w: '25' }
+    ];
+
+    const EX = this.explains();
+    const exp = EX[S.explain] || null;
+    const chipStyles = {
+      rule: { fontFamily: M, fontSize: '11px', background: '#F1EEE8', padding: '2px 8px' },
+      hyb: { fontFamily: M, fontSize: '11px', background: '#F1EEE8', border: '1px dashed #5B6079', padding: '2px 8px' },
+      model: { fontFamily: M, fontSize: '11px', color: '#5B6079', border: '1px solid #E4E0D6', borderRadius: '999px', padding: '2px 10px' }
+    };
+    const chipLabels = { rule: '▦ RULE — a published formula computed it from stored inputs. Reproducible.', hyb: '▦◇ RULE ON MODEL INPUT — deterministic arithmetic; at least one input was judged by a model.', model: '◇ MODEL — a language model read evidence and produced this judgement. Not reproducible.' };
+    const expVals = exp ? {
+      title: exp.title, what: exp.what,
+      chipStyle: exp.chip ? chipStyles[exp.chip] : { fontSize: '11px', color: '#5B6079' },
+      chipLabel: exp.chip ? chipLabels[exp.chip] : 'channel record — no number is produced here',
+      isFormula: !!exp.formula,
+      formula: (exp.formula || []).map((f, i) => ({ ...f, bt: i === 0 ? 'none' : '1px solid #F1EEE8', onEx: () => {} })),
+      model: !!exp.modelName, modelName: exp.modelName || '', modelAsked: exp.modelAsked || '', modelShown: exp.modelShown || '',
+      hyb: exp.chip === 'hyb' || exp.chip === 'rule',
+      evidence: exp.evidence || [], unknowns: exp.unknowns || [],
+      auditWhen: exp.audit.when, auditCheck: exp.audit.check, auditRun: exp.audit.run
+    } : { evidence: [], unknowns: [], formula: [] };
+
+    return {
+      navFeed: nav('feed'), navWatch: nav('watch'), navThesis: nav('thesis'), navMemo: nav('memo'), navFounder: nav('founder'),
+      isFeed: screen === 'feed', isWatch: screen === 'watch', isFounder: screen === 'founder', isMemo: screen === 'memo', isThesis: screen === 'thesis',
+      feedFilters, channels, showPlan, understood, unresolved, lanes, floorRows, watchRows,
+      exFounderAxis: ex('founderAxis'), exMarket: ex('market'), exIdea: ex('idea'), exClaimTrust: ex('claimTrust'), exCardTrust: ex('cardTrust'), exFounderScore: ex('founderScore'), exFit: ex('fit'),
+      contradictions, contraOpen: S.contraOpen, contraChev: S.contraOpen ? '▾' : '▸', toggleContra: () => this.setState({ contraOpen: !S.contraOpen }),
+      scoreScored: !scoreEmpty, scoreEmpty, scoreOpen: S.scoreOpen, scoreChev: S.scoreOpen ? '⌃' : '⌄', toggleScore: () => this.setState({ scoreOpen: !S.scoreOpen }), ledger,
+      tabs, tabEvidence: S.tab === 'evidence', tabMarket: S.tab === 'market', tabCompetition: S.tab === 'competition', tabInterview: S.tab === 'interview', tabUnknown: S.tab === 'unknown',
+      evFilters, evShowing, evTopics: topics, competitors,
+      segVerified: (e) => { e.stopPropagation(); this.setState({ screen: 'founder', tab: 'evidence', evFilter: 'All', explain: null }); },
+      segRefuted: (e) => { e.stopPropagation(); this.setState({ screen: 'founder', tab: 'evidence', evFilter: 'Refuted', explain: null }); },
+      segNotDisclosed: (e) => { e.stopPropagation(); this.setState({ screen: 'founder', tab: 'evidence', evFilter: 'Not disclosed', explain: null }); },
+      segUnchecked: ex('cardTrust'), digQuestions, notChecked, notDisclosed, rules,
+      enfHard: S.enfHard, onEnf: (e) => this.setState({ enfHard: e.target.value === 'hard' }),
+      explainOpen: !!exp, exp: expVals, closeExplain: () => this.setState({ explain: null })
+    };
+  }
+}
+
+</script>
+</body>
+</html>
