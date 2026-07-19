@@ -40,7 +40,7 @@
 | 03 | founder-score | **done** (11/11 tasks, QA gate PASSED, commit `f64b66b`; ⚠️ shared DB files uncommitted — see OPEN below) | 01-schema | 05, 06 | 1 |
 | 04 | market-trend-competition | **done** (QA gate PASSED · 141 unit tests + adversarial gate · commits `a130c03`/`2be26f9` · n8n `f04-market-intel`/`f04-competition-intel`/`f04-db-write` · see `04-market-trend-competition/handoff.md`; 3 known-open non-blocking items NEW-1..3 recorded there) | 01-schema (no schema additions needed) | 05, 06 | 1 |
 | 07 | thesis-engine | **done** (QA report present, `handoff.md` written) | 01-schema | 02 (gate), 09 | 1 |
-| 05 | truth-gap-trust | **spec** (design.md written ~09:30, in spec review; approach B — full claim router) | 03 & 04 output contracts | 06 | 2 |
+| 05 | truth-gap-trust | **in-build** (core done & committed `f0c2b90`/`8895ae9`/`875f4ae` · 147 tests · `claim_trust` view live · n8n `f05-trust-rollup` `Wtd887vYwv5x3FvH` active · QA pass 1 returned 2 findings, both in fix) | 03 & 04 output contracts | 06 | 2 |
 | 08 | founder-intake (compact B) | backlog | 01-schema, 02 (pre-fill sub-workflows) | 11 | 2 |
 | 10 | api-cli-skill | backlog | 01-schema (PostgREST); webhooks land per-feature | 09 (NL-search UI) | 2 |
 | 06 | memo-decision | backlog | 03, 04, 05 | 09 | 3 |
@@ -505,3 +505,145 @@ stash stack is the actual hazard here, not any single command.
 Feature 08's work is now committed as `8c44e9e`. Some of it was also swept into feature 10's
 `91c984a`, which committed the shared index — no harm done, recorded so the history reads
 sensibly later.
+
+## 2026-07-19 — task A1e (database-engineer) — `radar_candidates` vs `lib/f02/obscurity.js`, negative-karma divergence FIXED + a live duplicate-founder-card leak found and fixed
+
+Cross-feature defect, taken by database-engineer because terminal 10's task A1a guard is what
+caused the divergence and feature 02 has no live terminal. Two independent items, both inside
+`db/schema.sql`'s `radar_candidates` view.
+
+### Item 1 — negative `hn_karma` disagreement (the assigned defect)
+
+**Measured divergence was ONLY the negative case.** `isObserved(v) = isFiniteNumber(v) && v >= 0`
+in `lib/f02/obscurity.js`, so zero was already agreed on by both sides; only `hn_karma < 0`
+diverged. Before this fix: for founder `d2e2c8fb-3abc-4f31-9c65-66ecc16066e4` (real data,
+`hn_karma=-2`, `gh_followers=4`), the view returned `0.8835` / `{gh_followers,hn_karma}` while the
+library returned `0.767` / `{gh_followers}`; for negative karma alone, the view returned `1.0` /
+`{hn_karma}` while the library returned `null` / `null`.
+
+**Cause:** task A1a's log-domain guard (`GREATEST(hn_karma, 0)`) was the right fix for the abort
+(`log(-1)` raises `cannot take logarithm of a negative number`), but it silently changed the
+*semantics* of a negative reading from "unobserved" to "observed and maximally obscure" — it fixed
+the crash and introduced a quieter bug in the same edit.
+
+**Ruling applied — negative karma is UNOBSERVED, matching the library exactly, library unchanged.**
+The karma term (and, symmetrically, the follower term, which cannot go negative today but gets the
+same guard for free) now returns NULL for a negative input: excluded from the mean, dropped from
+`obscurity_basis`. If both terms end unobserved, `obscurity` is NULL. Rationale, recorded in the
+view's comment: the metric maps *positive visibility* onto an obscurity scale, so its domain is
+`karma >= 0`. A negative value is **out of that domain** — it says the person was seen and poorly
+received (downvoted), which is information about reception, not discovery. Calling that "maximally
+obscure" asserts nobody found them, which is demonstrably false for a downvoted account. The term is
+therefore undefined, not extremal — the view's own header rule already says it plainly: *"Absence
+must SHRINK the term count the mean is taken over, never contribute a value to it."*
+
+**Implementation, `db/schema.sql`, `radar_candidates`'s `obscurity_terms` CTE:** each term's `CASE`
+now has an explicit `WHEN x < 0 THEN NULL` branch ahead of the computed branch, so the A1a
+`GREATEST` guard sits belt-and-braces *inside* the non-negative branch only — no evaluation order
+can ever route a negative value into `log()`, even though that branch is now unreachable for
+negatives by construction. Nothing else changed: not the formula shape, not the 3/4 divisors, not
+the NULL-vs-0 semantics for a genuinely-absent metric, not `obscurity_basis`'s four-value contract.
+`obscurity` still feeds no `scores` axis.
+
+**Verified, comparison table (view's CASE logic run directly against synthetic inputs, vs
+`computeObscurity()`) — all 7 cases agree on value AND basis:**
+
+| case | gh_followers | hn_karma | value (both sides) | basis (both sides) |
+|---|---|---|---|---|
+| negative karma alone | — | −2 | `null` | `null` |
+| negative karma + gh_followers | 4 | −2 | `0.767` | `{gh_followers}` |
+| zero karma | — | 0 | `1.0` | `{hn_karma}` |
+| NULL karma, both absent | — | — | `null` | `null` |
+| gh_followers only | 4 | — | `0.767` | `{gh_followers}` |
+| both absent | — | — | `null` | `null` |
+| both present (non-negative) | 4 | 50 | `0.6701` | `{gh_followers,hn_karma}` |
+
+Live: `api_founders` for `d2e2c8fb-3abc-4f31-9c65-66ecc16066e4` now returns `0.767` /
+`{gh_followers}` (was `0.8835` / `{gh_followers,hn_karma}`) — this founder was rendering as
+maximally undiscovered and sorting to the top of any obscurity-ranked feed; downvoted-but-visible
+now reads correctly as "one term observed," not "unseen."
+
+`select count(*), count(obscurity) from radar_candidates` still succeeds (123 total, 118 with
+obscurity) — the count(obscurity) shape is what would have caught a reintroduced abort;
+`count(*)` alone would not. Added a locked regression case to `lib/f02/obscurity.test.js`
+(`node --test lib/f02/*.test.js` — glob form — 266/266 pass) and two `DO $$` guards to
+`db/tests/smoke.sql` pinning the exact founder value and the 7-case agreement shape; both run
+inside the file's single rolled-back transaction, `psql -v ON_ERROR_STOP=1 -f db/tests/smoke.sql`
+green.
+
+### Item 2 — `cards` has no unique constraint on `(founder_id, card_type)`: proven, not just latent
+
+Per the assignment, **proved by injection rather than reading the SQL**: inside a rolled-back
+transaction, inserted a second `card_type='founder'` row for an existing founder with a *different*
+`company_id`/`application_id` from its existing card, then checked both views.
+
+**`api_founders` was already safe — proven, not just theorized.** Its `founder_cards` CTE (task
+A1c) already used `DISTINCT ON (founder_id) ... ORDER BY created_at DESC, id DESC`, and every other
+CTE it joins (`radar`, `first_seen`, `founder_score_latest`) is either independent of `cards` or a
+pure function of `founder_id` that collapses under a plain `DISTINCT`. `api_founders` returned
+124/124 distinct rows, one row, correctly resolved to the *latest* card's `company_id`/
+`application_id` (the documented tiebreak), no blend.
+
+**`radar_candidates` was NOT safe — this was live, not latent.** Its `FROM cards c ... WHERE
+c.card_type='founder'` had no dedup of any kind. The injection reproduced the leak exactly:
+`radar_candidates` returned **2 rows** for the one founder, one row per card, each carrying a
+different `company_id`/`application_id` — a real duplicate-and-blend surface, not a hypothetical
+one. And `freshness` — which exists on `radar_candidates` but was deliberately dropped from
+`api_founders` (feature 10's design) — is exposed to this exact duplication: if feature 09 reads
+`radar_candidates` directly for that column, it would have seen the founder twice.
+
+**Fixed:** introduced a `founder_card` CTE in `radar_candidates` — `DISTINCT ON (founder_id) ...
+ORDER BY c.founder_id, c.created_at DESC, c.id DESC`, the identical convention `api_founders`'
+`founder_cards` CTE already uses — and changed the view's final `FROM cards c` to `FROM
+founder_card c`. Re-ran the same injection against the fixed view: `radar_candidates` now returns
+exactly 1 row, correctly picked the latest card's `company_id`/`application_id`, and agrees with
+`api_founders`' independently-derived values for the same founder (both resolved to the injected
+card, matching by construction now that both use the same tiebreak). Added a permanent smoke
+regression (`db/tests/smoke.sql`, right after the A1a/A1e obscurity guards, before the A1d
+total-wipe guard since that one intentionally runs last) that injects a second founder card with a
+real `company_id`/`application_id` and asserts both the row count and the resolved values.
+
+**Files touched:** `db/schema.sql` (`radar_candidates` view, both items), `db/tests/smoke.sql`
+(three new `DO $$` regression guards), `lib/f02/obscurity.test.js` (one new locked regression
+case). No changes to `lib/f02/obscurity.js` — it was already correct; the SQL was brought into line
+with it. Schema re-applied via `db/apply.sh` and reverified against the live self-hosted Supabase
+instance, not just read. No commit made — @devops handles git per this project's rules.
+
+## 2026-07-19 ~11:20 · 08 — CROSS-CUTTING: OpenAI strict structured output rejects most of JSON Schema
+
+If your feature sends a `json_schema` response format with `"strict": true` (05, 06 and anything
+else doing structured extraction), read this before you debug it the hard way. Feature 08's
+extractor call failed with a bare HTTP 400 that says nothing useful until you replay the request
+yourself:
+
+```
+invalid_json_schema — "In context=('properties','founder_identity'),
+                       'oneOf' is not permitted."
+```
+
+**Four violations, all of which a perfectly valid JSON Schema can contain:**
+
+1. **`oneOf` and `allOf` are rejected.** Only `anyOf` is supported.
+2. **String/array/number constraints are rejected** — `minLength`, `maxLength`, `pattern`,
+   `format`, `minItems`, `maxItems`, `minimum`, `maximum`, `uniqueItems`, `default`, `examples`.
+3. **`required` must list EVERY property**, not just the mandatory ones, and every object needs
+   `additionalProperties: false` — including objects nested inside `anyOf` branches.
+4. **A free-form object is impossible.** `{"type":["object","null"]}` with no `properties` cannot
+   be expressed: strict mode demands `additionalProperties:false`, which would permit only `{}`.
+   Use a JSON **string** and parse it downstream — a `jsonb` column stores that fine.
+
+**Fix it in the generator, not by hand-editing the JSON.** 08 puts a recursive `strictify(schema)`
+in `n8n/build-f08-workflow.py` and runs every agent schema through it at embed time, so a rebuild
+cannot reintroduce the problem. Hand-edited JSON will silently regress the moment anyone
+regenerates.
+
+**Why unit tests will never catch this:** the schema is valid JSON Schema and passes every local
+validator. It is only invalid *for this API*. The only thing that finds it is replaying the real
+request body against the real endpoint — worth doing once per agent before wiring it into a
+workflow, rather than discovering it inside a 20-node execution trace.
+
+**Diagnostic recipe that worked**, for whoever hits an opaque LLM-node failure: pull
+`__openai_request_body` (or your equivalent) straight out of
+`GET /api/v1/executions/{id}?includeData=true`, write it to a file, and `curl --data @file`
+against the API. n8n's node error surface showed nothing; the API said exactly what was wrong in
+one line.
