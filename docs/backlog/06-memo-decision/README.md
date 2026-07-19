@@ -27,7 +27,7 @@ workflow, rendered in the dashboard, exportable.
   thesis, market analysis, clear proceed/pass, full citation trail auditable by IC/LPs.
 - Benchmark valuation instead of made-up numbers (REC-015): «similar startup in this
   category/period raised X at Y» — fills Financials honestly when real numbers are absent.
-- e/acc thesis-template: two blocks — value mechanism + «why now» timing (goes into
+- Thesis-template: two blocks — value mechanism + «why now» timing (goes into
   Investment hypotheses). vcbrain `vc-memo-writer` prompts as reference.
 
 ## Implementation view

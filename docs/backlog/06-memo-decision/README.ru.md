@@ -31,7 +31,7 @@ Status: backlog · Depends on: 03, 04, 05
   IC/LP.
 - Benchmark-оценка вместо выдуманных цифр (REC-015): «похожий стартап в этой
   категории/периоде поднял X по Y» — честно заполняет Financials, когда реальных цифр нет.
-- e/acc thesis-template: два блока — механизм ценности + тайминг «why now» (идёт в Investment
+- Thesis-template: два блока — механизм ценности + тайминг «why now» (идёт в Investment
   hypotheses). Промпты vcbrain `vc-memo-writer` как референс.
 
 ## Взгляд на реализацию

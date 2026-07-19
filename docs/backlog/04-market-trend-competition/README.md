@@ -1,6 +1,22 @@
 # 04 · Market, Trend & Competition Intel
 
-Status: backlog · Depends on: 01 · Operator-requested (Jul 19)
+Status: **DONE** — QA gate PASSED (2026-07-19). Depends on: 01 · Operator-requested (Jul 19)
+
+> **Artifacts:** [design.md](design.md) rev.3 (3 spec-review rounds) · [plan.md](plan.md) rev.2 ·
+> [tracker.md](tracker.md) · [qa-report-04.md](qa-report-04.md) · [handoff.md](handoff.md) —
+> **read handoff.md before consuming 04's output in features 05/06/09/10.**
+>
+> **Built:** `lib/f04/{config,scoring,provenance}.js` (141 unit tests) · three n8n workflows —
+> `f04-market-intel` (111 nodes), `f04-competition-intel` (64), `f04-db-write` (7) ·
+> three AI agent artifact sets in [agents/](agents/), schemas verified against the live OpenAI
+> API in strict mode.
+>
+> **Verified end-to-end** on a real Show HN pre-seed company (deckless radar entry): found
+> MEDITECH / Oracle Health / Epic / Microsoft Nuance DAX — none named by the founder, which is
+> the feature's headline output — and wrote honest `missing` claims for TAM, growth and why-now
+> rather than inventing them. `market.outlook` rendered `undetermined`, not a confident
+> `neutral`, on an unresearched category. **Zero schema migrations** — competitors live as
+> `claims` per 01 design §9.
 
 ## What it is
 
@@ -37,7 +53,7 @@ company card and feed the memo.
   collector→curator→enricher→grounding→briefing; port its stage logic into n8n nodes.
   Thesis-Agent README: 13-dim scoring, «why now» timing thesis. dealscout README: Market/
   Product/Traction analysts debating.
-- e/acc KB: thesis-template «two blocks: value mechanism + why-now timing» (screening →
+- Thesis-template «two blocks: value mechanism + why-now timing» (screening →
   memo structure).
 
 ## Implementation view
