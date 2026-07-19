@@ -1923,4 +1923,369 @@ BEGIN
   END IF;
 END $$;
 
+-- ============================================================================
+-- Feature 05 (truth-gap / trust) -- claim_trust view + f05_host() + the
+-- trust_v1 score_formulas row. docs/backlog/05-truth-gap-trust/design.md
+-- SS4, SS7, SS10. Id range 0950-0959 (reserved; 01 uses 0901-0930, 07 uses
+-- 0970-0979). Fixture claims attach to the existing founder card ...602
+-- (Task 6 above) -- no new founder/company/card needed. Evidence rows use
+-- gen_random_uuid() ids (never looked up by id below, only via claim_id), so
+-- only the claim ids themselves are drawn from the reserved range.
+-- ============================================================================
+
+-- Positive: the trust_v1 config row landed with its router + trust blocks
+-- intact (structural check, same style as Task 3's registry assertions).
+DO $$
+DECLARE
+  v_prefix_count int;
+  v_default_class text;
+BEGIN
+  SELECT jsonb_array_length(config -> 'router' -> 'prefix_map'), config -> 'router' ->> 'default_class'
+    INTO v_prefix_count, v_default_class
+  FROM score_formulas WHERE version = 'trust_v1' AND axis = 'trust' AND active;
+
+  IF v_prefix_count IS NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: no active trust_v1 score_formulas row found (db/seed.sql should have inserted one)';
+  END IF;
+  IF v_prefix_count < 20 THEN
+    RAISE EXCEPTION 'smoke FAIL: trust_v1 router.prefix_map expected >= 20 entries (design.md SS4.1 has 22), got %', v_prefix_count;
+  END IF;
+  IF v_default_class <> 'unverifiable' THEN
+    RAISE EXCEPTION 'smoke FAIL: trust_v1 router.default_class expected unverifiable (fail-safe), got %', v_default_class;
+  END IF;
+END $$;
+
+-- Positive: claim_trust carries exactly one row per claim -- a LEFT-JOIN-only
+-- construction (claim_router, claim_evidence both built off `FROM claims`
+-- with LEFT JOINs) so no claim is ever dropped, regardless of router match or
+-- evidence presence. Re-checked below, after this section's own fixtures
+-- land, to prove the invariant holds with fresh claims added too, not just at
+-- this snapshot.
+DO $$
+DECLARE
+  v_claims int;
+  v_view   int;
+BEGIN
+  SELECT count(*) INTO v_claims FROM claims;
+  SELECT count(*) INTO v_view FROM claim_trust;
+  IF v_view <> v_claims THEN
+    RAISE EXCEPTION 'smoke FAIL: claim_trust has % rows but claims has % -- every claim must appear exactly once', v_view, v_claims;
+  END IF;
+END $$;
+
+-- Fixture A: a qualitative-class claim (founder.expertise.*) carrying a
+-- STRONG documented, independently-sourced support -- the exact regression
+-- design.md SS7.1 measured live (373 sourced supports on qualitative topics
+-- that an evidence-only formula would render 'verified' on day one). The
+-- trust NUMBER is still computed from that evidence (SS7.1: "the trust
+-- number is still computed and still shown"); only the VERDICT is withheld.
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000950', '00000000-0000-0000-0000-000000000602',
+    'founder.expertise.f05smoke_strong', 'Smoke: qualitative claim with a strong sourced support.', 'public'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, strength, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000950', 'supports', 'documented', 0.95,
+    'https://github.com/ada-lovelace-01', (SELECT id FROM raw_signals WHERE source = 'github_api' LIMIT 1),
+    'f05-smoke-0950-supports-a'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_class  text;
+  v_status text;
+  v_trust  numeric;
+BEGIN
+  SELECT router_class, derived_status, trust INTO v_class, v_status, v_trust
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000950';
+
+  IF v_class <> 'qualitative' THEN
+    RAISE EXCEPTION 'smoke FAIL: founder.expertise.* expected router_class=qualitative, got %', v_class;
+  END IF;
+  IF v_status <> 'unverified' THEN
+    RAISE EXCEPTION 'smoke FAIL: SS7.1 regression -- qualitative claim with a strong sourced support rendered derived_status=%, expected unverified (the verdict must never be granted regardless of evidence)', v_status;
+  END IF;
+  -- base 0.95 * independence_factor 0.70 (n_independent=1: 0.70+0.15*0) - 0 penalty = 0.665.
+  IF v_trust IS DISTINCT FROM 0.6650 THEN
+    RAISE EXCEPTION 'smoke FAIL: qualitative claim trust NUMBER expected 0.6650 (still computed from real evidence), got %', v_trust;
+  END IF;
+END $$;
+
+-- Fixture B: factual_static claim, one documented contradicts, zero supports
+-- -- SS7.4 row "contradicts at tier documented > 0 (no supports)" -> contradicted.
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000951', '00000000-0000-0000-0000-000000000602',
+    'founder.execution.f05smoke_contradicted', 'Smoke: factual_static claim contradicted at documented tier.', 'public'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, strength, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000951', 'contradicts', 'documented', 0.80,
+    'https://example.com/counter-evidence', (SELECT id FROM raw_signals WHERE source = 'github_api' LIMIT 1),
+    'f05-smoke-0951-contradicts-a'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_class  text;
+  v_status text;
+BEGIN
+  SELECT router_class, derived_status INTO v_class, v_status
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000951';
+
+  IF v_class <> 'factual_static' THEN
+    RAISE EXCEPTION 'smoke FAIL: founder.execution.f05smoke_contradicted expected router_class=factual_static (catch-all), got %', v_class;
+  END IF;
+  IF v_status <> 'contradicted' THEN
+    RAISE EXCEPTION 'smoke FAIL: documented-tier contradiction with no supports expected derived_status=contradicted, got %', v_status;
+  END IF;
+END $$;
+
+-- Fixture C: qualitative claim, one INFERRED-tier contradicts, zero supports
+-- -- reproduces the live founder.expertise.insight case (design.md SS14):
+-- must stay unverified (never contradicted) AND apply zero trust penalty
+-- (n_contradicts_counting excludes inferred/missing tier, SS7.2).
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000952', '00000000-0000-0000-0000-000000000602',
+    'founder.expertise.f05smoke_inferred', 'Smoke: qualitative claim with an inferred-tier contradiction only.', 'public'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, source_url, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000952', 'contradicts', 'inferred',
+    'https://example.com/weak-counter-evidence', 'f05-smoke-0952-contradicts-a'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_status    text;
+  v_penalty   numeric;
+BEGIN
+  SELECT derived_status, contradiction_penalty INTO v_status, v_penalty
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000952';
+
+  IF v_status = 'contradicted' THEN
+    RAISE EXCEPTION 'smoke FAIL: inferred-tier contradiction must never yield derived_status=contradicted (SS6.0 Tier-1-only rule)';
+  END IF;
+  IF v_penalty <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: inferred-tier contradiction expected zero contradiction_penalty (SS7.2 same tier gate as the verdict), got %', v_penalty;
+  END IF;
+END $$;
+
+-- Fixture D: factual_static claim, one documented contradicts AND one
+-- (weak, inferred-tier) supports -- SS7.4's mixed-evidence row sits ABOVE the
+-- flat-refutation row deliberately: ANY supports alongside a docdisc
+-- contradiction reads as conflicting, never flatly refuted, even when the
+-- supporting evidence itself is weak.
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000953', '00000000-0000-0000-0000-000000000602',
+    'founder.execution.f05smoke_mixed', 'Smoke: factual_static claim with both a documented contradiction and a weak support.', 'public'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, strength, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000953', 'contradicts', 'documented', 0.80,
+    'https://example.com/mixed-counter-evidence', (SELECT id FROM raw_signals WHERE source = 'github_api' LIMIT 1),
+    'f05-smoke-0953-contradicts-a'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, strength, source_url, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000953', 'supports', 'inferred', 0.50,
+    'https://example.com/mixed-weak-support', 'f05-smoke-0953-supports-a'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_status text;
+BEGIN
+  SELECT derived_status INTO v_status
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000953';
+
+  IF v_status <> 'partially_supported' THEN
+    RAISE EXCEPTION 'smoke FAIL: documented contradiction + any supports expected derived_status=partially_supported (mixed-evidence row outranks flat refutation), got %', v_status;
+  END IF;
+END $$;
+
+-- Fixture E: factual_static claim, one DISCOVERED-tier contradicts, zero
+-- supports -- SS7.4 "contradicts at tier discovered > 0" -> partially_supported
+-- (Tier-2 evidence caps below 'contradicted', SS6.0).
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000954', '00000000-0000-0000-0000-000000000602',
+    'founder.execution.f05smoke_discovered', 'Smoke: factual_static claim contradicted at discovered tier only.', 'public'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, strength, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000954', 'contradicts', 'discovered', 0.70,
+    'https://example.com/discovered-counter-evidence', (SELECT id FROM raw_signals WHERE source = 'hn_algolia' LIMIT 1),
+    'f05-smoke-0954-contradicts-a'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_status text;
+BEGIN
+  SELECT derived_status INTO v_status
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000954';
+
+  IF v_status <> 'partially_supported' THEN
+    RAISE EXCEPTION 'smoke FAIL: discovered-tier-only contradiction expected derived_status=partially_supported (Tier-1-only rule, SS6.0), got %', v_status;
+  END IF;
+END $$;
+
+-- Fixture F: factual_static claim, two documented supports from two
+-- INDEPENDENT sources (github_api + hn_algolia raw_signals, picked
+-- dynamically -- no new raw_signals rows needed) -- SS7.4's last row
+-- ("supports > 0 tier docdisc AND n_independent >= 1") -> verified, and the
+-- trust NUMBER is checked against SS7.2's formula exactly: base 0.90 (tier
+-- default, no strength override) x independence_factor 0.85
+-- (0.70 + 0.15*(2-1)) - 0 penalty = 0.765.
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000955', '00000000-0000-0000-0000-000000000602',
+    'founder.execution.f05smoke_verified', 'Smoke: factual_static claim with two independently-sourced documented supports.', 'public'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000955', 'supports', 'documented',
+    'https://github.com/verified-smoke-fixture', (SELECT id FROM raw_signals WHERE source = 'github_api' LIMIT 1),
+    'f05-smoke-0955-supports-a'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000955', 'supports', 'documented',
+    'https://news.ycombinator.com/verified-smoke-fixture', (SELECT id FROM raw_signals WHERE source = 'hn_algolia' LIMIT 1),
+    'f05-smoke-0955-supports-b'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_status  text;
+  v_trust   numeric;
+  v_indep   int;
+BEGIN
+  SELECT derived_status, trust, n_independent INTO v_status, v_trust, v_indep
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000955';
+
+  IF v_indep <> 2 THEN
+    RAISE EXCEPTION 'smoke FAIL: two distinct-source supports expected n_independent=2, got %', v_indep;
+  END IF;
+  IF v_status <> 'verified' THEN
+    RAISE EXCEPTION 'smoke FAIL: two independent documented supports expected derived_status=verified, got %', v_status;
+  END IF;
+  IF v_trust IS DISTINCT FROM 0.7650 THEN
+    RAISE EXCEPTION 'smoke FAIL: verified-claim trust NUMBER expected 0.7650 (0.90 base x 0.85 independence_factor), got %', v_trust;
+  END IF;
+END $$;
+
+-- Fixture G: an ALREADY-missing claim (REQ-004 first-class gap) that later
+-- gains a documented-tier contradiction -- SS7.4 "already missing and
+-- contradicts > 0" -> stays missing. The single most emphasized rule in the
+-- design: "a gap is never converted into an accusation."
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind, verification_status)
+  VALUES (
+    '00000000-0000-0000-0000-000000000956', '00000000-0000-0000-0000-000000000602',
+    'round.f05smoke_gap', 'Smoke: cap table not disclosed.', 'derived', 'missing'
+  );
+  INSERT INTO evidence (claim_id, relation, tier, strength, source_url, raw_signal_id, content_hash)
+  VALUES (
+    '00000000-0000-0000-0000-000000000956', 'contradicts', 'documented', 0.90,
+    'https://example.com/gap-counter-evidence', (SELECT id FROM raw_signals WHERE source = 'github_api' LIMIT 1),
+    'f05-smoke-0956-contradicts-a'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_status text;
+BEGIN
+  SELECT derived_status INTO v_status
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000956';
+
+  IF v_status <> 'missing' THEN
+    RAISE EXCEPTION 'smoke FAIL: REQ-004 violated -- an already-missing claim with a new documented contradiction rendered derived_status=%, expected missing (a gap must never become an accusation)', v_status;
+  END IF;
+END $$;
+
+-- Fixture H: a topic matching NONE of the 22 router prefixes -- the
+-- default_class fail-safe (design.md SS4.1). No evidence at all.
+DO $$
+BEGIN
+  INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
+  VALUES (
+    '00000000-0000-0000-0000-000000000957', '00000000-0000-0000-0000-000000000602',
+    'zzz_totally_unrecognized_topic_f05smoke', 'Smoke: a topic the router table does not know.', 'derived'
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_class  text;
+  v_status text;
+BEGIN
+  SELECT router_class, derived_status INTO v_class, v_status
+  FROM claim_trust WHERE claim_id = '00000000-0000-0000-0000-000000000957';
+
+  IF v_class <> 'unverifiable' THEN
+    RAISE EXCEPTION 'smoke FAIL: unmatched topic expected router_class=unverifiable (the fail-safe default_class), got %', v_class;
+  END IF;
+  IF v_status <> 'unverified' THEN
+    RAISE EXCEPTION 'smoke FAIL: unmatched topic (unverifiable class, not already missing) expected derived_status=unverified, got %', v_status;
+  END IF;
+END $$;
+
+-- Critical regression (design.md SS7.1, the reason this design exists):
+-- ZERO founder.expertise.*/founder.leadership.* claims may ever read
+-- derived_status='verified' -- 373 sourced supports exist on those topics
+-- live and must never render as verdicts. Re-checked here, after this
+-- section's own fixtures (including Fixture A above) have landed, so the
+-- assertion covers both the live corpus AND this file's own additions.
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM claim_trust
+  WHERE derived_status = 'verified'
+    AND (topic LIKE 'founder.expertise.%' OR topic LIKE 'founder.leadership.%');
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: REQ-004/SS7.1 violated -- % founder.expertise./founder.leadership. claim(s) rendered derived_status=verified, expected 0', v_count;
+  END IF;
+END $$;
+
+-- Row-count parity, re-checked with this section's 8 new claims in place
+-- (view construction is LEFT-JOIN-only end to end, so it must never drop a
+-- claim regardless of router match or evidence presence).
+DO $$
+DECLARE
+  v_claims int;
+  v_view   int;
+BEGIN
+  SELECT count(*) INTO v_claims FROM claims;
+  SELECT count(*) INTO v_view FROM claim_trust;
+  IF v_view <> v_claims THEN
+    RAISE EXCEPTION 'smoke FAIL: after Feature 05 fixtures, claim_trust has % rows but claims has % -- every claim must appear exactly once', v_view, v_claims;
+  END IF;
+END $$;
+
 ROLLBACK;

@@ -139,3 +139,34 @@ INSERT INTO theses (name, version, config, active, is_default) VALUES (
   true, true
 )
 ON CONFLICT (name, version) DO NOTHING;
+
+-- ============================================================================
+-- Feature 05 (truth-gap check / trust score): score_formulas row for the
+-- 'trust' axis. docs/backlog/05-truth-gap-trust/design.md SS4.1/SS7.2/SS7.4/
+-- SS8.2/SS12. This row is the SINGLE SOURCE OF TRUTH for the claim_trust
+-- view's router (schema.sql, appended after api_claims) -- the view's own
+-- literal fallback duplicates these same values only for the fresh-clone-
+-- before-seed case (design SS7.5) and must be kept in sync with this row.
+--
+-- router.prefix_map is copied VERBATIM from design SS4.1 (do not edit one
+-- copy without the other). trust.* are the SS7.2 formula constants. rollup.*
+-- and budget.* are read by a LATER task (B1's lib/f05/trust.js rollup and
+-- C3's Tavily branch, respectively, both docs/backlog/05-truth-gap-trust/
+-- plan.md Wave T0/T2) -- not consumed by this schema/view at all, seeded now
+-- because this row is the one place all of 05's constants live (design SS10).
+--
+-- rollup.min_coverage: 0.25 is design's own starting value ("must be
+-- re-derived against live data before being locked", SS8.2) -- plan.md task
+-- D2 owns the recalibration; this is deliberately the same placeholder 03
+-- shipped, not a re-derived number.
+-- budget.max_paid_checks_per_card: NOT given a number in design.md (SS12
+-- only says "capped per card in config") -- 5 is a conservative placeholder
+-- consistent with design's own ~40-50-paid-checks-total corpus estimate
+-- (SS4.2) spread across the applications that actually need a factual_dynamic
+-- check; C3 (plan.md Wave T2) owns re-deriving it against the live queue.
+INSERT INTO score_formulas (version, axis, config, active) VALUES (
+  'trust_v1', 'trust',
+  '{"router": {"prefix_map": [{"prefix": "founder.execution.merged_pr_foreign", "class": "factual_static", "check": "gh_merged_pr"}, {"prefix": "founder.execution.commit_consistency", "class": "factual_static", "check": "gh_commit_weeks"}, {"prefix": "founder.execution.provenance", "class": "factual_static", "check": "gh_provenance"}, {"prefix": "founder.execution.live_product", "class": "factual_static", "check": "url_liveness"}, {"prefix": "founder.execution.external_usage", "class": "factual_static", "check": "gh_dependents"}, {"prefix": "founder.execution.traction", "class": "factual_dynamic", "check": "web_traction"}, {"prefix": "founder.execution.", "class": "factual_static"}, {"prefix": "founder.expertise.", "class": "qualitative"}, {"prefix": "founder.leadership.", "class": "qualitative"}, {"prefix": "market.size_", "class": "forecast"}, {"prefix": "market.growth", "class": "factual_dynamic"}, {"prefix": "market.", "class": "qualitative"}, {"prefix": "competition.founder_claim_mismatch", "class": "precomputed"}, {"prefix": "competition.competitor", "class": "factual_static", "check": "competitor_exists"}, {"prefix": "competition.", "class": "qualitative"}, {"prefix": "company.geography_country", "class": "factual_static"}, {"prefix": "company.what_is_built", "class": "factual_dynamic"}, {"prefix": "company.stage_evidence", "class": "factual_dynamic"}, {"prefix": "company.sector", "class": "qualitative"}, {"prefix": "company.business_model", "class": "qualitative"}, {"prefix": "round.", "class": "unverifiable"}, {"prefix": "traction.", "class": "factual_dynamic"}], "default_class": "unverifiable"}, "trust": {"tier_default_strength": {"documented": 0.90, "discovered": 0.80, "inferred": 0.60, "missing": 0.00}, "independence_factor": {"no_source": 0.50, "base": 0.70, "step": 0.15, "max": 1.00}, "contradiction_penalty": {"per_item": 0.30, "cap": 0.80}}, "rollup": {"min_coverage": 0.25, "verdict_eligible_classes": ["factual_static", "factual_dynamic", "precomputed"]}, "budget": {"max_paid_checks_per_card": 5, "paid_router_class": "factual_dynamic"}}'::jsonb,
+  true
+)
+ON CONFLICT (version, axis) DO NOTHING;

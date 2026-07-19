@@ -1603,3 +1603,217 @@ WHERE NOT EXISTS (
   WHERE f.id = cd.founder_id
     AND (f.opt_out_at IS NOT NULL OR f.merged_into_founder_id IS NOT NULL)
 );
+
+-- ============================================================================
+-- Feature 05: claim_trust view + f05_host() helper
+-- (docs/backlog/05-truth-gap-trust/design.md SS4, SS7, SS10 -- the diligence
+-- layer's one piece of schema.) Per-claim trust "is always computed live from
+-- evidence and is never stored per company" (feature 01 design.md SS4.5) --
+-- this view IS that live computation, read by 06/09 straight through
+-- PostgREST at no cost. Appended last, same reasoning as radar_candidates/
+-- api_* above: a pure read-side view has no FK dependency of its own, only a
+-- data dependency on claims/evidence/raw_signals/score_formulas, all of which
+-- already exist by this point in the file.
+-- ============================================================================
+
+-- ---- f05_host(): simple hostname extraction -- NOT a public-suffix
+-- implementation (design.md SS7.3) -------------------------------------------
+--
+-- Registrable-domain (eTLD+1) extraction has no pure-SQL implementation, and
+-- this corpus does not need one: a founder's own repository is founder-
+-- controlled CONTENT on a non-founder DOMAIN (github.com), so counting at
+-- whole-hostname granularity is exactly the independence signal SS7.3 wants,
+-- not a shortcut around it. Strips scheme + userinfo + path/query/fragment,
+-- keeping only the host[:port] authority segment. NULL in, NULL out --
+-- SS7.3: "a NULL source_url collapses to one entry per slug, which is the
+-- intended behaviour" (DISTINCT groups every NULL-host row for a given
+-- source together as a single independence entry, never zero).
+CREATE OR REPLACE FUNCTION f05_host(p_url text) RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT lower((regexp_match(
+    p_url,
+    '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?(?:[^/@]*@)?([^/:?#]+)'
+  ))[1]);
+$$;
+
+-- ---- claim_trust: per-claim trust, computed live (design.md SS7) ----------
+--
+-- DROP before CREATE, not CREATE OR REPLACE (design.md SS10): this view will
+-- certainly be iterated during the build, and CREATE OR REPLACE VIEW fails
+-- 42P16 the moment a column's name/type/position changes -- schema.sql is
+-- shared with three other terminals, and a second ./db/apply.sh that errors
+-- would block all of them.
+DROP VIEW IF EXISTS claim_trust;
+CREATE VIEW claim_trust AS
+WITH trust_cfg AS (
+  -- Exactly one row: `one` always has 1 row, and uq_score_formulas_active_axis
+  -- (feature 03 schema addition) guarantees at most one ACTIVE score_formulas
+  -- row per axis, so this LEFT JOIN can never fan out. LEFT, not INNER
+  -- (design.md SS7.5): a fresh clone with schema.sql applied but seed.sql not
+  -- yet run must still produce a working view off the literal fallbacks below
+  -- -- an inner join here would make claim_trust return ZERO rows in that
+  -- state, and 06/09 would read "no claims" instead of an error.
+  SELECT
+    COALESCE(sf.config -> 'router' -> 'prefix_map', '[
+      {"prefix": "founder.execution.merged_pr_foreign",  "class": "factual_static",  "check": "gh_merged_pr"},
+      {"prefix": "founder.execution.commit_consistency", "class": "factual_static",  "check": "gh_commit_weeks"},
+      {"prefix": "founder.execution.provenance",         "class": "factual_static",  "check": "gh_provenance"},
+      {"prefix": "founder.execution.live_product",       "class": "factual_static",  "check": "url_liveness"},
+      {"prefix": "founder.execution.external_usage",     "class": "factual_static",  "check": "gh_dependents"},
+      {"prefix": "founder.execution.traction",           "class": "factual_dynamic", "check": "web_traction"},
+      {"prefix": "founder.execution.",                   "class": "factual_static"},
+      {"prefix": "founder.expertise.",                   "class": "qualitative"},
+      {"prefix": "founder.leadership.",                  "class": "qualitative"},
+      {"prefix": "market.size_",                         "class": "forecast"},
+      {"prefix": "market.growth",                        "class": "factual_dynamic"},
+      {"prefix": "market.",                              "class": "qualitative"},
+      {"prefix": "competition.founder_claim_mismatch",   "class": "precomputed"},
+      {"prefix": "competition.competitor",               "class": "factual_static",  "check": "competitor_exists"},
+      {"prefix": "competition.",                         "class": "qualitative"},
+      {"prefix": "company.geography_country",            "class": "factual_static"},
+      {"prefix": "company.what_is_built",                "class": "factual_dynamic"},
+      {"prefix": "company.stage_evidence",                "class": "factual_dynamic"},
+      {"prefix": "company.sector",                        "class": "qualitative"},
+      {"prefix": "company.business_model",                "class": "qualitative"},
+      {"prefix": "round.",                                 "class": "unverifiable"},
+      {"prefix": "traction.",                              "class": "factual_dynamic"}
+    ]'::jsonb)                                                          AS prefix_map,
+    COALESCE(sf.config -> 'router' ->> 'default_class', 'unverifiable') AS default_class,
+    COALESCE((sf.config #>> '{trust,tier_default_strength,documented}')::numeric, 0.90) AS tier_documented,
+    COALESCE((sf.config #>> '{trust,tier_default_strength,discovered}')::numeric, 0.80) AS tier_discovered,
+    COALESCE((sf.config #>> '{trust,tier_default_strength,inferred}')::numeric,  0.60) AS tier_inferred,
+    COALESCE((sf.config #>> '{trust,tier_default_strength,missing}')::numeric,   0.00) AS tier_missing,
+    COALESCE((sf.config #>> '{trust,independence_factor,no_source}')::numeric, 0.50) AS indep_no_source,
+    COALESCE((sf.config #>> '{trust,independence_factor,base}')::numeric,      0.70) AS indep_base,
+    COALESCE((sf.config #>> '{trust,independence_factor,step}')::numeric,      0.15) AS indep_step,
+    COALESCE((sf.config #>> '{trust,independence_factor,max}')::numeric,       1.00) AS indep_max,
+    COALESCE((sf.config #>> '{trust,contradiction_penalty,per_item}')::numeric, 0.30) AS contradiction_penalty_per,
+    COALESCE((sf.config #>> '{trust,contradiction_penalty,cap}')::numeric,      0.80) AS contradiction_penalty_cap
+  FROM (SELECT 1) one
+  LEFT JOIN score_formulas sf
+    ON sf.version = 'trust_v1' AND sf.axis = 'trust' AND sf.active
+),
+router_prefixes AS (
+  SELECT pm.value ->> 'prefix' AS prefix, pm.value ->> 'class' AS class
+  FROM trust_cfg, jsonb_array_elements(trust_cfg.prefix_map) AS pm(value)
+),
+claim_router AS (
+  -- Longest-prefix match (design.md SS4.1): among every router_prefixes row
+  -- whose prefix is a literal prefix of this claim's topic, the longest one
+  -- wins -- e.g. 'founder.execution.tech' matches only the 18-char
+  -- 'founder.execution.' catch-all (never a more specific leaf), while
+  -- 'founder.execution.merged_pr_foreign' matches its own 36-char leaf over
+  -- that same catch-all. starts_with(), not LIKE: several prefixes contain a
+  -- literal underscore (market.size_, merged_pr_foreign, ...) that LIKE would
+  -- read as a single-any-character wildcard rather than a literal char.
+  SELECT
+    c.id AS claim_id,
+    COALESCE(bestmatch.class, tc.default_class) AS router_class
+  FROM claims c
+  CROSS JOIN trust_cfg tc
+  LEFT JOIN LATERAL (
+    SELECT rp.class
+    FROM router_prefixes rp
+    WHERE starts_with(c.topic, rp.prefix)
+    ORDER BY length(rp.prefix) DESC
+    LIMIT 1
+  ) bestmatch ON true
+),
+claim_evidence AS (
+  SELECT
+    c.id AS claim_id,
+    count(*) FILTER (WHERE e.relation = 'supports')                                             AS n_supports,
+    count(*) FILTER (WHERE e.relation = 'supports' AND e.tier IN ('documented', 'discovered'))   AS n_supports_docdisc,
+    count(*) FILTER (WHERE e.relation = 'contradicts')                                           AS n_contradicts,
+    count(*) FILTER (WHERE e.relation = 'contradicts' AND e.tier = 'documented')                 AS n_contradicts_documented,
+    count(*) FILTER (WHERE e.relation = 'contradicts' AND e.tier = 'discovered')                 AS n_contradicts_discovered,
+    -- design.md SS7.2: n_contradicts_counting uses the SAME tier gate as the
+    -- verdict (SS7.4) -- a contradiction too weak to change the verdict
+    -- (inferred/missing tier) is also too weak to move the trust number.
+    count(*) FILTER (WHERE e.relation = 'contradicts' AND e.tier IN ('documented', 'discovered')) AS n_contradicts_counting,
+    max(CASE WHEN e.relation = 'supports'
+              THEN coalesce(e.strength,
+                     CASE e.tier
+                       WHEN 'documented' THEN tc.tier_documented
+                       WHEN 'discovered' THEN tc.tier_discovered
+                       WHEN 'inferred'   THEN tc.tier_inferred
+                       ELSE tc.tier_missing
+                     END)
+         END)                                                                                    AS base,
+    -- design.md SS7.3, verbatim expression: independence counted off the
+    -- source SLUG, not the domain -- deck_parse/interview_answer excluded
+    -- entirely (self-reported material corroborates nothing). LEFT JOIN
+    -- raw_signals: an evidence row with no raw_signal_id resolves rs.source
+    -- to NULL, which the NOT IN filter below treats as unknown provenance
+    -- and excludes it -- never silently promoted to "independent".
+    count(DISTINCT (rs.source, f05_host(e.source_url)))
+      FILTER (WHERE e.relation = 'supports' AND rs.source NOT IN ('deck_parse', 'interview_answer'))
+                                                                                                   AS n_independent
+  FROM claims c
+  CROSS JOIN trust_cfg tc
+  LEFT JOIN evidence e     ON e.claim_id = c.id
+  LEFT JOIN raw_signals rs ON rs.id = e.raw_signal_id
+  GROUP BY c.id
+)
+SELECT
+  c.id                     AS claim_id,
+  c.card_id,
+  c.topic,
+  c.axis,
+  c.text_verbatim,
+  c.source_kind,
+  c.verification_status,
+  cr.router_class,
+  ce.n_supports,
+  ce.n_contradicts,
+  ce.n_contradicts_counting,
+  ce.n_independent,
+  round(ce.base, 4) AS base,
+  round(
+    CASE WHEN ce.n_independent = 0 THEN tc.indep_no_source
+         ELSE least(tc.indep_max, tc.indep_base + tc.indep_step * (ce.n_independent - 1))
+    END
+  , 4) AS independence_factor,
+  round(least(tc.contradiction_penalty_cap, tc.contradiction_penalty_per * ce.n_contradicts_counting), 4)
+    AS contradiction_penalty,
+  round(
+    greatest(0, least(1,
+      coalesce(ce.base, 0)
+      * (CASE WHEN ce.n_independent = 0 THEN tc.indep_no_source
+              ELSE least(tc.indep_max, tc.indep_base + tc.indep_step * (ce.n_independent - 1))
+         END)
+      - least(tc.contradiction_penalty_cap, tc.contradiction_penalty_per * ce.n_contradicts_counting)
+    ))
+  , 4) AS trust,
+  -- design.md SS7.4, evaluated top-down. The table's rows 1-3 collapse into
+  -- the first two WHENs below without changing the outcome: a class in
+  -- (qualitative,forecast,unverifiable) reads 'missing' when the underlying
+  -- claim already is, exactly like every other class does -- so testing
+  -- "already missing" FIRST, ahead of the class check, reaches the identical
+  -- verdict in one fewer branch. This is also what makes REQ-004 hold
+  -- structurally: an honest gap can never be reclassified as an accusation,
+  -- regardless of what a later verifier finds against it.
+  CASE
+    WHEN c.verification_status = 'missing' THEN 'missing'
+    WHEN cr.router_class IN ('qualitative', 'forecast', 'unverifiable') THEN 'unverified'
+    WHEN ce.n_contradicts_counting > 0 AND ce.n_supports > 0 THEN 'partially_supported'
+    -- design.md SS7.4 ruling: 04's competition.founder_claim_mismatch is
+    -- derived from deck-vs-search comparison, not Tier-1 behavioural evidence
+    -- under our own hierarchy (SS6.0), regardless of the raw tier value the
+    -- writer picked ("ruling made explicitly rather than left to the tier the
+    -- writer happens to pick") -- a precomputed-class contradiction is
+    -- therefore capped at partially_supported and never promoted to a flat
+    -- 'contradicted', which is why this checks ce.n_contradicts (any tier),
+    -- not the tier-gated n_contradicts_counting.
+    WHEN cr.router_class = 'precomputed' AND ce.n_contradicts > 0 THEN 'partially_supported'
+    WHEN ce.n_contradicts_documented > 0 THEN 'contradicted'
+    WHEN ce.n_contradicts_discovered > 0 THEN 'partially_supported'
+    WHEN ce.n_supports_docdisc > 0 AND ce.n_independent >= 1 THEN 'verified'
+    ELSE 'unverified'
+  END AS derived_status
+FROM claims c
+JOIN claim_router   cr ON cr.claim_id = c.id
+JOIN claim_evidence ce ON ce.claim_id = c.id
+CROSS JOIN trust_cfg tc;
