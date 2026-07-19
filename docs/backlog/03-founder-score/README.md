@@ -17,9 +17,11 @@ Status: **DONE** (2026-07-19, QA gate PASSED, commit `f64b66b`) · Depends on: 0
 > 0.06, **no score row invented** · Pieter (real, sources verified) → `scored` 67.96 / conf 0.63.
 > 77 unit tests, smoke green, QA gate passed 8/8 mandatory cases.
 >
-> ⚠️ **Outstanding:** `db/schema.sql`, `db/seed.sql`, `db/tests/smoke.sql` are applied locally but
-> **not yet committed** — feature 07's DDL is interleaved and one `smoke.sql` line is genuinely
-> shared. See the OPEN section in [../TRACKER.md](../TRACKER.md) for the resolution rule.
+> ✅ **Shared DB files: resolved.** They were briefly uncommitted (07's DDL was interleaved and one
+> `smoke.sql` line is genuinely shared), then lost in the ~06:45 working-tree wipe, then
+> reconstructed from the live database and committed as `edee0df` covering features 02+03+07.
+> Re-verified after restore: `purge_founder`'s `score_components` sweep and the `REVOKE TRUNCATE`
+> are both present, `apply.sh` + `smoke.sql` green, 77 unit tests pass, e2e replay unchanged.
 
 ## What it is
 

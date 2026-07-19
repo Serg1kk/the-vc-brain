@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f04/market-categorizer.output.json",
+  "title": "market-categorizer output",
+  "description": "Output of the f04 market-categorizer agent (gpt-5.6-luna). data.category is written verbatim as the value JSONB of the market.category claim (design.md 3.2). No field in this schema may contain a numeric quantity: this agent runs before any web search and therefore holds no source_url for any number (design.md 9).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "data"
+  ],
+  "properties": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "ok",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "success",
+            "abstained",
+            "insufficient_input",
+            "processing_error"
+          ],
+          "description": "Finite set; the agent may not invent codes. 'abstained' is a COMPLETED job, not a failure (design.md 9: abstention is explicitly permitted)."
+        },
+        "ok": {
+          "type": "boolean",
+          "description": "true for both 'success' and 'abstained'; false for 'insufficient_input' and 'processing_error'. Consumer: the n8n IF node that routes to the gap-claim writer vs the error branch (design.md 4)."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Human-readable. Required non-empty for 'abstained', 'insufficient_input' and 'processing_error'; empty string for 'success'."
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "gaps"
+      ],
+      "properties": {
+        "category": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "canonical",
+            "raw",
+            "adjacent",
+            "icp",
+            "buyer_unit",
+            "buyer_concentration"
+          ],
+          "description": "Written verbatim as claims.value for topic 'market.category', axis 'market' (design.md 3.2). All six keys present in every response, including abstentions.",
+          "properties": {
+            "canonical": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 2,
+              "maxLength": 60,
+              "description": "Normalised category label, reused character-for-character from known_categories when a synonym exists, otherwise newly minted (design.md 9). Consumers: query templates Q2/Q3/Q5 (design.md 4), companies.category normalisation, memo category chip (design.md 11 / feature 06), dashboard Market tab chip (feature 09). null only when the agent abstained."
+            },
+            "raw": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 2,
+              "maxLength": 200,
+              "description": "The company's own category words, untidied. Kept alongside canonical because a fixed taxonomy alone forces novel startups into legacy buckets (design.md 9). Consumers: memo (feature 06), dashboard (feature 09)."
+            },
+            "adjacent": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 60
+              },
+              "description": "Neighbouring markets whose incumbents could serve the same buyer. Consumer: the adjacent-entrant discovery searches in f04-competition-intel (design.md 8). Empty array is valid; padding is a defect."
+            },
+            "icp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 300,
+              "description": "One sentence naming who pays and what qualifies them as a buyer. MUST NOT contain a quantity. Consumers: memo Company snapshot / Market sizing narrative (feature 06)."
+            },
+            "buyer_unit": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 3,
+              "maxLength": 80,
+              "description": "The countable noun a statistics office, trade association or registry would publish a count of. Consumer: query templates Q1 ('how many {buyer_unit} in {geography}') and Q2 ('{category} pricing per {buyer_unit} annual cost'), design.md 4. null when no countable noun is defensible; the query builder then SKIPS Q1/Q2 rather than substituting a generic noun, and the TAM band ends UNKNOWN (design.md 6.0/6.1)."
+            },
+            "buyer_concentration": {
+              "type": "string",
+              "enum": [
+                "concentrated",
+                "mid_market",
+                "long_tail",
+                "unknown"
+              ],
+              "description": "NON-AUTHORITATIVE QUERY HINT ONLY. The AUTHORITATIVE value is derived deterministically in the validator from the sizer's evidence-backed buyer_count using the < 10k / 10k-500k / > 500k tiers (design.md 6.2). On disagreement the derived value wins and missing_flags.concentration_revised = true. Never consumed as a finding; never used to set share_assumption directly. Emitted here only to shape pre-search query phrasing. 'unknown' is the correct value whenever buyer_unit is null or two bands are plausible."
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "description": "MANDATORY explicit gap declaration (design.md 9 \u2014 the deliberate inversion of company-research-agent's 'never mention no information found'). Every null or 'unknown' field above MUST have a matching entry. Consumers: the *.gap claim writer (design.md 3.2, verification_status='missing') and scores.missing_flags (design.md 3.7).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "reason_code",
+              "note"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "canonical",
+                  "raw",
+                  "adjacent",
+                  "icp",
+                  "buyer_unit",
+                  "buyer_concentration"
+                ]
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "no_product_description",
+                  "category_not_self_declared",
+                  "canonical_ambiguous",
+                  "no_countable_buyer_unit",
+                  "icp_not_determinable",
+                  "concentration_not_determinable"
+                ],
+                "description": "Closed vocabulary so the validator can map gaps to missing_flags keys deterministically. The agent may not invent codes."
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 300,
+                "description": "Optional free text explaining the gap. Rendered in the memo's honest-omission section (feature 06)."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "status": {
+        "code": "success",
+        "ok": true,
+        "message": ""
+      },
+      "data": {
+        "category": {
+          "canonical": "vertical accounting software",
+          "raw": "automated month-end close for community banks",
+          "adjacent": [
+            "fintech infrastructure",
+            "regulatory reporting software"
+          ],
+          "icp": "US community banks under $2B in assets with an in-house controller",
+          "buyer_unit": "US community banks",
+          "buyer_concentration": "concentrated"
+        },
+        "gaps": []
+      }
+    },
+    {
+      "status": {
+        "code": "abstained",
+        "ok": true,
+        "message": "No product description; one-liner is a slogan with no product content."
+      },
+      "data": {
+        "category": {
+          "canonical": null,
+          "raw": null,
+          "adjacent": [],
+          "icp": null,
+          "buyer_unit": null,
+          "buyer_concentration": "unknown"
+        },
+        "gaps": [
+          {
+            "field": "raw",
+            "reason_code": "no_product_description",
+            "note": "Slogan only; no deck claims present (radar_activated entry)."
+          },
+          {
+            "field": "canonical",
+            "reason_code": "no_product_description",
+            "note": ""
+          },
+          {
+            "field": "icp",
+            "reason_code": "icp_not_determinable",
+            "note": ""
+          },
+          {
+            "field": "buyer_unit",
+            "reason_code": "no_countable_buyer_unit",
+            "note": ""
+          },
+          {
+            "field": "buyer_concentration",
+            "reason_code": "concentration_not_determinable",
+            "note": "No buyer unit established, so no band can be hinted."
+          }
+        ]
+      }
+    },
+    {
+      "status": {
+        "code": "insufficient_input",
+        "ok": false,
+        "message": "company_name, one_liner and deck_claims all empty."
+      },
+      "data": {
+        "category": {
+          "canonical": null,
+          "raw": null,
+          "adjacent": [],
+          "icp": null,
+          "buyer_unit": null,
+          "buyer_concentration": "unknown"
+        },
+        "gaps": [
+          {
+            "field": "raw",
+            "reason_code": "no_product_description",
+            "note": "Empty input payload."
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -38,9 +38,9 @@
 | 01 | memory-data-model | **done** (12/12 tasks, QA gate PASSED, commit `fe20c83`) | — | everything | 0 |
 | 02 | sourcing-radar | **done** (QA gate PASSED round 3 · 265 tests · commits `edee0df`/`0ca3a87`/`fa07521`/`36cd27b` · n8n `qmViGGDMmEEN3XWH` · see `02-sourcing-radar/done.md`) | 01-schema, 07 (gate) | 08, 11 | 1 |
 | 03 | founder-score | **done** (11/11 tasks, QA gate PASSED, commit `f64b66b`; ⚠️ shared DB files uncommitted — see OPEN below) | 01-schema | 05, 06 | 1 |
-| 04 | market-trend-competition | **in-build** (design rev.3 ✅, plan rev.2 ✅, scoring core green, n8n deployed) | 01-schema (no schema additions needed) | 05, 06 | 1 |
+| 04 | market-trend-competition | **done** (QA gate PASSED · 141 unit tests + adversarial gate · commits `a130c03`/`2be26f9` · n8n `f04-market-intel`/`f04-competition-intel`/`f04-db-write` · see `04-market-trend-competition/handoff.md`; 3 known-open non-blocking items NEW-1..3 recorded there) | 01-schema (no schema additions needed) | 05, 06 | 1 |
 | 07 | thesis-engine | **done** (QA report present, `handoff.md` written) | 01-schema | 02 (gate), 09 | 1 |
-| 05 | truth-gap-trust | backlog | 03 & 04 output contracts | 06 | 2 |
+| 05 | truth-gap-trust | **spec** (design.md written ~09:30, in spec review; approach B — full claim router) | 03 & 04 output contracts | 06 | 2 |
 | 08 | founder-intake (compact B) | backlog | 01-schema, 02 (pre-fill sub-workflows) | 11 | 2 |
 | 10 | api-cli-skill | backlog | 01-schema (PostgREST); webhooks land per-feature | 09 (NL-search UI) | 2 |
 | 06 | memo-decision | backlog | 03, 04, 05 | 09 | 3 |
@@ -206,3 +206,34 @@ choosing what to parallelize.
      `not_met` verdict on criteria the evidence says nothing about. REQ-003 inverted.
   Reproduce: `select count(*) from raw_signals where founder_id is null and company_id is null;`
   and `select count(*) from evidence where raw_signal_id is null;`
+
+## Wave-1 closed · Wave-2 dispatch plan (orchestrator, 2026-07-19 ~08:50, T-7h to deadline)
+
+**Wave 0+1 are complete: 01, 02, 03, 04, 07 — all five with a PASSED QA gate.**
+04 was still marked «in-build» above until now; its gate passed and its code landed as
+`a130c03` + `2be26f9`. Its docs (`design.md`, `plan.md`, `handoff.md`, `qa-report-04.md`,
+`tracker.md`, `agents/`, `evidence/`) are still **untracked** — same git-hygiene gap as the
+🔴 OPEN section, to be swept into the next @devops commit.
+
+**Unblocked right now:** 05 (03+04 handoffs exist), 08 (01+02, `applications.artifact_links`
+shape frozen in `02/done.md`), 10 (01 schema is live), 09-design-track, 12-compose-base.
+
+**Recommended concurrency: 3 terminals, not 4.** The ~06:45 loss happened with four terminals
+writing shared files; 05 and 06 both touch scoring/claims paths, and every extra terminal adds
+another writer to `db/*.sql`, this file and the shared n8n instance. Three is the point where
+parallel gain stops paying for coordination risk at this hour.
+
+| Order | Feature | Why now | Notes for its terminal |
+|---|---|---|---|
+| **A (start first, critical path)** | **05 truth-gap-trust** | The only thing standing between here and 06 → 09. Everything downstream of it is serial. | Inherits 04's three open items (NEW-1..3) and 02's two ACTION-NEEDED items (NULL FKs on `tavily_extract` rows, NULL `evidence.raw_signal_id`) — those are 05's raw material, not bugs to route back. Sole writer of `scores(axis='trust')`. |
+| **B (longest lead time)** | **09 investor-dashboard — design track only** | UI is 15% of the rubric but 100% of the demo video. Its design phase needs no upstream data; only the wiring does. | @designer in-role brainstorm → design.md now; build starts when 06 lands. Do **not** let it block on 05/06. |
+| **C (pick one)** | **08 founder-intake** *or* **10 api-cli-skill** | 08 unblocks 11 (demo data + ethics/opt-out) and is a visible demo beat. 10 is thinner and can be squeezed later. | Default pick: **08**. Reads `applications.artifact_links` for pre-fill — additive extensions only. |
+
+**Serial after that:** 06 (needs 05) → 09 build → 11 (needs 08) → 12 final. 10 slots in
+anywhere it fits; if the clock tightens, 10 is the first to drop, then 09's polish — never
+05/06 (data + reasoning = 55% of the rubric).
+
+**Before dispatching anything:** @devops sweeps the untracked docs of 03 and 04 plus this file
+into one commit. Four terminals editing uncommitted shared files is exactly the ~06:45 setup.
+Also still unresolved and operator-only: 07's publication finding above (`docs/` is tracked and
+would go public on the first push) — **do not push until the operator rules on it.**

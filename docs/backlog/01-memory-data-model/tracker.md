@@ -67,3 +67,9 @@
   drafted same pass.
 - 2026-07-19 ~03:05 · commit 3c5269a (@devops): tasks 10-11 final. Tasks 1-11 ALL DONE;
   Task 12 (QA gate) running.
+- 2026-07-19 ~03:10 · Task 12: GATE FAILED — TRUNCATE hole (BEFORE triggers don't fire on
+  TRUNCATE; pg_default_acl grants it to anon/authenticated/service_role). Fix: REVOKE on
+  6 tables × 3 roles (+45th smoke block). QA re-verified independently (42501 for all 3
+  roles) → **GATE PASSED**.
+- 2026-07-19 ~03:15 · closing commit fe20c83 (@devops): TRUNCATE revoke + qa-report-01.md +
+  tracker close. **FEATURE 01 COMPLETE: 12/12 tasks, QA PASSED, 7 commits.**

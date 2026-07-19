@@ -1,0 +1,522 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f04/market-sizer.output.json",
+  "title": "market-sizer output",
+  "description": "Output of the f04 market-sizer agent (gpt-5.6-sol). size_bottom_up, size_top_down, growth and why_now are written verbatim as claims.value records (design.md 3.2). Every numeric field requires a matching evidence[] row carrying source_url and a word-for-word quote_verbatim; a number without one must not be emitted at all (design.md 9). The agent emits no score, band, verdict, implied exit value, outlook label or trend adjective \u2014 all of those are computed deterministically downstream (design.md 5, 6).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "data"
+  ],
+  "$defs": {
+    "sizeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tam_low",
+        "tam_high",
+        "currency",
+        "buyer_count",
+        "buyer_count_source_url",
+        "arpu_low",
+        "arpu_high",
+        "arpu_basis",
+        "assumptions",
+        "gaps"
+      ],
+      "description": "Shape of design.md 3.2 market.size_bottom_up / market.size_top_down claim values, field for field.",
+      "properties": {
+        "tam_low": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Conservative end of the TAM range, in `currency` units (absolute, not millions). CONSUMER: vc_rule_check TAM band (design.md 6.1 \u2014 applied to tam_low, NOT tam_high, because the generous end is what report-mill inflation attacks) and the venture-scale ceiling (design.md 6.2, tam_used = tam_low)."
+        },
+        "tam_high": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Generous end of the TAM range. CONSUMER: memo Market sizing section (feature 06) and the dashboard TAM range display (feature 09). Never a point estimate paired with tam_low: both endpoints must derive from real sourced anchors."
+        },
+        "currency": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 of the source figures. Mixed-currency sources must be converted with the conversion stated in assumptions[], never silently mixed."
+        },
+        "buyer_count": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Count of buyer_unit in geography, from a document that states it. CONSUMER: the AUTHORITATIVE buyer_concentration derivation in the validator (design.md 6.2): < 10000 -> concentrated, 10000-500000 -> mid_market, > 500000 -> long_tail. This overrides the market-categorizer's non-authoritative hint; disagreement sets missing_flags.concentration_revised = true. Must NEVER be an incumbent-industry revenue figure (design.md 6.4)."
+        },
+        "buyer_count_source_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Exact URL of the page carrying the buyer_count figure. Non-null whenever buyer_count is non-null \u2014 the validator drops numbers whose source does not resolve (design.md 9, REQ-004)."
+        },
+        "arpu_low": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Low end of annual revenue per buyer, from real pricing evidence."
+        },
+        "arpu_high": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "High end of annual revenue per buyer, from real pricing evidence."
+        },
+        "arpu_basis": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500,
+          "description": "What the ARPU figure actually is, in plain language (e.g. 'published list price, Team tier, x12'). CONSUMER: memo Market sizing 'with stated assumptions' requirement (design.md 11 / feature 06)."
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 800
+          },
+          "description": "Load-bearing assumptions in plain language \u2014 which slice of the buyer population is addressable, whether the price applies to all of it, what was excluded and why, and any disagreement between sources that was reported as a spread rather than reconciled. CONSUMER: the memo prints this list verbatim (design.md 11); the brief requires market sizing to carry stated assumptions."
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "description": "Free-text description of what was missing within this size model specifically. Distinct from the top-level data.gaps[], which is the structured, reason-coded channel the validator maps onto missing_flags."
+        }
+      }
+    }
+  },
+  "properties": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "ok",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "success",
+            "abstained",
+            "insufficient_input",
+            "processing_error"
+          ],
+          "description": "Finite set; the agent may not invent codes. 'abstained' is a COMPLETED job (design.md 9: abstention is explicitly permitted and produces a missing claim rather than a guess)."
+        },
+        "ok": {
+          "type": "boolean",
+          "description": "true for both 'success' and 'abstained'; false for 'insufficient_input' and 'processing_error'. CONSUMER: the n8n IF node routing to the gap-claim writer vs the error branch (design.md 4)."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 400
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size_bottom_up",
+        "size_top_down",
+        "growth",
+        "why_now",
+        "tailwinds",
+        "headwinds",
+        "evidence",
+        "gaps"
+      ],
+      "properties": {
+        "size_bottom_up": {
+          "description": "PRIMARY construction: buyer_count x ARPU. CONSUMER: market.size_bottom_up claim (design.md 3.2). null = abstention, which yields TAM band UNKNOWN (design.md 6.0/6.1), never FAIL.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sizeRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size_top_down": {
+          "description": "CROSS-CHECK ONLY, never the primary (design.md 3.2). CONSUMER: market.size_top_down claim; may set the TAM band only with missing_flags.top_down_only = true and the confidence cap <= 0.45 (design.md 6.1, 6.5).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sizeRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "growth": {
+          "description": "CONSUMER: market.growth claim (design.md 3.2).",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cagr_pct_low",
+                "cagr_pct_high",
+                "basis",
+                "window"
+              ],
+              "properties": {
+                "cagr_pct_low": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "Low end of the CAGR range, in percent (15.0 = 15%). CONSUMER: the CAGR band in vc_rule_check (design.md 6.1: PASS >= 15%, WATCH [5%,15%), FAIL < 5%, UNKNOWN when no growth figure was established)."
+                },
+                "cagr_pct_high": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "High end of the CAGR range, in percent."
+                },
+                "basis": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 500,
+                  "description": "What the figure measures and where it came from, in plain language, including an explicit note when the only available CAGR is report-mill-shaped (clustering in the 15-25% band). CONSUMER: memo (feature 06)."
+                },
+                "window": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 60,
+                  "description": "Period the CAGR covers, e.g. '2024-2030'."
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "why_now": {
+          "description": "CONSUMER: market.why_now claim (design.md 3.2). Claim-only \u2014 rendered in the memo (feature 06) and NOT an input to any design.md 6 formula. design.md 3.2 also specifies evidence_claim_ids[] on this claim value; that array is populated by the write node from the evidence rows this agent emits, not by the agent (it cannot know claim ids).",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "statement",
+                "catalyst_kind",
+                "catalyst_artifact_url",
+                "catalyst_date"
+              ],
+              "properties": {
+                "statement": {
+                  "type": "string",
+                  "maxLength": 600
+                },
+                "catalyst_kind": {
+                  "type": "string",
+                  "enum": [
+                    "technology_step_function",
+                    "regulatory_shock",
+                    "cost_curve",
+                    "behavior_shift"
+                  ],
+                  "description": "REQUIRED typed enum (design.md 3.2). Untyped -> the whole why_now object is null and a gap is declared instead."
+                },
+                "catalyst_artifact_url": {
+                  "type": "string",
+                  "description": "Concrete dated artifact \u2014 a specific regulation, model/hardware release, published price change. Uncited -> why_now is null and written as missing instead (design.md 3.2)."
+                },
+                "catalyst_date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tailwinds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "statement"
+            ],
+            "properties": {
+              "statement": {
+                "type": "string",
+                "maxLength": 500
+              }
+            }
+          },
+          "description": "CONSUMER: one market.tailwind claim per item (design.md 3.2, value shape {statement}), item_key = sha256(statement) (design.md 3.5). Each item requires its own evidence[] row; unsourced items must not be emitted."
+        },
+        "headwinds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "statement"
+            ],
+            "properties": {
+              "statement": {
+                "type": "string",
+                "maxLength": 500
+              }
+            }
+          },
+          "description": "CONSUMER: one market.headwind claim per item (design.md 3.2)."
+        },
+        "evidence": {
+          "type": "array",
+          "description": "The provenance chain. CONSUMER: evidence rows (design.md 3.4/3.5). tier and strength are assigned by the validator from the deterministic domain map, never by this agent.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "supports_field",
+              "source_url",
+              "quote_verbatim",
+              "published_date",
+              "relation"
+            ],
+            "properties": {
+              "supports_field": {
+                "type": "string",
+                "description": "Dotted path to a field actually populated in data, e.g. 'size_bottom_up.buyer_count', 'growth.cagr_pct_low', 'why_now', 'tailwinds[0]'. CONSUMER: the write node uses it to attach the evidence row to the correct claim.",
+                "pattern": "^(size_bottom_up|size_top_down)\\.(tam_low|tam_high|buyer_count|arpu_low|arpu_high)$|^growth\\.(cagr_pct_low|cagr_pct_high)$|^why_now$|^(tailwinds|headwinds)\\[\\d+\\]$"
+              },
+              "source_url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Exact URL of the page carrying the figure. null ONLY on a relation='context' row recording that a search was performed and returned nothing (design.md 3.5: tier='missing' rows use relation='context' and carry NULL url and NULL quote)."
+              },
+              "quote_verbatim": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1200,
+                "description": "The source's own sentence, WORD FOR WORD, unedited, untranslated, untidied. This is the RSK-003 verbatim layer against LLM re-centering of unusual claims (design.md 2, 3.2). null only on relation='context' rows."
+              },
+              "published_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "From the document when present; null otherwise. Note: only topic='news' Tavily results carry published_date, so most rows here are null (design.md 3.5)."
+              },
+              "relation": {
+                "type": "string",
+                "enum": [
+                  "supports",
+                  "contradicts",
+                  "context"
+                ],
+                "description": "Matches the evidence table's relation column. 'contradicts' is how a disagreeing source is recorded \u2014 a contradiction is data, not a flag, and it must never be smoothed into a mean (design.md 3.4 triangulate-don't-average, design.md 8). 'context' rows are EXCLUDED from the confidence evidence count (design.md 6.5)."
+              }
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "description": "MANDATORY explicit gap declaration \u2014 the deliberate inversion of company-research-agent's 'Never mention no information found' (design.md 9). CONSUMERS: *.gap claims with verification_status='missing' (design.md 3.2), scores.missing_flags (design.md 3.7), and missing_count in the confidence formula (design.md 6.5).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "reason_code",
+              "note"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "size_bottom_up",
+                  "size_top_down",
+                  "growth",
+                  "why_now",
+                  "tailwinds",
+                  "headwinds"
+                ]
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "no_documents_retrieved",
+                  "no_category_established",
+                  "no_buyer_count_anchor",
+                  "no_pricing_anchor",
+                  "incumbent_anchored_tam_only",
+                  "no_top_down_figure",
+                  "no_growth_figure",
+                  "no_typed_catalyst",
+                  "all_sources_weak",
+                  "geography_mismatch"
+                ],
+                "description": "Closed vocabulary so the validator maps gaps onto missing_flags deterministically. 'incumbent_anchored_tam_only' specifically sets missing_flags.incumbent_anchored_tam = true and forces the TAM band to UNKNOWN, never FAIL (design.md 6.4)."
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 800,
+                "description": "Should name the figure that was declined, so a human can audit the abstention rather than wonder why the field is empty. Rendered in the memo's honest-omission section (feature 06)."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "status": {
+        "code": "success",
+        "ok": true,
+        "message": ""
+      },
+      "data": {
+        "size_bottom_up": {
+          "tam_low": 89332800,
+          "tam_high": 221760000,
+          "currency": "USD",
+          "buyer_count": 4024,
+          "buyer_count_source_url": "https://www.fdic.gov/analysis/quarterly-banking-profile/",
+          "arpu_low": 22200,
+          "arpu_high": 50400,
+          "arpu_basis": "Competitor published list price, annualised: Core $1,850/mo x 12; Enterprise $4,200/mo x 12",
+          "assumptions": [
+            "Buyer count sources disagree: FDIC states 4,024 (Mar 2026), ICBA states 'roughly 4,400'. Reported as a spread, not reconciled to a mean.",
+            "ARPU anchored on a single competitor's list price; actual contract values are typically discounted and were not found in any document."
+          ],
+          "gaps": [
+            "No source segments the addressable share of the buyer population."
+          ]
+        },
+        "size_top_down": null,
+        "growth": null,
+        "why_now": null,
+        "tailwinds": [],
+        "headwinds": [],
+        "evidence": [
+          {
+            "supports_field": "size_bottom_up.buyer_count",
+            "source_url": "https://www.fdic.gov/analysis/quarterly-banking-profile/",
+            "quote_verbatim": "As of March 31, 2026, there were 4,024 FDIC-insured community banks.",
+            "published_date": "2026-05-28",
+            "relation": "supports"
+          },
+          {
+            "supports_field": "size_bottom_up.buyer_count",
+            "source_url": "https://www.icba.org/about",
+            "quote_verbatim": "The nation's roughly 4,400 community banks\u2026",
+            "published_date": null,
+            "relation": "contradicts"
+          },
+          {
+            "supports_field": "size_bottom_up.arpu_low",
+            "source_url": "https://closehq.com/pricing",
+            "quote_verbatim": "Core plan: $1,850/month billed annually.",
+            "published_date": null,
+            "relation": "supports"
+          }
+        ],
+        "gaps": [
+          {
+            "field": "size_top_down",
+            "reason_code": "no_top_down_figure",
+            "note": "No non-weak document stated a market size for this category."
+          },
+          {
+            "field": "growth",
+            "reason_code": "no_growth_figure",
+            "note": ""
+          },
+          {
+            "field": "why_now",
+            "reason_code": "no_typed_catalyst",
+            "note": "No dated artifact found behind the founder's 'AI makes this possible now' framing."
+          }
+        ]
+      }
+    },
+    {
+      "status": {
+        "code": "abstained",
+        "ok": true,
+        "message": "No admissible buyer-count anchor: the only quantitative anchor available was incumbent-industry revenue."
+      },
+      "data": {
+        "size_bottom_up": null,
+        "size_top_down": null,
+        "growth": null,
+        "why_now": null,
+        "tailwinds": [],
+        "headwinds": [],
+        "evidence": [
+          {
+            "supports_field": "size_bottom_up.buyer_count",
+            "source_url": null,
+            "quote_verbatim": null,
+            "published_date": null,
+            "relation": "context"
+          }
+        ],
+        "gaps": [
+          {
+            "field": "size_bottom_up",
+            "reason_code": "incumbent_anchored_tam_only",
+            "note": "Only quantitative anchor found was 'Germany's courier, express and parcel industry generated EUR 27.1 billion in revenue in 2025' \u2014 incumbent-industry revenue, not a count of independent restaurants. Deriving TAM from it would size the industry being displaced (error of omission). Declined."
+          },
+          {
+            "field": "size_top_down",
+            "reason_code": "all_sources_weak",
+            "note": "Only market-size figure came from an SEO listicle with no methodology and a 21.4% CAGR sitting in the 15-25% band typical of generated report content. Not emitted."
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -11,10 +11,39 @@ services:
       - N8N_PROTOCOL=http
       - WEBHOOK_URL=http://localhost:5678/
       - N8N_SECURE_COOKIE=false
+      # feature-04 workflows read these via $env.* expressions in Code/HTTP
+      # Request nodes -- never pasted as literals into workflow JSON. Values
+      # live in infra/n8n/.env (gitignored), loaded here via compose's
+      # automatic .env lookup in this file's directory.
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # f04's Code nodes paste lib/f04/scoring.js verbatim: contentHash.*
+      # needs require('crypto') (sha256), and registrableDomain()/
+      # normalizeUrl() need require('url') for the URL class -- verified live
+      # 2026-07-19 that n8n's Code node sandbox does NOT expose a global
+      # `URL` the way plain Node does (ReferenceError without this). Both are
+      # blocked unless explicitly allow-listed here.
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto,url
+      # f04's HTTP Request nodes read Supabase/Tavily/OpenAI secrets via
+      # $env.* in URL/body EXPRESSIONS (not just inside Code nodes) --
+      # verified live 2026-07-19 that this n8n version defaults
+      # N8N_BLOCK_ENV_ACCESS_IN_NODE to true, which throws "access to env
+      # vars denied" on every such expression. Explicitly opened for this
+      # single-tenant hackathon instance, where reading shared secrets from
+      # node expressions is the intended architecture (CLAUDE.md's own
+      # infra section documents these as container-level secrets).
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
     ports:
       - "5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
+    # host.docker.internal already resolves on Docker Desktop for Mac; the
+    # explicit extra_hosts entry is added so the same compose file also works
+    # unchanged on Linux hosts (where it doesn't resolve by default).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/"]
       interval: 30s

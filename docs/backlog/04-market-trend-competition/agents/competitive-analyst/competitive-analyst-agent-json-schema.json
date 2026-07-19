@@ -1,0 +1,576 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f04/competitive-analyst.output.json",
+  "title": "competitive-analyst output",
+  "description": "Output of the f04 competitive-analyst agent (gpt-5.6-terra). Each competitors[] element is written verbatim as the value of one competition.competitor claim on the idea_vs_market axis (design.md 3.2/3.3). threat_level and switching_cost are OUR OWN rubrics and may be null; null is a first-class value contributing exactly 0 to design.md 6.4, never a penalty. The agent emits no mismatch severity, no Trust number and no axis score \u2014 those are computed deterministically downstream (design.md 8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "data"
+  ],
+  "properties": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "ok",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "success",
+            "abstained",
+            "insufficient_input",
+            "processing_error"
+          ],
+          "description": "Finite set; the agent may not invent codes. 'abstained' is a COMPLETED job (design.md 9)."
+        },
+        "ok": {
+          "type": "boolean",
+          "description": "true for both 'success' and 'abstained'; false for 'insufficient_input' and 'processing_error'. CONSUMER: the n8n IF node routing to the gap-claim writer vs the error branch (design.md 4)."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 400
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "founder_view_assessable",
+        "competitors",
+        "bucket_coverage",
+        "status_quo_alternatives",
+        "accumulating_advantage",
+        "evidence",
+        "gaps"
+      ],
+      "properties": {
+        "founder_view_assessable": {
+          "type": "boolean",
+          "description": "false when founder_competition_view_present was false \u2014 a deckless radar_activated entry where the founder was never asked about competition. CONSUMER: design.md 6.4 gates the -10 'named zero competitors' term on this, and design.md 8's severity ladder ends 'no deck / no founder competition view -> no mismatch claim at all (not assessable)'. false also raises missing_flags.founder_competition_view_absent."
+        },
+        "competitors": {
+          "type": "array",
+          "description": "CONSUMER: one competition.competitor claim per element (design.md 3.2), value = per_competitor_record (design.md 3.3), item_key = normalised competitor name (design.md 3.5). An empty array is valid ONLY alongside bucket_coverage values and a gaps[] entry \u2014 never silently.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "category",
+              "company_mentioned",
+              "positioning_summary",
+              "stage",
+              "most_recent_funding",
+              "differentiation_vs_target",
+              "source_urls",
+              "threat_level",
+              "threat_level_rationale",
+              "switching_cost",
+              "switching_cost_rationale"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "direct",
+                  "adjacent",
+                  "incumbent",
+                  "alternative"
+                ],
+                "description": "per_competitor_record vocabulary, borrowed verbatim from reporting (Apache-2.0) per design.md 3.3. CONSUMER: the adjacent_competitors / incumbent_competitors buckets (design.md 8) and the memo's named clusters (feature 06)."
+              },
+              "company_mentioned": {
+                "type": "boolean",
+                "description": "Did the founder name them? CONSUMER: the deterministic mismatch node (design.md 8) \u2014 found \\ named produces the competition.founder_claim_mismatch claim on the trust axis AND a relation='contradicts' evidence row on the founder's competition claim. Also the company_unnamed_competitors bucket, which design.md 8 calls the HIGHEST-VALUE OUTPUT. Always false when founder_view_assessable is false."
+              },
+              "positioning_summary": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "1-2 NEUTRAL sentences. CONSUMER: memo Competition section (feature 06), dashboard competitor table (feature 09)."
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "seed",
+                  "series_a",
+                  "series_b",
+                  "growth",
+                  "public",
+                  "private_mature",
+                  "unknown"
+                ],
+                "description": "per_competitor_record vocabulary (design.md 3.3). 'unknown' unless a document states otherwise \u2014 never inferred from website polish."
+              },
+              "most_recent_funding": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "round",
+                  "amount",
+                  "date",
+                  "lead",
+                  "source_url"
+                ],
+                "description": "design.md 3.3 shape {round, amount, date, lead}, EXTENDED with source_url because design.md 9 requires every numeric assertion to carry the source_url it came from and 'amount' is a number. CONSUMERS: memo Competition section (feature 06); funding recency colours design.md 8's severity ladder ('>=3 found unnamed incl. funded -> moderate').",
+                "properties": {
+                  "round": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 60
+                  },
+                  "amount": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 60,
+                    "description": "As stated by the source (e.g. '$100M'). MUST be null unless source_url is non-null \u2014 a number whose source cannot be pointed at must not be emitted at all."
+                  },
+                  "date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 30
+                  },
+                  "lead": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 120
+                  },
+                  "source_url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "differentiation_vs_target": {
+                "type": "string",
+                "maxLength": 600,
+                "description": "Neutrally framed, grounded in the documents (design.md 3.3). CONSUMER: memo Competition section \u2014 differentiation (feature 06)."
+              },
+              "source_urls": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Every document URL supporting this record. minItems 1 is the structural guarantee that no competitor is recalled from training data rather than found in the input."
+              },
+              "threat_level": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 4,
+                "description": "OUR OWN RUBRIC (design.md 3.3), seeded by JTBD and NEVER to be attributed to Porter/SWOT/Blue Ocean. 1 = disruptive innovation (lower-level jobs eliminated) \u00b7 2 = upstream interception \u00b7 3 = blue-ocean niche (copyable by a large incumbent) \u00b7 4 = perfect competition / red ocean, a pre-seed red flag. CONSUMERS: design.md 6.4 term (1 -> +15, 2 -> +8, 3 -> 0, 4 -> -20, null -> 0); dashboard competitor table sort (feature 09); PostgREST query value->>'threat_level' (feature 10). null is a FIRST-CLASS value when evidence does not support a reading and contributes exactly 0, never a penalty. Range-checked deterministically after emission."
+              },
+              "threat_level_rationale": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500,
+                "description": "REQUIRED (non-null) whenever threat_level is non-null; MUST be null when threat_level is null. design.md 3.3: the ordinals are LLM-proposed WITH CITED EVIDENCE, then range-checked. No rationale means no reading."
+              },
+              "switching_cost": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 3,
+                "description": "The 10x heuristic (design.md 3.3 \u2014 this rubric IS sourced from the corpus, unlike threat_level). 1 = verifiably 10x cheaper/faster/more effective, the switch happens \u00b7 2 = 10-20% better, 'such a switch very rarely happens' \u00b7 3 = feature parity, acquisition requires pure marketing spend. CONSUMERS: design.md 6.4 term (1 -> +20, 2 -> 0, 3 -> -15, null -> 0) \u2014 the largest single weight on the axis; and the third condition of design.md 7's underestimation guard, which fires only when switching_cost = 1. A founder's own '10x faster' claim is NOT verification. null when unsupported."
+              },
+              "switching_cost_rationale": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500,
+                "description": "REQUIRED (non-null) whenever switching_cost is non-null; MUST be null when switching_cost is null. Must name the benchmark, published price gap or figures-bearing case study that supports the reading."
+              }
+            }
+          }
+        },
+        "bucket_coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "company_named_competitors",
+            "company_unnamed_competitors",
+            "adjacent_competitors",
+            "incumbent_competitors",
+            "build_vs_buy_alternatives"
+          ],
+          "description": "design.md 8's five required output buckets, each affirmatively addressed. Emitted as coverage states rather than as duplicate name lists so the records live in exactly one place and cannot drift; the deterministic node derives membership from competitors[].category and competitors[].company_mentioned. 'searched_none_found' is a FINDING; 'not_searched' is a HOLE and must be explained in gaps[]. CONSUMER: the *.gap claim writer and the memo's coverage statement (feature 06).",
+          "properties": {
+            "company_named_competitors": {
+              "$ref": "#/$defs/coverage"
+            },
+            "company_unnamed_competitors": {
+              "$ref": "#/$defs/coverage"
+            },
+            "adjacent_competitors": {
+              "$ref": "#/$defs/coverage"
+            },
+            "incumbent_competitors": {
+              "$ref": "#/$defs/coverage"
+            },
+            "build_vs_buy_alternatives": {
+              "$ref": "#/$defs/coverage"
+            }
+          }
+        },
+        "status_quo_alternatives": {
+          "type": "array",
+          "maxItems": 4,
+          "description": "CONSUMER: competition.status_quo_alternative claims (design.md 3.2). 'Sometimes a spreadsheet is the real competitor.'",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "alternative",
+              "why_it_wins_today",
+              "displaced",
+              "displacement_source_url"
+            ],
+            "properties": {
+              "alternative": {
+                "type": "string",
+                "maxLength": 300,
+                "description": "design.md 3.2 value key. What the buyer does today instead."
+              },
+              "why_it_wins_today": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "design.md 3.2 value key."
+              },
+              "displaced": {
+                "type": "boolean",
+                "description": "EXTENSION of design.md 3.2's listed value shape, required by design.md 6.4: 'Displaced is a stricter predicate than identified and the two must not be conflated'. true ONLY with a cited source showing the product REMOVES the manual work the alternative requires. CONSUMERS: design.md 6.4's +7 term keys on DISPLACED; design.md 7's underestimation guard keys on IDENTIFIED (i.e. on the presence of any element in this array), which is why the two predicates must stay separable."
+              },
+              "displacement_source_url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "REQUIRED (non-null) whenever displaced is true; null otherwise."
+              }
+            }
+          }
+        },
+        "accumulating_advantage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "present",
+            "kind",
+            "statement",
+            "public_artifact_url"
+          ],
+          "description": "CONSUMER: design.md 6.4's 'articulated accumulating advantage w/ public evidence' term \u2014 present -> +10, or +8 when threat_level = 1 AND switching_cost = 1 (the deliberate nonlinearity holding the axis maximum at exactly 100); absent or unknown -> 0. ADDITIVE ONLY: an absent moat costs NOTHING, because demanding proven network effects at pre-seed is 'way too strict a bar' and generates the false negatives this product exists to prevent. Raw build speed qualifies as nothing (SIG-013).",
+          "properties": {
+            "present": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "owned_distribution",
+                "regulated_or_deep_domain",
+                "architecture_depth",
+                "oss_community",
+                null
+              ],
+              "description": "The evidenceable pre-seed moats enumerated in design.md 6.4. Non-null iff present is true."
+            },
+            "statement": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 600
+            },
+            "public_artifact_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "REQUIRED (non-null) whenever present is true \u2014 design.md 6.4 requires the advantage to be 'backed by a public artifact'."
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "description": "CONSUMER: evidence rows (design.md 3.4/3.5). tier and strength are assigned by the validator from the deterministic domain map, never by this agent.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "supports",
+              "source_url",
+              "quote_verbatim",
+              "published_date",
+              "relation"
+            ],
+            "properties": {
+              "supports": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Dotted path to the field this row supports, e.g. 'competitors[1].most_recent_funding.amount', 'competitors[0].switching_cost', 'status_quo_alternatives[0]', 'accumulating_advantage'. CONSUMER: the write node uses it to attach the evidence row to the correct claim."
+              },
+              "source_url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null ONLY on a relation='context' row recording that a search ran and returned nothing (design.md 3.5: tier='missing' rows use relation='context' with NULL url and NULL quote)."
+              },
+              "quote_verbatim": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1200,
+                "description": "The source's own sentence, WORD FOR WORD, unedited and untranslated \u2014 the RSK-003 verbatim layer against LLM re-centering (design.md 2)."
+              },
+              "published_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "relation": {
+                "type": "string",
+                "enum": [
+                  "supports",
+                  "contradicts",
+                  "context"
+                ],
+                "description": "Matches the evidence table's relation column. 'context' rows are EXCLUDED from the confidence evidence count (design.md 6.5)."
+              }
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "description": "MANDATORY explicit gap declaration \u2014 the deliberate inversion of company-research-agent's 'Never mention no information found' (design.md 9). CONSUMERS: *.gap claims with verification_status='missing' (design.md 3.2), scores.missing_flags (design.md 3.7), missing_count in the confidence formula (design.md 6.5).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "reason_code",
+              "note"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Dotted path or top-level field name, e.g. 'competitors[0].switching_cost', 'status_quo_alternatives', 'founder_view_assessable'."
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "no_documents_retrieved",
+                  "no_category_established",
+                  "no_competitors_found",
+                  "no_funding_data",
+                  "threat_level_unsupported",
+                  "switching_cost_unsupported",
+                  "no_status_quo_identified",
+                  "founder_view_absent",
+                  "all_sources_weak"
+                ],
+                "description": "Closed vocabulary so the validator maps gaps onto missing_flags deterministically. 'founder_view_absent' specifically raises missing_flags.founder_competition_view_absent and zeroes the design.md 6.4 -10 term."
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 800
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "coverage": {
+      "type": "string",
+      "enum": [
+        "found",
+        "searched_none_found",
+        "not_searched",
+        "not_applicable"
+      ],
+      "description": "'not_applicable' is the correct value for company_named_competitors when founder_view_assessable is false."
+    }
+  },
+  "examples": [
+    {
+      "status": {
+        "code": "success",
+        "ok": true,
+        "message": ""
+      },
+      "data": {
+        "founder_view_assessable": true,
+        "competitors": [
+          {
+            "name": "FloQast",
+            "category": "incumbent",
+            "company_mentioned": false,
+            "positioning_summary": "Established accounting close-management platform serving mid-market and enterprise finance teams.",
+            "stage": "growth",
+            "most_recent_funding": {
+              "round": "Series E",
+              "amount": "$100M",
+              "date": "2026-03-17",
+              "lead": "ICONIQ Growth",
+              "source_url": "https://techcrunch.com/2026/03/17/floqast-series-e/"
+            },
+            "differentiation_vs_target": "Far broader product and enterprise sales motion; documents show no community-bank-specific regulatory reporting.",
+            "source_urls": [
+              "https://techcrunch.com/2026/03/17/floqast-series-e/"
+            ],
+            "threat_level": 3,
+            "threat_level_rationale": "A well-capitalised incumbent that could move down-market into community banks; the niche is real but copyable.",
+            "switching_cost": null,
+            "switching_cost_rationale": null
+          }
+        ],
+        "bucket_coverage": {
+          "company_named_competitors": "found",
+          "company_unnamed_competitors": "found",
+          "adjacent_competitors": "searched_none_found",
+          "incumbent_competitors": "found",
+          "build_vs_buy_alternatives": "found"
+        },
+        "status_quo_alternatives": [
+          {
+            "alternative": "Excel reconciliation with results e-mailed between the controller and branch staff.",
+            "why_it_wins_today": "Already licensed, requires no procurement approval, and the controller already knows it.",
+            "displaced": false,
+            "displacement_source_url": null
+          }
+        ],
+        "accumulating_advantage": {
+          "present": false,
+          "kind": null,
+          "statement": null,
+          "public_artifact_url": null
+        },
+        "evidence": [
+          {
+            "supports": "competitors[0].most_recent_funding.amount",
+            "source_url": "https://techcrunch.com/2026/03/17/floqast-series-e/",
+            "quote_verbatim": "FloQast, which automates the accounting close, said Tuesday it had raised $100 million in a Series E led by ICONIQ Growth.",
+            "published_date": "2026-03-17",
+            "relation": "supports"
+          }
+        ],
+        "gaps": [
+          {
+            "field": "competitors[0].switching_cost",
+            "reason_code": "switching_cost_unsupported",
+            "note": "No benchmark, published price comparison or case study with figures was found."
+          }
+        ]
+      }
+    },
+    {
+      "status": {
+        "code": "abstained",
+        "ok": true,
+        "message": "One possible competitor found with insufficient detail to assess; no founder competition view exists (deckless entry)."
+      },
+      "data": {
+        "founder_view_assessable": false,
+        "competitors": [
+          {
+            "name": "Akvakontroll",
+            "category": "direct",
+            "company_mentioned": false,
+            "positioning_summary": "Listed in a Norwegian aquaculture supplier directory as providing compliance reporting; no product detail available in the retrieved pages.",
+            "stage": "unknown",
+            "most_recent_funding": {
+              "round": null,
+              "amount": null,
+              "date": null,
+              "lead": null,
+              "source_url": null
+            },
+            "differentiation_vs_target": "Cannot be assessed \u2014 the directory entry contains no feature or pricing information.",
+            "source_urls": [
+              "https://akvakatalog.example/leverandorer/akvakontroll"
+            ],
+            "threat_level": null,
+            "threat_level_rationale": null,
+            "switching_cost": null,
+            "switching_cost_rationale": null
+          }
+        ],
+        "bucket_coverage": {
+          "company_named_competitors": "not_applicable",
+          "company_unnamed_competitors": "found",
+          "adjacent_competitors": "searched_none_found",
+          "incumbent_competitors": "searched_none_found",
+          "build_vs_buy_alternatives": "searched_none_found"
+        },
+        "status_quo_alternatives": [],
+        "accumulating_advantage": {
+          "present": false,
+          "kind": null,
+          "statement": null,
+          "public_artifact_url": null
+        },
+        "evidence": [],
+        "gaps": [
+          {
+            "field": "founder_view_assessable",
+            "reason_code": "founder_view_absent",
+            "note": "Radar-activated entry with no deck or interview; the founder has never been asked about competition, so nothing can be concluded from their silence."
+          },
+          {
+            "field": "competitors[0].threat_level",
+            "reason_code": "threat_level_unsupported",
+            "note": "A directory listing with no product detail cannot support any of the four criteria."
+          },
+          {
+            "field": "status_quo_alternatives",
+            "reason_code": "no_status_quo_identified",
+            "note": "No document describes how operators handle discharge reporting today."
+          }
+        ]
+      }
+    }
+  ]
+}

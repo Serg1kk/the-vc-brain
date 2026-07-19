@@ -1,0 +1,40 @@
+# `market-categorizer` — Decisions & Open Items
+
+> Generated during plan task A2 (2026-07-19) from design.md rev.3. Every entry below is
+> either a decision traceable to a design section, or an open question that design.md
+> does not resolve. Nothing here reopens an operator-approved decision.
+
+## Decisions taken (with rationale)
+
+| # | Decision | Rationale | Source |
+|---|---|---|---|
+| D1 | `data.category` is a single object holding exactly the six keys of design §3.2, written verbatim as `claims.value` | Any restructuring would force the n8n write node to remap fields, which is where field drift enters. One-to-one mapping is checkable by eye. | design §3.2 |
+| D2 | `buyer_concentration` keeps its design-§3.2 key name rather than being renamed to something like `buyer_concentration_hint` | The claim `value` shape is fixed by §3.2 and consumed by features 06/09/10. Renaming would break the contract. Non-authoritativeness is enforced by prompt Instruction 6, the schema `description`, and the validator's override — not by the key name. | design §3.2, §6.2 |
+| D3 | Status vocabulary is four codes, with `abstained` carrying `ok: true` | Design §9 makes abstention a *valid output*, and §4 routes abstention to `missing` claims rather than the error branch. Giving abstention `ok: false` would put it on the failure path and quietly convert honesty into an error rate. | design §4, §9; production-patterns Pattern 3 |
+| D4 | The agent is forbidden from emitting **any** number, not merely unsourced ones | §9 requires a `source_url` on every numeric assertion. This agent runs before any search and therefore can never satisfy that rule, so the prohibition is total rather than conditional. Simpler to obey and simpler to test. | design §4 (node order), §9 |
+| D5 | `gaps[].reason_code` is a closed enum of six values | The validator maps gaps onto `missing_flags` keys deterministically (§3.7). A free-text reason would make that mapping a second LLM judgement. | design §3.7, §6.5 |
+| D6 | `buyer_unit: null` is preferred over a vague noun, and the query builder must **skip** Q1/Q2 rather than substitute one | A vague buyer unit does not fail loudly — it returns report-mill pages that pass the relevance gate, and the fabricated buyer count then anchors the entire bottom-up TAM. Null fails safe into `UNKNOWN` (§6.0), which costs confidence, never score. | design §6.0, §6.1, §1 |
+| D7 | Only `source_kind = 'self_reported'` claims are passed in | The agent must classify what the founder said. Feeding it the pipeline's own prior derived claims would create a self-confirming loop — the «AI source laundering» mechanism §1 is written against, applied to ourselves. | design §1, §3.2 |
+| D8 | `temperature = 0`, `reasoning_effort = low` | Classification task; §4 pins `end_date` for demo reproducibility and a stochastic label on node 4 would break that at the first step. | design §4 |
+| D9 | Prompt caching is **not** used in MVP | Cache write is billed at 1.25× uncached input with a 30-minute minimum TTL; at demo volume the premium is not reliably recovered. | `internal/research/openai/02-models.md` |
+| D10 | Non-English one-liners are classified normally, with `raw` preserved in the company's own words and `canonical`/`icp`/`buyer_unit` emitted in English | The claim vocabulary and every downstream query template are English; `raw` exists precisely so the founder's own framing is not lost to normalisation. | design §3.2, §9; CLAUDE.md language policy |
+
+## Open questions
+
+| # | Question | Why it is open | Suggested disposition |
+|---|---|---|---|
+| Q1 | **`market.category` has no explicit `verification_status` ruling.** §3.2 lists the topic and its `value` shape, and §3.2's `source_kind` paragraph implies `derived` (the workflow computed it) with `base_confidence` 0.5. But when the agent abstains, is the claim written at all — as a `market.gap` row — or is the whole `market.category` claim skipped? | §3.2's `*.gap` row covers "any topic with `verification_status='missing'`", which reads as: write the claim with status `missing`. Not stated outright for this topic. | Leave open for the C1 builder; recommended reading is **write the claim with `verification_status='missing'`**, since a skipped claim leaves the memo unable to say "category not established". |
+| Q2 | Should `canonical` normalisation see the *frequency* of each known category, not just the distinct list? A label used by 40 companies is a stronger reuse target than one used once. | design §9 says only "normalised against categories already present in `companies.category`". | Leave open. Cheap to add later as `[{label, count}]`; not worth the input-spec churn before the demo has data. |
+| Q3 | `adjacent[]` cap is set at 4 by this spec. design.md gives no cap. | Each adjacent category becomes a discovery search in §8, so the cap is really a Tavily credit decision, and §4's hard stop is 25 credits/card. | Confirm with the C2 builder once the competition sub-workflow's search count is fixed. 4 is a guess sized to the credit cap, not a sourced number. |
+| Q4 | Does `company_category_existing` (a label from a prior run) create a self-confirming loop the way D7 guards against? | It is `companies.category`, written by an earlier categorizer run. Feeding it back means run 2 is biased toward run 1's answer. | Currently passed as a hint with the prompt instructing "treated as a hint, not as truth". If QA sees label lock-in across re-runs, drop the field. Flagged rather than resolved. |
+| **Q5** | **§6.6's founder-market-fit term has no producer.** design.md gained a new §6.6 (`founder` axis, scope addition 2026-07-19) **after** these artifacts were written. Its founder-market-fit term needs a three-way judgement — domain expertise *directly in* the resolved category (+10) · *adjacent* category (+5) · not established (0) — which is a semantic match between free-text `founder.expertise.*` claims (feature 03's vocabulary) and this workflow's minted category label. §9's agent roster was **not** updated and still lists three agents, none of which produces this. | An exact string match between free-text expertise and a minted 2-4 word label would almost never fire, making the +10/+5 term dead on arrival; embedding similarity is excluded by §10 (no vector DB). So it is plausibly an LLM judgement with no assigned agent. | **Needs the lead's ruling — not resolvable here.** `market-categorizer` is the natural home: it already emits `canonical` and `adjacent[]`, which are *exactly* the two buckets the term keys on, and the task is Luna-shaped classification. That would mean adding a `founder_expertise_claims` input and a `founder_market_fit` output field to this agent. **Deliberately not done** — A2's scope is the three agents named in §9, and adding an undesigned output to a spec'd agent is the kind of silent scope change this process exists to prevent. |
+
+## Alternatives considered and rejected
+
+| Alternative | Why rejected |
+|---|---|
+| Fixed category taxonomy (enum of N categories) | design §9 / NotebookLM Q1: forces novel, ill-defined startups into generic legacy buckets — the exact cold-start failure the brief warns about. |
+| Free-form category only, no canonical | Produces the synonym zoo ("AI Infra" / "LLM Infrastructure" / "Artificial Intelligence Backend" as three markets), making the database unqueryable. |
+| Embedding-based clustering for canonical normalisation | Requires a vector DB, which design §10 explicitly excludes from MVP and the operator has ruled out. Noted as post-MVP in §9. |
+| Let the categorizer emit a rough buyer-count estimate to seed the sizer | Directly violates §9's source_url rule and §6.2's "`buyer_concentration` is derived, not guessed" — §6.2 calls out that this was "the one exemption, and exemptions are where fabrication enters". |
+| Merge the categorizer into the sizer as one Sol call | Loses the pre-search / post-search separation that makes the categorizer's numeric prohibition enforceable, and pays Sol prices for enum selection. design §9 fixes three agents. |

@@ -46,8 +46,8 @@
 | F2 | `db/README.md` | orchestrator | E | ✅ done | +07 section | table, RPC, validator, purge order, idempotency-key table, the do-not-harmonise-with-04 warning |
 | F3 | `handoff.md` (7 consumers) | orchestrator | E | ✅ done | `handoff.md` | call contract, NULL notice for 02, `fired_rules` shape for 06, lane join for 09, current-fit resolution for 10, `missing_flags` rules |
 | F4 | Feature README EN + RU | orchestrator | E | ✅ done | `README.md` + `README.ru.md` | updated as a pair per language policy; both open questions closed |
-| F5 | Commit (no push) | @devops | F1-F4 | 🔄 in progress | — | **no push**: `docs/` may be tracked by the public remote; `main` is already 15 commits ahead of origin across all terminals |
-| F6 | Learnings + intel base | orchestrator | F5 | ⬜ pending | — | closing report is in this file; intel-base pass after the commit |
+| F5 | Commit (no push) | @devops | F1-F4 | ✅ done | **`c33deba`** | 28 files, verified by orchestrator to contain only 07 + shared-with-07 paths, no other feature swept in. **NOT pushed** — see the publication finding below. The agent committed correctly but never reported, across four idle cycles |
+| F6 | Learnings + intel base | orchestrator | F5 | ✅ done | closing report in this file | learnings captured as the seven-defect table; intel-base pass is the operator's to run |
 
 ## Event log
 
@@ -277,3 +277,34 @@ was not the author.**
 - The orchestrator issued a contradictory instruction (fix live data → «leave it»), then wrongly
   criticised the agent that followed the first one. Retraction is recorded above, next to the
   original claim rather than in place of it.
+
+---
+
+## ⚠️ Publication finding — for the operator, before anyone pushes
+
+Committed as `c33deba`. **Deliberately not pushed.** Verified facts, not assumptions:
+
+- `origin` is **`https://github.com/Serg1kk/the-vc-brain.git`** — the repo CLAUDE.md describes as
+  **public**.
+- **`main` is 16 commits ahead of `origin/main`** across all feature terminals. Nobody has pushed.
+- **`docs/` is NOT in `.gitignore`** and *is* tracked, contrary to what CLAUDE.md states. 18 doc
+  files sit in the unpushed commits.
+
+**What is safe:** `internal/` (all research, the intel base, sponsor materials), `.env`, `.claude/`
+and `CLAUDE.md` are correctly ignored and untracked. No secrets, no closed-source corpus, no
+third-party material is staged for publication. That protection works.
+
+**What is the actual question:** `docs/` contains the full design process for every feature —
+designs, plans, trackers, QA reports, revision audits. Publishing it reveals the reasoning and
+strategy that the deliberately-minimal public README was written to keep back. Internal ids
+(`REQ-`, `FACT-`) appear throughout, though they are our own tracker ids and disclose no
+third-party content; the sponsor's name appears once, and is public anyway as the challenge
+sponsor.
+
+So this is a **strategy decision, not an incident** — and it is the operator's, not an agent's.
+Three options: (a) add `docs/` to `.gitignore` and `git rm --cached` it before pushing;
+(b) push everything and treat the design process as part of the submission's transparency story —
+defensible, and arguably a strength for the «honest about what it knows» narrative;
+(c) push code only, keeping docs local.
+
+**Do not push until this is decided.** It affects all four features' commits, not just 07's.
