@@ -114,6 +114,17 @@ choosing what to parallelize.
   `resultData.runData`). **Fix: use a real `Merge` node** (`n8n-nodes-base.merge`,
   typeVersion 3.2, `mode:'append'`, `numberInputs:N`), wiring branch *i* into input index *i*.
   IF/Switch reconverges are fine as-is (only one branch is ever live).
+- 2026-07-19 ~08:00 · **05 — ⚠️ CORRECTION to the SHA-256 guidance above: `globalThis.crypto` is
+  UNDEFINED inside the n8n Code-node sandbox.** The entry above tells you to use
+  `globalThis.crypto.subtle.digest('SHA-256', …)` instead of `require('crypto')`. Live result in a
+  Code node: `TypeError: Cannot read properties of undefined (reading 'randomUUID')`. The confusing
+  part: `docker exec vcbrain-n8n node -e "console.log(typeof globalThis.crypto)"` prints `object` on
+  the very same container — **the `@n8n/task-runner` VM sandbox and the container's bare Node process
+  are different global scopes**, so testing it via `docker exec` tells you nothing about what a Code
+  node will see. **Use `require('crypto')`** — it is allow-listed via
+  `NODE_FUNCTION_ALLOW_BUILTIN=crypto,url`, and f03's own `Generate run_id` node has always done this.
+  Note this cuts both ways: modules in `lib/fNN/` that are inlined into Code nodes must still be
+  import-free in the *source* sense, but the Code node itself may `require('crypto')`.
 - 2026-07-19 ~05:10 · **`gpt-5.6-luna` rejects `temperature: 0`** — HTTP 400 «Unsupported value:
   'temperature' does not support 0 with this model». **Omit the parameter entirely** rather than
   sending 0 or 1. 03's agent specs still say «temperature 0» in prose; that prose is stale.
