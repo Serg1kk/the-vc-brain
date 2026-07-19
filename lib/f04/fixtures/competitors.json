@@ -1,0 +1,56 @@
+{
+  "_comment": "Synthetic per_competitor_record[] (design.md §3.3) for a fictional company (acme.com, category: AI agent observability). Deliberately built as the '0 named, >=2 found' demo scenario design.md §8/§11 calls out: every record has company_mentioned=false, i.e. the founder's deck named zero competitors while this workflow found four -- the severity ladder's `material` case ('we have no competitors'). Also exercises the full threat_level/switching_cost range, including nulls (Initech Trace, unassessed) and the threat_level=4/switching_cost=1 'perfect competition, 10x cheaper via bundling' case (Wayne Analytics). The threat_level=1 AND switching_cost=1 moat-bonus nonlinearity (§6.4) is a scoring-input combination, not a competitor archetype, so it is exercised directly in scoring.test.js rather than forced into a fixture record here.",
+  "companyMentionedCount": 0,
+  "foundCount": 4,
+  "expectedSeverity": "material",
+  "competitors": [
+    {
+      "name": "Globex Metrics",
+      "category": "direct",
+      "company_mentioned": false,
+      "positioning_summary": "Tracing and evaluation tooling for LLM agent pipelines, targeting the same ICP as Acme.",
+      "stage": "seed",
+      "most_recent_funding": { "round": "seed", "amount": "$3.2M", "date": "2026-06-20", "lead": "Fictional Ventures" },
+      "differentiation_vs_target": "Broader language-model coverage; weaker agent-specific tracing depth.",
+      "source_urls": ["https://www.globex-metrics.example.com/product"],
+      "threat_level": 3,
+      "switching_cost": 2
+    },
+    {
+      "name": "Initech Trace",
+      "category": "direct",
+      "company_mentioned": false,
+      "positioning_summary": "Open-source tracing layer for autonomous agents with a hosted paid tier.",
+      "stage": "seed",
+      "most_recent_funding": { "round": "seed", "amount": "$1.5M", "date": "2026-04-15", "lead": "Angel syndicate" },
+      "differentiation_vs_target": "OSS-first distribution; no bottom-up TAM sizing built into their own pitch.",
+      "source_urls": ["https://initech-trace.example.org/"],
+      "threat_level": null,
+      "switching_cost": null
+    },
+    {
+      "name": "Stark Signals",
+      "category": "adjacent",
+      "company_mentioned": false,
+      "positioning_summary": "General-purpose observability platform (not agent-specific) adding an AI-agent module.",
+      "stage": "series_a",
+      "most_recent_funding": { "round": "series_a", "amount": "$14M", "date": "2026-02-10", "lead": "Growth Capital Partners" },
+      "differentiation_vs_target": "Broad platform, incumbent distribution advantage; agent-specific depth still shallow.",
+      "source_urls": ["https://stark-signals.example.com/agents"],
+      "threat_level": 2,
+      "switching_cost": 2
+    },
+    {
+      "name": "Wayne Analytics",
+      "category": "incumbent",
+      "company_mentioned": false,
+      "positioning_summary": "Legacy APM incumbent bundling a basic AI-agent dashboard into its existing suite at no extra cost.",
+      "stage": "public",
+      "most_recent_funding": { "round": null, "amount": null, "date": null, "lead": null },
+      "differentiation_vs_target": "Bundled distribution to an existing enterprise install base neutralizes Acme's product-only advantage -- the 'perfect competition' case: verifiably 10x cheaper (bundled/free) with no niche left to defend.",
+      "source_urls": ["https://wayne-analytics.example.com/ai-agents"],
+      "threat_level": 4,
+      "switching_cost": 1
+    }
+  ]
+}

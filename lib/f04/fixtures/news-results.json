@@ -1,0 +1,22 @@
+{
+  "_comment": "Synthetic Tavily topic='news' results for momentum() (design.md §5). Dates are real RFC 1123 strings (verified via `new Date(iso).toUTCString()`, matching the live-verified Tavily format), pinned against endDate below. Mix: 2 recent, 2 prior, 1 out-of-window entirely (>180d before endDate -- must be excluded from both buckets AND from the undated count), 2 undated (no published_date), 1 unparseable (garbage string, must also count as undated).",
+  "endDate": "Fri, 26 Jun 2026 06:06:36 GMT",
+  "results": [
+    { "url": "https://newswire.example.com/a1", "title": "Globex Metrics raises seed round", "published_date": "Sat, 20 Jun 2026 12:00:00 GMT" },
+    { "url": "https://newswire.example.com/a2", "title": "Initech Trace announces funding", "published_date": "Wed, 15 Apr 2026 09:30:00 GMT" },
+    { "url": "https://newswire.example.com/a3", "title": "Stark Signals closes pre-seed", "published_date": "Tue, 10 Feb 2026 00:00:00 GMT" },
+    { "url": "https://newswire.example.com/a4", "title": "Wayne Analytics seed extension", "published_date": "Mon, 05 Jan 2026 00:00:00 GMT" },
+    { "url": "https://newswire.example.com/a5", "title": "Old funding note, outside the 180d window entirely", "published_date": "Sun, 01 Jun 2025 00:00:00 GMT" },
+    { "url": "https://newswire.example.com/a6", "title": "Funding round, publish date not returned by the search API", "published_date": null },
+    { "url": "https://newswire.example.com/a7", "title": "Another undated result" },
+    { "url": "https://newswire.example.com/a8", "title": "Malformed date field (not RFC 1123)", "published_date": "2026-06-01" }
+  ],
+  "expected": {
+    "recent": 2,
+    "prior": 2,
+    "undated": 3,
+    "excludedOutOfWindow": 1,
+    "direction": "stable",
+    "note": "recent+prior=4 (>=3, past the thin-signal threshold); ratio = 2/max(2,1) = 1, strictly between 0.67 and 1.5 -> 'stable'. undated(3) < recent+prior(4), so undatedMajority is false here -- see the fixtures README for an undated-majority variant built by removing a4 and a3 from a copy of this fixture."
+  }
+}

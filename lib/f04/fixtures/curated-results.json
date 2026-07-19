@@ -1,0 +1,57 @@
+{
+  "_comment": "Synthetic Tavily /search-shaped results for curate() (design.md §4). Modeled on a Q3 'competitor discovery' bucket for a fictional company (acme.com, category: AI agent observability). Exercises: a first-party doc below the 0.4 relevance gate (must survive via the exemption), two genuine >=0.4 matches, a blocklisted report-mill domain at a HIGH score (must still be dropped), a below-gate non-first-party doc (must be dropped), and a www/bare duplicate pair (must dedup, keeping the higher score). No real companies -- all domains are fictional or *.example.com.",
+  "company_domain": "acme.com",
+  "query": "AI agent observability startups alternatives to Acme",
+  "results": [
+    {
+      "url": "https://acme.com/about",
+      "title": "About Acme",
+      "content": "Acme builds AI agent observability tooling for engineering teams.",
+      "score": 0.05,
+      "published_date": null
+    },
+    {
+      "url": "https://www.globex-metrics.example.com/product",
+      "title": "Globex Metrics -- Observability for AI Agents",
+      "content": "Globex Metrics offers tracing and evaluation for LLM agent pipelines.",
+      "score": 0.71,
+      "published_date": "Wed, 03 Jun 2026 00:00:00 GMT"
+    },
+    {
+      "url": "https://globex-metrics.example.com/product",
+      "title": "Globex Metrics -- Observability for AI Agents (duplicate, bare host)",
+      "content": "Duplicate of the row above, without the www prefix and a lower score.",
+      "score": 0.42,
+      "published_date": "Wed, 03 Jun 2026 00:00:00 GMT"
+    },
+    {
+      "url": "https://initech-trace.example.org/",
+      "title": "Initech Trace",
+      "content": "Initech Trace is an open-source tracing layer for autonomous agents.",
+      "score": 0.55,
+      "published_date": "Mon, 18 May 2026 00:00:00 GMT"
+    },
+    {
+      "url": "https://grandviewresearch.com/industry-analysis/ai-agent-observability",
+      "title": "AI Agent Observability Market Size, Share & Trends Report",
+      "content": "Report-mill placeholder content -- should never survive the blocklist regardless of its relevance score.",
+      "score": 0.93,
+      "published_date": null
+    },
+    {
+      "url": "https://randomblog.example.net/2026/ai-thoughts",
+      "title": "Some unrelated blog post",
+      "content": "Not relevant to the query and below the 0.4 gate; not first-party either.",
+      "score": 0.12,
+      "published_date": "Tue, 02 Jun 2026 00:00:00 GMT"
+    }
+  ],
+  "expected": {
+    "survivorUrlsInOrder": [
+      "https://www.globex-metrics.example.com/product",
+      "https://initech-trace.example.org/",
+      "https://acme.com/about"
+    ],
+    "notes": "Order is by score desc after gating/dedup. acme.com/about survives via the first-party exemption despite score 0.05. The www/bare Globex duplicate collapses to the higher-scored (0.71) row. grandviewresearch.com and the low-score blog post are both dropped."
+  }
+}
