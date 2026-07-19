@@ -331,6 +331,25 @@ This is the guard against the >80% false-contradiction rate. Deterministic, orde
    that a contradiction candidate failed the gate. The candidate is not silently dropped; the
    attempt is auditable.
 
+### 5.9 ⚠️ The entity gate also guards SUPPORTS — a gap found live, 2026-07-19
+
+An earlier version of this design gated only `contradicted` (§6's opening line). **That was a hole,
+and the Tavily branch hit it on its first live run.**
+
+A search for the fixture company "GameLoop" returned `gameloop.com` — a real, unrelated Android
+emulator with the same name. The deterministic relevance filter passed it because the page shared the
+word "mobile" with the claim, and it was written as `supports` evidence, flipping two claims to
+**`verified`**.
+
+**False corroboration is at least as dangerous as false contradiction, and for us arguably worse:**
+`verified` is the label an investor actually trusts, so a same-named company's marketing page minting
+a verified badge is a textbook REQ-004 fabrication. This matches the published finding that
+repetition and surface-form similarity are the strongest drivers of false corroboration.
+
+**Rule: `applyEntityGate` (deterministic steps 1–2) runs on `supports` candidates too, not only on
+contradictions.** Evidence failing the gate is written as `relation='context'` with an auditable
+note — never silently dropped, and never counted toward a verdict.
+
 ### 6.0 Only primary evidence may contradict a founder
 
 An independent evidence hierarchy — behavioural/transactional data ("what people do") above
