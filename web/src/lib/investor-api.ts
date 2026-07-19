@@ -382,6 +382,11 @@ export interface ApplicationRow {
   memo_version: number | null;
   /** False on all rows today — feature 06 has not shipped a memo writer yet. */
   memo_available: boolean;
+  /** Added to the live view after data-contracts.md was frozen (feature 11 QA
+   * finding, 2026-07-19) — read straight off the joined company row rather than
+   * requiring a founder-card join, which isn't guaranteed to resolve. Required for
+   * the feed row's SYNTHETIC badge (brief §4.6) without a second read. */
+  is_synthetic: boolean;
 }
 
 /**
@@ -810,9 +815,12 @@ export function getTheses(query?: RestQuery): Promise<Result<ThesisRow[]>> {
  * `is_default` together in one transaction. Never raw-INSERT an active row; never flip
  * those columns by hand.
  *
- * ⏳ The RPC's exact parameter name is not yet frozen upstream; this calls it with
- * `{ thesis_id }`. Re-verify against the live function signature once it ships, and
- * fix this one call site rather than guessing again elsewhere.
+ * ✅ Verified 2026-07-19 against the live function (`\df+ activate_thesis_version` →
+ * `p_thesis_id uuid`, `GRANT ... TO anon`), and end-to-end over REST with a throwaway
+ * thesis row (insert inactive → RPC → row flips `active`, `default` thesis untouched
+ * → row deleted). The parameter is `p_thesis_id` — the earlier `{ thesis_id }` guess
+ * 404s with PGRST202 ("Could not find the function ... in the schema cache"), a
+ * silent failure at demo time. Fixed below; do not revert to the unprefixed name.
  */
 export async function publishThesisVersion(params: {
   name: string;
@@ -833,7 +841,9 @@ export async function publishThesisVersion(params: {
     });
   }
 
-  const activated = await restPost<unknown>("/rpc/activate_thesis_version", { thesis_id: row.id });
+  const activated = await restPost<unknown>("/rpc/activate_thesis_version", {
+    p_thesis_id: row.id,
+  });
   if (!activated.ok) {
     return fail({
       ...activated.error,
@@ -885,6 +895,89 @@ export function getScoreComponents(query?: RestQuery): Promise<Result<ScoreCompo
     order: "run_id.desc,subscorer.asc",
     ...query,
   });
+}
+
+// ---------------------------------------------------------------------------
+// `memos` — the memo screen's source table (db/schema.sql, no dedicated view yet)
+// ---------------------------------------------------------------------------
+//
+// Feature 06 (`generate-memo`) has not shipped — this table has 0 rows in every
+// environment today. That is the normal case, not an error: `getMemos`/`getCurrentMemo`
+// resolving to an EMPTY, SUCCESSFUL result is "no memo generated yet" (brief §10 —
+// render `No memo generated yet` with a `Generate memo` action); a `Result` with
+// `ok: false` is "the read itself failed" (brief §12.3 — render the read-failure
+// notice). These are opposite findings and must never be conflated — the `Result<T>`
+// type already keeps them apart everywhere else in this file; nothing extra to build.
+
+/** Investment-committee vocabulary — four values, not the earlier three. `'invest'`
+ * and `'watch'` never shipped past an early draft of this schema; do not encode them
+ * anywhere. Migrated and constraint-verified live 2026-07-19. */
+export type MemoRecommendation = "proceed" | "proceed-with-conditions" | "pass" | "watchlist";
+
+/**
+ * A memo row is immutable and append-only (no `status`, no `updated_at` column) —
+ * regenerating a memo writes a NEW `(application_id, version)` row; the current memo
+ * for an application is its highest `version`. Never UPDATE or reuse a row client-side.
+ */
+export interface MemoRow {
+  id: string;
+  application_id: string;
+  version: number;
+  /**
+   * jsonb. The database enforces only that these five keys are present (brief §10's
+   * required sections) — `sections ?& array['snapshot','hypotheses','swot',
+   * 'problem_product','traction']`. Optional sections (risk matrix, competition,
+   * financials-lite) may also appear as extra keys, included only when there is real
+   * content. ⚠️ The internal shape of each section's value is NOT part of the table
+   * schema and is not frozen anywhere yet (feature 06 is unbuilt) — treated as opaque
+   * here rather than guessed. Re-type this once feature 06 ships its actual payload.
+   */
+  sections: {
+    snapshot: unknown;
+    hypotheses: unknown;
+    swot: unknown;
+    problem_product: unknown;
+    traction: unknown;
+    [optionalSection: string]: unknown;
+  };
+  /** jsonb, defaults to `{}`. Shape not frozen — same caveat as `sections`. */
+  gaps: Record<string, unknown>;
+  /** The memo → claim → evidence → raw_signal chain (Agentic Traceability) — every
+   * inline verdict badge in the memo prose should trace back to one of these. */
+  cited_claim_ids: string[];
+  /** Nullable — a memo row can in principle exist before a recommendation is set.
+   * Render the recommendation banner only when non-null. */
+  recommendation: MemoRecommendation | null;
+  /** jsonb, present only when `recommendation === 'proceed-with-conditions'`. Shape
+   * not frozen — same caveat as `sections`. */
+  conditions: unknown;
+  /** jsonb — the "Where to dig" block's source (brief §10). Shape not frozen — same
+   * caveat as `sections`. */
+  deep_dive_questions: unknown;
+  created_at: string;
+}
+
+export function getMemos(query?: RestQuery): Promise<Result<MemoRow[]>> {
+  return restGet<MemoRow[]>("/memos", {
+    select: "*",
+    order: "application_id.asc,version.desc",
+    ...query,
+  });
+}
+
+/**
+ * Resolves "the current memo for this application" — highest `version`, per the
+ * table's own invariant. `data: null` means no memo row exists yet (the normal case
+ * today); this is a successful read, not a failure — check `.ok` first, as always.
+ */
+export async function getCurrentMemo(applicationId: string): Promise<Result<MemoRow | null>> {
+  const res = await getMemos({
+    filters: { application_id: `eq.${applicationId}` },
+    order: "version.desc",
+    limit: 1,
+  });
+  if (!res.ok) return res;
+  return ok(res.data[0] ?? null);
 }
 
 // ---------------------------------------------------------------------------
