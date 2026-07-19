@@ -1,0 +1,17 @@
+The VC Brain
+Copyright 2026 Sergey Golubev
+
+This product includes software developed under the Apache License 2.0.
+
+Third-party software notices:
+
+- due-diligence-agents (Apache 2.0, Copyright Zohar Babin)
+  Quote fabrication detection module: lib/f05/quote_guard.js is a JavaScript port of
+  quote_salience_mismatches from the due-diligence-agents project
+  (https://github.com/zoharbabin/due-diligence-agents).
+
+- reporting (Apache 2.0, Copyright Unstructured Ventures, LLC)
+  Truth-gap claim classification vocabulary adopted from reporting's memo-agent
+  specifications. Used in docs/backlog/05-truth-gap-trust/design.md §6.1:
+  contradiction record shape with nature (factual|definitional|methodological|temporal|scope)
+  and severity (minor|moderate|material) fields.

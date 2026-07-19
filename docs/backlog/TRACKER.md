@@ -40,7 +40,7 @@
 | 03 | founder-score | **done** (11/11 tasks, QA gate PASSED, commit `f64b66b`; ⚠️ shared DB files uncommitted — see OPEN below) | 01-schema | 05, 06 | 1 |
 | 04 | market-trend-competition | **done** (QA gate PASSED · 141 unit tests + adversarial gate · commits `a130c03`/`2be26f9` · n8n `f04-market-intel`/`f04-competition-intel`/`f04-db-write` · see `04-market-trend-competition/handoff.md`; 3 known-open non-blocking items NEW-1..3 recorded there) | 01-schema (no schema additions needed) | 05, 06 | 1 |
 | 07 | thesis-engine | **done** (QA report present, `handoff.md` written) | 01-schema | 02 (gate), 09 | 1 |
-| 05 | truth-gap-trust | **in-build** (core done & committed `f0c2b90`/`8895ae9`/`875f4ae` · 147 tests · `claim_trust` view live · n8n `f05-trust-rollup` `Wtd887vYwv5x3FvH` active · QA pass 1 returned 2 findings, both in fix) | 03 & 04 output contracts | 06 | 2 |
+| 05 | truth-gap-trust | **done** (QA gate PASSED after 2 passes · 197 tests · view `claim_trust` live · 3 n8n workflows active: `f05-trust-rollup` `Wtd887vYwv5x3FvH`, `f05-verify-claims` `UubHQ9HZWVdOrKjq`, `f05-contradiction-scan` `csvoMOTs7MNBdXLI` · commits `f0c2b90`→`2619230` · see `05-truth-gap-trust/done.md`; 10 known-open items recorded there) | 03 & 04 output contracts | 06 | 2 |
 | 08 | founder-intake (compact B) | backlog | 01-schema, 02 (pre-fill sub-workflows) | 11 | 2 |
 | 10 | api-cli-skill | **done** (QA gate PASSED, 3 rounds · views + `f10-nl-search` + `lib/f10` 99 tests + `bin/vcbrain` + skill · read-only · see `10-api-cli-skill/done.md`) | 01-schema (PostgREST) | 09 (NL-search UI) | 2 |
 | 06 | memo-decision | backlog | 03, 04, 05 | 09 | 3 |

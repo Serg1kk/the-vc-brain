@@ -1,6 +1,6 @@
 # 05 · Truth-Gap Check & Trust Score
 
-Status: backlog · Depends on: 01, 03, 04
+Status: **DONE** (2026-07-19 · QA gate PASSED after 2 passes · 197 tests · 3 n8n workflows live · see [done.md](done.md)) · Depends on: 01, 03, 04
 
 ## What it is
 

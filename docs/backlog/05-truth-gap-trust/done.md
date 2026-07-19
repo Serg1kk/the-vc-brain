@@ -126,10 +126,17 @@ contradict.
    Post-MVP this needs a `superseded_by` column or a retraction event type.
 3. **Two stale `supports` rows** from the pre-fix same-name incident, same reasoning, self-healing at
    the scores layer via `max(computed_at)`.
-4. **`quote_guard` negation detection is lexical, not semantic** — a paraphrased flip
-   ("has not launched publicly" vs "went live to the public") is missed **by design**. Deliberate
-   false-negative bias: a false accusation against a truthful founder breaks REQ-004, and that costs
-   more than a missed catch.
+4. **`quote_guard` negation detection is lexical, not semantic — and that cuts both ways.**
+   - *Misses:* a paraphrased flip ("has not launched publicly" vs "went live to the public") is not
+     caught. Deliberate false-negative bias — a false accusation against a truthful founder breaks
+     REQ-004, and that costs more than a missed catch.
+   - *False positives, reduced but not eliminated:* the check was rewritten to key on **one** precise
+     negated predicate instead of sweeping up to four loose nearby words, which shrank the surface
+     roughly fourfold. A residual remains: a coincidental, unrelated use of that same single word
+     elsewhere in the source can still fire ("no obligation to provide refunds" vs a source
+     mentioning an unrelated "obligation of documentation").
+   Both directions share one root cause — the check matches words, not the negated *relationship*.
+   Closing it properly needs semantic comparison, which is post-MVP.
 5. **Duplicate `scores` rows are accepted by design** (§8.3) — `scores` has no idempotency guard and
    a real one needs an advisory lock. "Current" resolves by `max(computed_at)`.
 6. **Route-2 scope over-narrowing (theoretical, zero live cases).** If a company is ever re-screened

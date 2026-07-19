@@ -2,7 +2,7 @@
 
 > English version (primary): [README.md](README.md)
 
-Status: backlog · Depends on: 01, 03, 04
+Status: **DONE** (2026-07-19 · QA-гейт пройден за 2 прохода · 197 тестов · 3 живых n8n-workflow · см. [done.md](done.md)) · Depends on: 01, 03, 04
 
 ## Что это
 
