@@ -1,0 +1,647 @@
+{
+ "name": "f09-suggest-followup",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "f09-suggest-followup",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "id": "9af30828-ff2b-4582-8a0e-c2e4300c1ee5",
+   "name": "Webhook: f09-suggest-followup",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -1400,
+    0
+   ],
+   "webhookId": "e280404f-ea60-4dfd-855b-4fb905dbbaa3"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst item = $input.first().json;\nconst body = item.body || {};\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst applicationId = String(body.application_id || '').trim();\nif (!applicationId || !UUID_RE.test(applicationId)) {\n  return [{ json: { __valid: false, error: { code: 'invalid_input', message: 'application_id must be a uuid.' } } }];\n}\nreturn [{ json: { __valid: true, application_id: applicationId } }];\n"
+   },
+   "id": "619cdddd-a36e-4e5c-a0c7-6c298484fc04",
+   "name": "Validate input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -1160,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "bb25277a-4d23-4ec6-a1a9-ac7b48f3ea88",
+       "leftValue": "={{ $json.__valid }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "aff7bc84-b5c0-45de-a76f-d771d854fddc",
+   "name": "IF: valid?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -920,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: $json.error } }];"
+   },
+   "id": "14a08724-5ced-4db8-8729-c5f20d169850",
+   "name": "Build client error response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -680,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 400
+    }
+   },
+   "id": "14098cb8-d167-4f17-8f6f-b7c54e979aea",
+   "name": "Respond: bad request (400)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    -440,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\n// Existence check + company identity -- same two-step (applications -> companies) f08's\n// own \"Fetch card + criteria + claims\" node uses, kept as its own node here since 09 needs\n// no card/claims context, only company identity for the phrasing agent's company_context.\nconst inp = $json;\nconst appRows = await pgGet.call(this, 'applications?id=eq.' + inp.application_id + '&select=id,company_id,status');\nif (!appRows || !appRows.length) {\n  return [{ json: { ...inp, __found: false } }];\n}\nconst companyId = appRows[0].company_id;\nconst companyRows = await pgGet.call(this,\n  'companies?id=eq.' + companyId + '&select=name,one_liner,category,is_synthetic');\nconst company = (companyRows && companyRows[0]) || {};\nreturn [{ json: { ...inp, __found: true, company_id: companyId,\n  company_name: company.name || null, one_liner: company.one_liner || null,\n  sector: company.category || null, is_synthetic: !!company.is_synthetic } }];\n"
+   },
+   "id": "cbdbc6ee-507c-4372-bed3-1e6b50c5ad59",
+   "name": "Load application + company",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -680,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "a1f2831d-84fe-449e-b843-79dbc127b5d0",
+       "leftValue": "={{ $json.__found }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "aa627702-164d-4272-b228-bdaa5a46f435",
+   "name": "IF: found?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: { code: 'not_found', message: 'Application not found.' } } }];"
+   },
+   "id": "7d965189-ce48-4fdf-bac6-13793af9c014",
+   "name": "Build not-found response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -200,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 404
+    }
+   },
+   "id": "4dec06ce-57a2-40a3-b621-5d990ef29146",
+   "name": "Respond: not found (404)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    40,
+    300
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst inp = $json;\n\n// founder_ids on this application's company -- same lookup f05's own SS8.1 route 3 uses,\n// reused here for the identical reason: contradiction events and founder_score_gaps are\n// both founder-scoped, not application-scoped.\nconst founderRows = await pgGet.call(this, 'founder_company?company_id=eq.' + inp.company_id + '&select=founder_id');\nconst founder_ids = (founderRows || []).map(r => r.founder_id).filter(Boolean);\n\n// Contradictions -- data-contracts.md SS8: \"query both shapes\" (application-fallback for\n// company-only cards, founder-scoped otherwise).\nconst contradictionsApp = await pgGet.call(this,\n  'events?event_type=eq.claim_contradicted&entity_type=eq.application&entity_id=eq.' + inp.application_id + '&order=created_at.desc');\nlet contradictionsFounder = [];\nif (founder_ids.length) {\n  contradictionsFounder = await pgGet.call(this,\n    'events?event_type=eq.claim_contradicted&entity_type=eq.founder&entity_id=in.(' + founder_ids.join(',') + ')&order=created_at.desc');\n}\n\n// Founder-score gaps -- api_founders.founder_score_gaps[], already investor-language\n// (lovable-brief.md SS4.4: \"render as-is, do not rewrite\").\nlet founderRowsScored = [];\nif (founder_ids.length) {\n  founderRowsScored = await pgGet.call(this,\n    'api_founders?founder_id=in.(' + founder_ids.join(',') + ')&select=founder_id,full_name,founder_score,founder_score_gaps');\n}\n\n// score_formulas active founder_score config -- criteria[].anchor/weight, same source\n// f08's own \"Fetch card + criteria + claims\" node reads (independent copy, no shared\n// import between generators, house convention).\nconst formulaRows = await pgGet.call(this,\n  'score_formulas?axis=eq.founder_score&active=eq.true&select=config&order=created_at.asc&limit=1');\nconst criteria = (formulaRows.length && formulaRows[0].config && formulaRows[0].config.criteria) || [];\n\n// Missing (not-disclosed) claims -- api_claims carries application_id + topic; claim_trust\n// carries the authoritative derived_status (data-contracts.md SS4: \"read derived_status,\n// not verification_status\"). Two reads, same reason claim_trust has no application_id.\nconst claimRows = await pgGet.call(this,\n  'api_claims?application_id=eq.' + inp.application_id + '&select=claim_id,topic,text_verbatim');\nlet missingClaimIds = [];\nif (claimRows.length) {\n  const claimIds = claimRows.map(c => c.claim_id);\n  const trustRows = await pgGet.call(this,\n    'claim_trust?claim_id=in.(' + claimIds.join(',') + ')&derived_status=eq.missing&select=claim_id');\n  missingClaimIds = (trustRows || []).map(r => r.claim_id);\n}\n\nreturn [{ json: { ...inp, founder_ids, contradiction_events: [...contradictionsApp, ...contradictionsFounder],\n  founder_rows: founderRowsScored, criteria_config: criteria, claim_rows: claimRows,\n  missing_claim_ids: missingClaimIds } }];\n"
+   },
+   "id": "3bb0dd82-1996-49d6-bf28-062d538739ca",
+   "name": "Load founder_ids + gap sources",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -200,
+    0
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\n// Deterministic gap selection for feature 09's \"Suggest follow-up questions\" card action\n// (lovable-brief.md SS9.4). Three gap sources, each capped, each independently\n// deterministic -- NO LLM involved in WHICH gaps get asked about, only in HOW the two\n// evidence-description sources get turned into spoken questions (this node -> Build\n// request -> OpenAI: suggest-followup-questions).\n//\n// Source A: contradictions (events.claim_contradicted). Fully deterministic -- the stored\n// payload.question was already written by feature 05's own pipeline at verification time.\n// This bucket needs zero model calls. Capped at 3, most-recent-per-claim wins.\n//\n// Source B: founder_score_gaps[] (api_founders). what_would_close_it is already\n// investor-language prose describing MISSING EVIDENCE, not a question -- ranked by the\n// live score_formulas criteria weight, capped at 2.\n//\n// Source C: missing (not-disclosed) claims (claim_trust.derived_status='missing'), scoped\n// to this application via api_claims. Deduped against any topic already reachable through\n// a Source-B criterion (CRITERION_TOPIC below), so the same underlying fact is never asked\n// about twice through two different phrasings. Capped at 2, ordered by topic for\n// run-to-run stability (claim_trust rows carry no timestamp to order by instead).\n//\n// Deliberately EXCLUDED (suggest-followup-questions-agent-tbd-items.md TBD-3):\n// score_market/idea_vs_market missing[] short codes (gap_growth, gap_size_bottom_up, ...)\n// and thesis_missing_fields -- terse internal flags with no investor-language description\n// anywhere in this codebase; turning them into a spoken question would require guessing\n// their meaning, which this feature's own \"never fabricate\" rule forbids.\n\n// CRITERION_TOPIC -- SOURCE OF TRUTH: lib/f08/gaps.js. Duplicated here (not required --\n// this sandbox cannot require() a repo file, same \"zero imports\" convention every lib/*.js\n// file in this repo states) purely to dedupe Source C against Source B's own criteria.\nconst CRITERION_TOPIC = {\n  E1: 'founder.execution.merged_pr_foreign', E3: 'founder.execution.commit_consistency',\n  E4: 'founder.execution.live_product', E5: 'founder.execution.external_usage',\n  E7: 'founder.execution.provenance', X1: 'founder.expertise.vertical_tenure',\n  X2: 'founder.expertise.insight_specificity', X5: 'founder.expertise.competitor_granularity',\n  X6: 'founder.expertise.unasked_work', L2: 'founder.leadership.first_customers',\n  L3: 'founder.leadership.icp_specificity', L5: 'founder.leadership.written_communication',\n};\n\nfunction normalizeCriteriaList(criteria) {\n  if (!criteria) return [];\n  if (Array.isArray(criteria)) return criteria.filter(Boolean);\n  return Object.keys(criteria).map((id) => ({ id, ...criteria[id] }));\n}\n\nfunction fmtDate(iso) {\n  if (!iso) return null;\n  try { return new Date(iso).toISOString().slice(0, 10); } catch (e) { return null; }\n}\n\nfunction clip(text, max) {\n  if (!text) return text;\n  return text.length > max ? text.slice(0, max - 3) + '...' : text;\n}\n\nconst inp = $json;\n\n// ---- Source A: contradictions ----------------------------------------\n\nconst byClaim = new Map();\nfor (const ev of (inp.contradiction_events || [])) {\n  const p = ev.payload || {};\n  const claimId = p.claim_id || ev.id;\n  const existing = byClaim.get(claimId);\n  if (!existing || new Date(ev.created_at) > new Date(existing.created_at)) byClaim.set(claimId, ev);\n}\nconst contradictionEvents = Array.from(byClaim.values())\n  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))\n  .slice(0, 3);\n\nconst contradiction_questions = contradictionEvents.map((ev) => {\n  const p = ev.payload || {};\n  const question = p.question || 'Can you walk me through this in more detail?';\n  const date = fmtDate(p.checked_at);\n  const founderClaim = clip(p.founder_claim, 70);\n  const foundReality = clip(p.found_reality, 70);\n  let why;\n  if (founderClaim && foundReality) {\n    why = 'The deck says \"' + founderClaim + '\"' + (date ? ' (checked ' + date + ')' : '') +\n      '; a public source says: \"' + foundReality + '\". Worth asking about.';\n  } else if (foundReality) {\n    why = 'A public check' + (date ? ' on ' + date : '') + ' found: \"' + foundReality + '\". Worth asking about.';\n  } else {\n    why = 'A public check' + (date ? ' on ' + date : '') + ' raised a question here. Worth asking about.';\n  }\n  return { ref_id: 'contradiction:' + (p.claim_id || ev.id), question, why, source: 'contradiction' };\n});\n\n// ---- Source B: founder_score_gaps -------------------------------------\n\nconst criteriaById = new Map(normalizeCriteriaList(inp.criteria_config).map(c => [c.id, c]));\nconst fsgCandidates = [];\nconst seenCriteria = new Set();\nfor (const fr of (inp.founder_rows || [])) {\n  const gaps = Array.isArray(fr.founder_score_gaps) ? fr.founder_score_gaps : [];\n  for (const g of gaps) {\n    if (!g || !g.criterion_id || seenCriteria.has(g.criterion_id)) continue;\n    seenCriteria.add(g.criterion_id);\n    const cfg = criteriaById.get(g.criterion_id) || {};\n    fsgCandidates.push({\n      founder_id: fr.founder_id, criterion_id: g.criterion_id,\n      weight: typeof cfg.weight === 'number' ? cfg.weight : 0,\n      anchor: cfg.anchor || g.criterion_id,\n      what_would_close_it: g.what_would_close_it || null,\n    });\n  }\n}\nfsgCandidates.sort((a, b) => b.weight - a.weight);\nconst fsgSelected = fsgCandidates.filter(c => c.what_would_close_it).slice(0, 2);\n\n// ---- Source C: missing (not-disclosed) claims --------------------------\n\nconst missingIds = new Set(inp.missing_claim_ids || []);\nconst excludedTopics = new Set(fsgCandidates.map(c => CRITERION_TOPIC[c.criterion_id]).filter(Boolean));\nconst seenTopics = new Set();\nconst mcCandidates = (inp.claim_rows || [])\n  .filter(c => missingIds.has(c.claim_id) && c.topic && !excludedTopics.has(c.topic))\n  .sort((a, b) => String(a.topic).localeCompare(String(b.topic)))\n  .filter(c => { if (seenTopics.has(c.topic)) return false; seenTopics.add(c.topic); return true; })\n  .slice(0, 2);\n\n// ---- gap_items for the phrasing agent -----------------------------------\n\nconst gap_items = [\n  ...fsgSelected.map(c => ({\n    ref_id: 'fsg:' + c.founder_id + ':' + c.criterion_id, kind: 'founder_score_gap',\n    criterion_label: c.anchor, what_would_close_it: c.what_would_close_it,\n  })),\n  ...mcCandidates.map(c => ({ ref_id: 'mc:' + c.claim_id, kind: 'missing_claim', topic: c.topic })),\n];\n\nconst company_context = {\n  company_name: inp.company_name || 'this company',\n  one_liner: inp.one_liner || null,\n  sector: inp.sector || null,\n};\n\nconst reasons = [];\nif (!contradiction_questions.length) reasons.push('no recorded contradictions');\nif (!fsgSelected.length) reasons.push((inp.founder_rows && inp.founder_rows.length)\n  ? 'no founder-score gaps on file' : 'no founder is scored on this application yet');\nif (!mcCandidates.length) reasons.push('no undisclosed topics found in the evidence base');\nconst empty = !contradiction_questions.length && !gap_items.length;\nconst empty_reason = empty\n  ? 'No follow-up questions to suggest yet: ' + reasons.join(', ') + '.'\n  : null;\n\nreturn [{ json: { ...inp, __contradiction_questions: contradiction_questions,\n  __gap_items: gap_items, __company_context: company_context,\n  __empty: empty, __empty_reason: empty_reason } }];\n"
+   },
+   "id": "1d726193-14d9-4134-8112-7edae974a045",
+   "name": "Select + rank gaps (deterministic)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    40,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose"
+     },
+     "conditions": [
+      {
+       "id": "67b7240a-d010-4dff-ae2d-8da6070512ba",
+       "leftValue": "={{ $json.__gap_items.length }}",
+       "rightValue": 0,
+       "operator": {
+        "type": "number",
+        "operation": "gt"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "6714f889-cb58-4f69-a1bd-8aa0e5917de3",
+   "name": "IF: any gap_items?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    280,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SYS = \"<prompt>\\n<title>\\n# INVESTOR FOLLOW-UP QUESTION WRITER (CALL PREP)\\n</title>\\n\\n<description>\\nYOU ARE A SHARP, EXPERIENCED VENTURE ASSOCIATE PREPPING QUESTIONS FOR YOUR OWN FOUNDER CALL IN THE\\nNEXT 30 MINUTES. Another part of this system has already read the deal's evidence, decided what is\\nmissing, and ranked it. Your only job is to turn each already-selected gap into ONE short question\\nyou would actually ask out loud, and one line explaining to yourself why it is worth asking.\\n\\nYOU ARE NOT DECIDING WHAT TO ASK. Selection already happened in code, before you ever saw this\\ninput. You receive 1 to 6 items, each describing one specific thing nobody has told you yet, and you\\nwrite exactly one question per item, in the order given. Never more, never fewer, never merged,\\nnever split.\\n\\nTHE CALL HAS ALREADY BEEN AGREED TO. This founder knows they are talking to an investor about a\\npossible check. You do not need to hide that, soften it into a form, or pretend you are simply\\ncurious in the abstract \\u2014 you are a professional, on a call, asking a direct and fair question. What\\nyou must never do is make it sound like an accusation or like the founder has already been caught\\ndoing something wrong. The register is: a prepared colleague who did their homework and is asking\\nthe founder to fill a specific hole, not a form and not a cross-examination.\\n\\nTWO KINDS OF GAP, ONE SKILL. Some items (`kind: \\\"founder_score_gap\\\"`) come with a sentence already\\nwritten for you, describing what evidence would close the gap \\u2014 you turn that description into a\\nspoken question. Others (`kind: \\\"missing_claim\\\"`) come with only a short internal label (a \\\"topic\\\")\\nnaming a fact nobody has stated anywhere \\u2014 you have to work out, from that label alone, what plain\\nquestion would get you that fact. Both cases end in the same kind of output: one natural sentence\\nwith one question mark that a founder could answer from memory in under 30 seconds, no documents, no\\nprep required on their end.\\n</description>\\n\\n<instructions>\\n## INSTRUCTIONS\\n\\n<validation>\\n1. Read `company_context`. Use it only for light phrasing context (you may say the company's name\\n   naturally); never invent a detail about the company that is not stated somewhere in your input.\\n2. Read `gap_items`. It contains 1 to 6 entries, each with `ref_id` and `kind`. You write **exactly\\n   one question per entry**, in the order given. If it is empty, return `{\\\"questions\\\": []}`.\\n3. For each entry, branch on `kind`:\\n   3.1. `\\\"founder_score_gap\\\"` \\u2014 read `criterion_label` (a short internal name, context only, never\\n        quote it in your output) and `what_would_close_it` (a sentence describing missing evidence \\u2014\\n        this is your real source material).\\n   3.2. `\\\"missing_claim\\\"` \\u2014 read `topic`, a dotted slug like `company.business_model` or\\n        `founder.leadership.first_customers`. Consult the TOPIC PLAYBOOK below for topics you\\n        recognize; for anything unlisted, read the last segment of the slug as plain English words\\n        and build the question from what that phrase plainly means.\\n</validation>\\n\\n<processing>\\n4. For each item, write `question`:\\n   4.1. One sentence, one question mark, one ask. If the underlying gap has two closely related\\n        parts (e.g. \\\"who and how\\\"), you may join them in a single natural sentence with \\\"and\\\" \\u2014 that\\n        is still one ask, not a compound question, as long as a single short answer covers both.\\n   4.2. Bias toward the past and the present, not the future. A gap about evidence or a missing fact\\n        is a gap about something that either already happened or is already true today \\u2014 ask about\\n        that, never about a plan, a target, or a forecast the founder would have to invent on the\\n        spot.\\n   4.3. Plain spoken English. No internal system vocabulary (see restrictions) \\u2014 this is what an\\n        investor says out loud, not a field label.\\n   4.4. Maximum 160 characters. This is read from a card during a live call, not a document.\\n   4.5. Answerable in under 30 seconds from memory, with a concrete name, number, date or fact \\u2014 not\\n        an opinion, a philosophy, or a pitch.\\n5. Write `why` \\u2014 ONE sentence, maximum 140 characters, stating plainly what this question would\\n   close. Factual and neutral: \\\"we don't have X yet\\\" or \\\"nothing we've seen shows X\\\" \\u2014 never \\\"you\\n   didn't mention X\\\" in an accusing tone, and never any language implying the founder did something\\n   wrong by not disclosing it. Absence of evidence is normal at this stage, not a red flag by itself.\\n6. Read both strings back and check them against the FORBIDDEN VOCABULARY and FORBIDDEN FRAMING\\n   lists. One violation invalidates the whole item.\\n</processing>\\n\\n<formatting>\\n7. Return a single JSON object with one key, `questions` \\u2014 a JSON array, no markdown fence, no\\n   preamble, no text outside the object. Each element has exactly two keys: `ref_id`, `question`,\\n   `why`.\\n</formatting>\\n</instructions>\\n\\n<topic_playbook>\\n## TOPIC PLAYBOOK \\u2014 MISSING-CLAIM TOPICS SEEN LIVE\\n\\nThese are the `missing_claim` topics this agent has actually received in production. Handle an\\nunlisted topic the same way: read the slug's own words and ask the most direct question that would\\nproduce that fact.\\n\\n### `company.business_model` \\u2014 how the company actually makes (or plans to make) money\\nAsk about: the mechanism itself \\u2014 subscription, transaction fee, license, services \\u2014 in the\\nfounder's own words, today, not a projection.\\nExample question: \\\"In plain terms, how does the company make money today?\\\"\\n\\n### `company.stage_evidence` \\u2014 what stage the product is actually at\\nAsk about: what is live right now \\u2014 shipped and usable, in closed beta, or still pre-launch.\\nExample question: \\\"What's actually live and usable today \\u2014 do people outside the team use it?\\\"\\n\\n### `company.what_is_built` \\u2014 what the product concretely does\\nAsk about: a plain description of what has been built and shipped, not the vision or the roadmap.\\nExample question: \\\"In plain terms, what has the team actually built and shipped so far?\\\"\\n\\n### `company.geography_country` \\u2014 where the company and its customers actually are\\nAsk about: where the company is legally/operationally based, and separately, where its customers or\\nusers are, if that differs.\\nExample question: \\\"Where's the company actually based, and is that also where your customers are?\\\"\\n\\n### `founder.leadership.first_customers` \\u2014 evidence of a first real customer or committed user\\nAsk about: a specific first customer, pilot, or committed user \\u2014 who they are (in general terms) and\\nhow the relationship started.\\nExample question: \\\"Who was your first customer or pilot, and how did that relationship start?\\\"\\n</topic_playbook>\\n\\n<chain_of_thoughts>\\n## CHAIN OF THOUGHTS\\nFollow these steps in strict order:\\n\\n1. Read the context.\\n   1.1. Note the company name and any light context (`one_liner`, `sector`) available.\\n   1.2. Confirm you are not about to invent any detail not present in your input.\\n\\n2. For each item, in the given order:\\n   2.1. Identify its `kind` and read the matching source field(s).\\n   2.2. Identify the single concrete fact this item is actually missing.\\n   2.3. Draft a question that would produce that fact if the founder answered honestly from memory.\\n   2.4. Test it: is this answerable in under 30 seconds without opening a document, without\\n        inventing a projection, and without more than one question mark? If not, rewrite.\\n   2.5. Write the `why`, stating plainly what is missing, with no accusing tone.\\n\\n3. Final pass over everything you wrote:\\n   3.1. Scan for every word or stem on the FORBIDDEN VOCABULARY list.\\n   3.2. Scan for accusation framing on the FORBIDDEN FRAMING list.\\n   3.3. Confirm one item per input item, same `ref_id`s, same order.\\n   3.4. Confirm nothing forward-looking or unanswerable-on-the-spot survived.\\n\\n4. Emit the JSON object. Nothing else.\\n</chain_of_thoughts>\\n\\n<restrictions>\\n## WHAT NOT TO DO\\n\\n- **NEVER USE INTERNAL SYSTEM VOCABULARY IN THE QUESTION OR THE WHY.** Forbidden stems, in any\\n  form: \\\"criterion\\\", \\\"score\\\", \\\"founder score\\\", \\\"gap\\\", \\\"axis\\\", \\\"verif\\\" (verification/verified/etc.),\\n  \\\"claim\\\", \\\"topic\\\", \\\"evidence base\\\", \\\"coverage\\\", \\\"confidence level\\\". An investor asking a question\\n  out loud does not say \\\"your gap analysis shows...\\\" \\u2014 they just ask the question.\\n- **NEVER IMPLY THE FOUNDER LIED, HID SOMETHING, OR DID ANYTHING WRONG.** Forbidden stems: \\\"lied\\\",\\n  \\\"misrepresent\\\", \\\"fabricat\\\", \\\"inconsistent\\\", \\\"dishonest\\\", \\\"you didn't tell us\\\", \\\"you failed to\\\".\\n  Not having stated a fact yet is the default state at this stage, not a red flag. Frame every `why`\\n  as a plain, neutral absence: \\\"we haven't seen X\\\" \\u2014 never an accusation.\\n- **NEVER ASK FOR A FORECAST, PROJECTION, OR PLAN** when the underlying gap is about evidence that\\n  already exists or a fact that is already true. No \\\"how many customers will you have\\\", no \\\"what's\\n  your plan for X\\\", no \\\"where do you expect to be in 12 months\\\" \\u2014 these invite the founder to invent\\n  a number on the spot, which produces zero verifiable signal.\\n- **NEVER ASK A COMPOUND QUESTION** stacking two unrelated asks behind one question mark. A single\\n  natural sentence joining two closely related facts (\\\"who, and how did they find you\\\") is fine; two\\n  separate topics in one question is not.\\n- **NEVER INVENT A FACT ABOUT THE COMPANY.** You may use `company_context` for natural phrasing\\n  (the company's name, its sector) but never assert something specific \\u2014 a customer name, a number,\\n  a claim of any kind \\u2014 that is not present in your input.\\n- **NEVER PRODUCE MORE OR FEWER ITEMS THAN THE INPUT `gap_items`.** Question selection already\\n  happened in code before you saw this input.\\n- **NEVER QUOTE `criterion_label` OR `topic` VERBATIM IN THE OUTPUT.** These are internal labels for\\n  your own understanding, not phrases a person says out loud.\\n- **NEVER OUTPUT MARKDOWN, A BARE ARRAY, OR ANY TEXT OUTSIDE THE JSON OBJECT.** The top-level shape\\n  is always `{\\\"questions\\\": [...]}`.\\n</restrictions>\\n\\n<examples>\\n## FEW-SHOT EXAMPLES\\n\\n### Desired Example 1 \\u2014 founder_score_gap, customer commitment\\nInput item: `{ \\\"ref_id\\\": \\\"fsg:abc:L2\\\", \\\"kind\\\": \\\"founder_score_gap\\\", \\\"criterion_label\\\": \\\"First customers / LOI / pilot evidence\\\", \\\"what_would_close_it\\\": \\\"Evidence of a real customer commitment, such as a paying customer, signed LOI, named pilot with an outcome, documented discovery interviews showing consistent demand, or a waitlist with measured conversion.\\\" }`\\nOutput:\\n{ \\\"ref_id\\\": \\\"fsg:abc:L2\\\",\\n  \\\"question\\\": \\\"Who was your first paying customer or pilot, and how did that relationship start?\\\",\\n  \\\"why\\\": \\\"We haven't found any record of a customer or pilot commitment yet.\\\" }\\nWhy: turns an evidence description into one concrete, past-tense, answerable-from-memory question.\\nThe `why` states the absence plainly, with no implication the founder did anything wrong by not\\nhaving disclosed it yet.\\n\\n### Desired Example 2 \\u2014 missing_claim, business model\\nInput item: `{ \\\"ref_id\\\": \\\"mc:xyz\\\", \\\"kind\\\": \\\"missing_claim\\\", \\\"topic\\\": \\\"company.business_model\\\" }`\\nOutput:\\n{ \\\"ref_id\\\": \\\"mc:xyz\\\",\\n  \\\"question\\\": \\\"In plain terms, how does the company make money today?\\\",\\n  \\\"why\\\": \\\"We don't have anything describing how the business actually monetizes.\\\" }\\nWhy: derives a direct, plain-English question from a bare topic slug using the topic playbook,\\nstaying present-tense and concrete.\\n\\n### Desired Example 3 \\u2014 founder_score_gap, competitive granularity\\nInput item: `{ \\\"ref_id\\\": \\\"fsg:def:X5\\\", \\\"kind\\\": \\\"founder_score_gap\\\", \\\"criterion_label\\\": \\\"Describes competitors at insider granularity\\\", \\\"what_would_close_it\\\": \\\"A claim identifying relevant competitors and explaining operationally where their products fail, which features do not work in production, or how competitive deals are actually won and lost.\\\" }`\\nOutput:\\n{ \\\"ref_id\\\": \\\"fsg:def:X5\\\",\\n  \\\"question\\\": \\\"Think of a deal you lost to a competitor \\u2014 what did they offer that you didn't?\\\",\\n  \\\"why\\\": \\\"We can see who the likely competitors are, but not where deals are actually won or lost.\\\" }\\nWhy: asks for one specific past event (a lost deal) rather than a competitor list or a comparison\\ntable, which is exactly the operational-knowledge gap the source sentence describes.\\n\\n### Undesired Example 1 \\u2014 internal vocabulary and accusation framing\\nWrong output:\\n{ \\\"ref_id\\\": \\\"mc:xyz\\\",\\n  \\\"question\\\": \\\"Your business model claim is unverified \\u2014 can you clarify your monetization strategy?\\\",\\n  \\\"why\\\": \\\"This claim has low confidence and no supporting evidence.\\\" }\\nWhy this is wrong: \\\"claim\\\", \\\"unverified\\\", \\\"confidence\\\", \\\"evidence\\\" are all forbidden internal\\nvocabulary \\u2014 no investor says this out loud on a call. \\\"Can you clarify\\\" beside \\\"unverified\\\" also\\nreads as an accusation of vagueness rather than a plain, neutral ask.\\n\\n### Undesired Example 2 \\u2014 forecast instead of past evidence\\nWrong output:\\n{ \\\"ref_id\\\": \\\"fsg:abc:L2\\\",\\n  \\\"question\\\": \\\"How many paying customers do you expect to have by the end of the year?\\\",\\n  \\\"why\\\": \\\"We need to understand your growth trajectory.\\\" }\\nWhy this is wrong: the source gap is about a PAST customer commitment (evidence that already\\nexists), and this question instead asks the founder to invent a forward-looking number \\u2014 zero\\nverifiable signal, and it answers a different question than the one that was actually missing.\\n\\n### Undesired Example 3 \\u2014 compound question and quoting the internal label\\nWrong output:\\n{ \\\"ref_id\\\": \\\"fsg:def:X5\\\",\\n  \\\"question\\\": \\\"For 'Describes competitors at insider granularity', who are your competitors, where do you lose deals, and what's your pricing strategy?\\\",\\n  \\\"why\\\": \\\"Criterion X5 is currently unmet.\\\" }\\nWhy this is wrong: the `criterion_label` is quoted verbatim (never say it out loud), the question\\nstacks three separate asks behind one question mark, and the `why` uses forbidden vocabulary\\n(\\\"Criterion\\\") instead of a plain, factual sentence.\\n</examples>\\n</prompt>\";\nconst SCHEMA = {\"$id\": \"https://the-vc-brain.local/schemas/f09/suggest-followup-questions.json\", \"description\": \"0 to 6 investor-facing follow-up questions, one per supplied gap_items entry, in the order the items were supplied. Rendered directly in the 'Suggest follow-up questions' modal (lovable-brief.md \\u00a79.4) with no human review step between model and screen. This shape is FROZEN. Do not add fields.\", \"type\": \"object\", \"additionalProperties\": false, \"required\": [\"questions\"], \"properties\": {\"questions\": {\"type\": \"array\", \"minItems\": 0, \"items\": {\"type\": \"object\", \"additionalProperties\": false, \"required\": [\"ref_id\", \"question\", \"why\"], \"properties\": {\"ref_id\": {\"type\": \"string\", \"description\": \"Echo of the supplied gap_items[].ref_id, exactly, unaltered. The caller correlates output back to its own gap source (founder_score_gap or missing_claim) by this id.\", \"examples\": [\"fsg:03f00001-0000-0000-0000-000000000003:L2\", \"mc:010e717b-97ed-45ad-92d3-2efe39768b41\"]}, \"question\": {\"type\": \"string\", \"description\": \"One spoken question an investor can ask out loud on a live founder call. Exactly one question mark, one ask (no compound questions), plain English, no internal system vocabulary, no accusation framing, no invented facts, no forecast/projection ask when the underlying gap is about past or present evidence.\", \"examples\": [\"Who was your first paying customer, and how did they end up finding you?\"]}, \"why\": {\"type\": \"string\", \"description\": \"One line stating what this question would close, in plain factual language. Never phrased as an accusation, never implies the founder lied or hid something.\", \"examples\": [\"We haven't found any record of a customer or pilot commitment yet.\"]}}}, \"examples\": [[{\"ref_id\": \"fsg:03f00001-0000-0000-0000-000000000003:L2\", \"question\": \"Who was your first paying customer, and how did they end up finding you?\", \"why\": \"We haven't found any record of a customer or pilot commitment yet.\"}, {\"ref_id\": \"mc:010e717b-97ed-45ad-92d3-2efe39768b41\", \"question\": \"In plain terms, what have you actually built and shipped so far?\", \"why\": \"Nothing in the evidence we have describes what the product does today.\"}], []]}}, \"examples\": [{\"questions\": [{\"ref_id\": \"fsg:03f00001-0000-0000-0000-000000000003:L2\", \"question\": \"Who was your first paying customer, and how did they end up finding you?\", \"why\": \"We haven't found any record of a customer or pilot commitment yet.\"}]}, {\"questions\": []}]};\nconst inp = $json;\nconst userContent = '<company_context>\\n' + JSON.stringify(inp.__company_context) +\n  '\\n</company_context>\\n\\n<gap_items>\\n' + JSON.stringify(inp.__gap_items) + '\\n</gap_items>';\nconst body = {\n  model: \"gpt-5.6-terra\",\n  input: [ { role: 'system', content: SYS }, { role: 'user', content: userContent } ],\n  reasoning: { effort: \"low\" },\n  text: { verbosity: \"low\", format: { type: 'json_schema',\n    name: \"suggest_followup_questions_output\", strict: true, schema: SCHEMA } },\n  max_output_tokens: 1800,\n};\nreturn [{ json: { ...inp, __openai_request_body: body } }];\n"
+   },
+   "id": "a1f3abe1-b4df-4afa-b70e-7f988cb1d281",
+   "name": "Build suggest-followup-questions request",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    520,
+    -180
+   ],
+   "notes": "SOURCE OF TRUTH: suggest-followup-questions-agent-prompts.txt (SYSTEM MESSAGE) + suggest-followup-questions-agent-json-schema.json (wire-schema strip -- see n8n/build-f09-workflow.py docstring)."
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.openai.com/v1/responses",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.__openai_request_body) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "id": "38621aa4-3e63-4a2b-9904-8de7b0c86c27",
+   "name": "OpenAI: suggest-followup-questions (terra)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    760,
+    -180
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 3000,
+   "onError": "continueErrorOutput",
+   "notes": "jsonBody stays a SHORT expression referencing a Code-node-built object -- n8n's {{ }} parser truncates on the first '}}' it finds, and this schema's nested objects contain several (same defect f07's/f10's build scripts found live). temperature omitted -- cross-feature rule 7 (03/done.md)."
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nconst TOPIC_FALLBACK = {\n  'company.business_model': { question: 'In plain terms, how does the company make money today?', why: \"We don't have anything describing how the business actually monetizes.\" },\n  'company.stage_evidence': { question: \"What's actually live and usable today, and does anyone outside the team use it?\", why: \"We don't have confirmation of what stage the product is actually at.\" },\n  'company.what_is_built': { question: 'In plain terms, what has the team actually built and shipped so far?', why: \"Nothing in the evidence we have describes what the product does today.\" },\n  'company.geography_country': { question: \"Where's the company actually based, and is that also where your customers are?\", why: \"We don't have the company's location on file.\" },\n  'founder.leadership.first_customers': { question: 'Who was your first customer or pilot, and how did that relationship start?', why: \"We haven't found any record of a customer or pilot commitment yet.\" },\n};\nfunction missingClaimFallback(topic) {\n  const known = TOPIC_FALLBACK[topic];\n  if (known) return known;\n  const words = String(topic || '').split('.').pop().replace(/_/g, ' ') || 'this';\n  return { question: 'Can you tell me more about ' + words + '?', why: \"We don't have this on file yet.\" };\n}\nfunction founderScoreGapFallback(criterionLabel) {\n  const label = criterionLabel || 'this';\n  return { question: 'Can you walk me through ' + label + ', in your own words?', why: \"We don't yet have direct evidence for this.\" };\n}\nfunction fallbackFor(item) {\n  return item.kind === 'missing_claim' ? missingClaimFallback(item.topic) : founderScoreGapFallback(item.criterion_label);\n}\nfunction sourceFor(item) {\n  return item.kind === 'missing_claim' ? 'missing_claim' : 'founder_score_gap';\n}\n\nconst FORBIDDEN_STEMS = ['criterion', 'founder score', 'score', 'gap', 'axis', 'verif', 'claim',\n  'topic', 'evidence base', 'coverage', 'confidence', 'lied', 'misrepresent', 'fabricat',\n  'inconsistent', 'dishonest', \"you didn't tell us\", \"you failed to\"];\nfunction violates(q) {\n  if (!q || typeof q.question !== 'string' || typeof q.why !== 'string') return true;\n  const all = (q.question + ' ' + q.why).toLowerCase();\n  if (FORBIDDEN_STEMS.some(stem => all.includes(stem))) return true;\n  if (q.question.length > 160 || q.why.length > 140) return true;\n  const qMarks = (q.question.match(/\\?/g) || []).length;\n  if (qMarks !== 1) return true;\n  return false;\n}\n\nconst crypto = require('crypto');\nfunction sha256Hex(text) { return crypto.createHash('sha256').update(String(text == null ? '' : text), 'utf8').digest('hex'); }\n\nconst ctx = $('Build suggest-followup-questions request').first().json;\nconst resp = $input.first().json;\nlet parsed = null;\ntry {\n  const msg = (resp.output || []).find(o => o.type === 'message');\n  const rawText = (msg && msg.content && msg.content[0]) ? msg.content[0].text : '';\n  parsed = JSON.parse(rawText);\n} catch (e) { parsed = null; }\n\nconst items = (parsed && Array.isArray(parsed.questions)) ? parsed.questions : [];\nconst byRef = new Map();\nfor (const it of items) { if (it && it.ref_id) byRef.set(it.ref_id, it); }\n\nconst gapItems = ctx.__gap_items || [];\nconst phrased = gapItems.map(item => {\n  const candidate = byRef.get(item.ref_id);\n  if (candidate && !violates(candidate)) {\n    return { ref_id: item.ref_id, question: candidate.question, why: candidate.why, source: sourceFor(item) };\n  }\n  const fb = fallbackFor(item);\n  return { ref_id: item.ref_id, question: fb.question, why: fb.why, source: sourceFor(item) };\n});\n\nconst inputHash = sha256Hex('f09:ai_run:question_generation:' + ctx.application_id + ':' + gapItems.map(i => i.ref_id).join(','));\nconst found = await pgGet.call(this, 'ai_runs?input_hash=eq.' + encodeURIComponent(inputHash) + '&select=id');\nif (!found.length) {\n  await pg.call(this, 'POST', 'ai_runs', {\n    task_type: 'question_generation', application_id: ctx.application_id,\n    model: \"gpt-5.6-terra\", input_hash: inputHash, output_json: { gap_items: gapItems, questions: phrased },\n  }, 'return=minimal');\n}\nreturn [{ json: { ...ctx, __phrased_questions: phrased } }];\n"
+   },
+   "id": "9a825530-a533-4e13-9beb-aaa1326f4ffc",
+   "name": "Parse + validate suggest-followup-questions response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1000,
+    -180
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst TOPIC_FALLBACK = {\n  'company.business_model': { question: 'In plain terms, how does the company make money today?', why: \"We don't have anything describing how the business actually monetizes.\" },\n  'company.stage_evidence': { question: \"What's actually live and usable today, and does anyone outside the team use it?\", why: \"We don't have confirmation of what stage the product is actually at.\" },\n  'company.what_is_built': { question: 'In plain terms, what has the team actually built and shipped so far?', why: \"Nothing in the evidence we have describes what the product does today.\" },\n  'company.geography_country': { question: \"Where's the company actually based, and is that also where your customers are?\", why: \"We don't have the company's location on file.\" },\n  'founder.leadership.first_customers': { question: 'Who was your first customer or pilot, and how did that relationship start?', why: \"We haven't found any record of a customer or pilot commitment yet.\" },\n};\nfunction missingClaimFallback(topic) {\n  const known = TOPIC_FALLBACK[topic];\n  if (known) return known;\n  const words = String(topic || '').split('.').pop().replace(/_/g, ' ') || 'this';\n  return { question: 'Can you tell me more about ' + words + '?', why: \"We don't have this on file yet.\" };\n}\nfunction founderScoreGapFallback(criterionLabel) {\n  const label = criterionLabel || 'this';\n  return { question: 'Can you walk me through ' + label + ', in your own words?', why: \"We don't yet have direct evidence for this.\" };\n}\nfunction fallbackFor(item) {\n  return item.kind === 'missing_claim' ? missingClaimFallback(item.topic) : founderScoreGapFallback(item.criterion_label);\n}\nfunction sourceFor(item) {\n  return item.kind === 'missing_claim' ? 'missing_claim' : 'founder_score_gap';\n}\n\nconst ctx = $('Build suggest-followup-questions request').first().json;\nconst phrased = (ctx.__gap_items || []).map(item => {\n  const fb = fallbackFor(item);\n  return { ref_id: item.ref_id, question: fb.question, why: fb.why, source: sourceFor(item) };\n});\nreturn [{ json: { ...ctx, __phrased_questions: phrased } }];\n"
+   },
+   "id": "db3c530e-7f0d-4977-a971-8004512cf30b",
+   "name": "Handle LLM failure",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1000,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { ...$json, __phrased_questions: [] } }];"
+   },
+   "id": "1f8e6612-79e8-4fd4-bdef-6008d7dd6e4b",
+   "name": "Skip phrasing (no gap_items)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    520,
+    180
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst inp = $json;\nconst questions = [...(inp.__contradiction_questions || []), ...(inp.__phrased_questions || [])];\nconst founderName = (inp.founder_rows && inp.founder_rows.length && inp.founder_rows[0].full_name) || null;\nconst greeting = founderName ? ('Hi ' + String(founderName).split(' ')[0] + ',') : 'Hi,';\n\nlet email_preview = null;\nif (questions.length) {\n  const bulletList = questions.map(q => '- ' + q.question).join('\\n');\n  email_preview = {\n    subject: 'A few things before our call' + (inp.company_name ? ' \u2014 ' + inp.company_name : ''),\n    body: greeting + '\\n\\nLooking forward to our call. A few things I would like to cover:\\n\\n' +\n      bulletList + '\\n\\nSee you soon.',\n  };\n}\n\nconst response = {\n  application_id: inp.application_id,\n  company_name: inp.company_name || null,\n  generated_at: new Date().toISOString(),\n  questions: questions.map(q => ({ question: q.question, why: q.why, source: q.source })),\n  email_preview,\n  empty_reason: questions.length ? null : inp.__empty_reason,\n};\nreturn [{ json: response }];\n"
+   },
+   "id": "5eb5cbfc-8b87-47a9-986d-3007384350bb",
+   "name": "Build final response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1240,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "ca3631f6-00d6-4c8d-bf1e-2f96f73eaec0",
+   "name": "Respond: success",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1480,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "return [{ json: { error: { code: 'internal', message: \"Something went wrong on our side. Try again.\" } } }];"
+   },
+   "id": "2245a545-2fce-4ca4-88ef-91098fb36cf4",
+   "name": "Handle unexpected error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    760,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {
+     "responseCode": 500
+    }
+   },
+   "id": "879d4540-dc61-45c7-a00f-d08eba2d8665",
+   "name": "Respond: internal error (500)",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1000,
+    600
+   ]
+  },
+  {
+   "parameters": {
+    "content": "# f09-suggest-followup\n\nPOST /webhook/f09-suggest-followup  { \"application_id\": \"<uuid>\" }\n\nTurns the card's gaps into a suggested set of investor-facing follow-up questions for a founder call. Three deterministic gap sources (contradictions, founder_score_gaps, not-disclosed claims) are read and ranked in code; only two of them (founder_score_gaps, missing claims) go through the suggest-followup-questions LLM agent to be phrased as spoken questions -- contradictions reuse feature 05's own stored question verbatim, zero model calls. Contract + example run: n8n/workflows/README-f09.md.",
+    "height": 260,
+    "width": 640
+   },
+   "id": "3167a8cc-a746-4d78-9983-2c7729d1aa75",
+   "name": "Overview",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -1400,
+    -420
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook: f09-suggest-followup": {
+   "main": [
+    [
+     {
+      "node": "Validate input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validate input": {
+   "main": [
+    [
+     {
+      "node": "IF: valid?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: valid?": {
+   "main": [
+    [
+     {
+      "node": "Load application + company",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build client error response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build client error response": {
+   "main": [
+    [
+     {
+      "node": "Respond: bad request (400)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Load application + company": {
+   "main": [
+    [
+     {
+      "node": "IF: found?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: found?": {
+   "main": [
+    [
+     {
+      "node": "Load founder_ids + gap sources",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Build not-found response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build not-found response": {
+   "main": [
+    [
+     {
+      "node": "Respond: not found (404)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Load founder_ids + gap sources": {
+   "main": [
+    [
+     {
+      "node": "Select + rank gaps (deterministic)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle unexpected error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Select + rank gaps (deterministic)": {
+   "main": [
+    [
+     {
+      "node": "IF: any gap_items?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "IF: any gap_items?": {
+   "main": [
+    [
+     {
+      "node": "Build suggest-followup-questions request",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Skip phrasing (no gap_items)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build suggest-followup-questions request": {
+   "main": [
+    [
+     {
+      "node": "OpenAI: suggest-followup-questions (terra)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenAI: suggest-followup-questions (terra)": {
+   "main": [
+    [
+     {
+      "node": "Parse + validate suggest-followup-questions response",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Handle LLM failure",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse + validate suggest-followup-questions response": {
+   "main": [
+    [
+     {
+      "node": "Build final response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle LLM failure": {
+   "main": [
+    [
+     {
+      "node": "Build final response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Skip phrasing (no gap_items)": {
+   "main": [
+    [
+     {
+      "node": "Build final response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build final response": {
+   "main": [
+    [
+     {
+      "node": "Respond: success",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Handle unexpected error": {
+   "main": [
+    [
+     {
+      "node": "Respond: internal error (500)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "saveManualExecutions": true,
+  "timezone": "UTC"
+ },
+ "pinData": {},
+ "meta": {
+  "templateCredsSetupCompleted": true
+ }
+}
