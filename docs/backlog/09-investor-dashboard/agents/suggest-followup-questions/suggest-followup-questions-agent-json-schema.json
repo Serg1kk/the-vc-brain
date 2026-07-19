@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f09/suggest-followup-questions.json",
+  "title": "suggest-followup-questions output",
+  "description": "0 to 6 investor-facing follow-up questions, one per supplied gap_items entry, in the order the items were supplied. Rendered directly in the 'Suggest follow-up questions' modal (lovable-brief.md §9.4) with no human review step between model and screen. This shape is FROZEN. Do not add fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["questions"],
+  "properties": {
+    "questions": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref_id", "question", "why"],
+        "properties": {
+          "ref_id": {
+            "type": "string",
+            "description": "Echo of the supplied gap_items[].ref_id, exactly, unaltered. The caller correlates output back to its own gap source (founder_score_gap or missing_claim) by this id.",
+            "examples": ["fsg:03f00001-0000-0000-0000-000000000003:L2", "mc:010e717b-97ed-45ad-92d3-2efe39768b41"]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 15,
+            "maxLength": 160,
+            "description": "One spoken question an investor can ask out loud on a live founder call. Exactly one question mark, one ask (no compound questions), plain English, no internal system vocabulary, no accusation framing, no invented facts, no forecast/projection ask when the underlying gap is about past or present evidence.",
+            "examples": ["Who was your first paying customer, and how did they end up finding you?"]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 140,
+            "description": "One line stating what this question would close, in plain factual language. Never phrased as an accusation, never implies the founder lied or hid something.",
+            "examples": ["We haven't found any record of a customer or pilot commitment yet."]
+          }
+        }
+      },
+      "examples": [
+        [
+          {
+            "ref_id": "fsg:03f00001-0000-0000-0000-000000000003:L2",
+            "question": "Who was your first paying customer, and how did they end up finding you?",
+            "why": "We haven't found any record of a customer or pilot commitment yet."
+          },
+          {
+            "ref_id": "mc:010e717b-97ed-45ad-92d3-2efe39768b41",
+            "question": "In plain terms, what have you actually built and shipped so far?",
+            "why": "Nothing in the evidence we have describes what the product does today."
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "examples": [
+    { "questions": [
+      {
+        "ref_id": "fsg:03f00001-0000-0000-0000-000000000003:L2",
+        "question": "Who was your first paying customer, and how did they end up finding you?",
+        "why": "We haven't found any record of a customer or pilot commitment yet."
+      }
+    ] },
+    { "questions": [] }
+  ]
+}
