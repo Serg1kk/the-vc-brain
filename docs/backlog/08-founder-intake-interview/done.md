@@ -3,7 +3,7 @@
 ```
 status: complete
 completed_at: 2026-07-19 ~12:45 Minsk
-qa_gate: PASSED after fixes (qa-report-08.md — 4 criticals found, all resolved; 2 items disclosed below)
+qa_gate: GATE PASSED (qa-report-08.md — 4 criticals found; 3 fixed and re-verified live, 1 disclosed)
 tests: 115 unit (node --test lib/f08/*.js) + lib/f08/smoke-e2e.sh 9/9
 n8n: six workflows, all deployed and active
 frontend: web/ — React + TanStack Router, runs locally, sponsor palette
@@ -113,6 +113,13 @@ Fixed by sweeping `voice_artifacts` + `interviews` for the cards being deleted, 
 before the `cards` delete — **keyed on `v_all_card_ids`, not on the sole-founder-company subset**,
 because the violating card sat outside that subset and a plain reorder would have left the bug
 reachable. `apply.sh` clean, `smoke.sql` green, purge verified end to end.
+
+QA then built the case deliberately to check that distinction: a fresh application with an
+interview, plus a second founder added to the same company so nothing entered the sole-founder
+subset at all. The purge completes, the first founder's identities/cards/interviews are gone, the
+company and application survive (correctly — they are now multi-founder artifacts), the second
+founder is untouched, and exactly one anonymised `founder_purged` event with an empty payload
+remains. The narrower fix would have passed the original repro and still left this case broken.
 
 ## Defects found here that belong to other features
 
