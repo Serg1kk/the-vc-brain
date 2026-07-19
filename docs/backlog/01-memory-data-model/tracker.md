@@ -1,5 +1,7 @@
 # 01 · Memory & Data Model — Execution Tracker
 
+> **STATUS: FEATURE COMPLETE (2026-07-19 ~03:10) — all 12 tasks done, QA gate PASSED.**
+
 > Plan: [plan.md](plan.md) (✅ approved by implementation-plan-reviewer, round 3, 2026-07-19).
 > Spec: [design.md](design.md). **Single writer of this file: the orchestrator (main
 > session).** Agents report to the orchestrator; the orchestrator updates statuses on every
@@ -19,8 +21,8 @@
 | 8 | Interview, experience & ops | @database-engineer | 7 | done | memo `?&` CHECK, NULLS NOT DISTINCT dedup, mutable interviews | |
 | 9 | Enforcement (triggers, purge_founder) | @database-engineer | 3-8 | done | 42 smoke blocks; real R1 attack (SET ROLE service_role) blocked; purge ordering bug found+fixed; DEFERRABLE on 2 self-FKs | re-applied on REAL supabase-db @54322 after port incident |
 | 10 | Cold-start reset proof + REST checks | @database-engineer | 9 | done | reset ≈28s/5 commands; REST PATCH scores → 400 P0001 (judge proof); purge re-proven via independent path | CRITICAL FIND: down -v didn't wipe bind-mounted PGDATA — reset sequence + CLAUDE.md fixed |
-| 11 | Handoff docs (`db/README.md`) + final commit | @database-engineer → @devops | 10 | docs done, commit pending | db/README.md (tenant DSN caveat, idempotency keys, purge contract); feature README EN+RU statuses | ∥ with 12 |
-| 12 | Adversarial QA gate (`qa-report-01.md`) | @qa-engineer | 10 | in_progress | | ∥ with 11 |
+| 11 | Handoff docs (`db/README.md`) + final commit | @database-engineer → @devops | 10 | done | commit 3c5269a; db/README.md (tenant DSN caveat, idempotency keys, purge contract); feature README EN+RU statuses | |
+| 12 | Adversarial QA gate (`qa-report-01.md`) | @qa-engineer | 10 | **done — GATE PASSED** | 16 attacks rejected; TRUNCATE hole found → REVOKE fix (3 roles × 6 tables, incl. `authenticated` via pg_default_acl) → independently re-verified (42501 for all 3 roles) | finding→fix→re-check loop closed; 45 smoke blocks |
 
 ## Event log
 
@@ -58,3 +60,10 @@
   CLAUDE.md DSN examples fixed to tenant-qualified form. Task 10 dispatched.
 - 2026-07-19 ~02:50 · commit beb9396 (@devops): db tasks 6-9 (evidence ledger, intelligence,
   interview/ops, enforcement layer).
+- 2026-07-19 ~02:58 · Task 10 done: CRITICAL FIND — `down -v` never wiped bind-mounted
+  PGDATA (reset was a silent no-op); sequence fixed (+rm -rf volumes/db/data), true
+  cold-start ≈28s/5 commands; REST PATCH scores → 400 P0001 with custom invariant message
+  (judge-facing proof captured); purge re-proven via independent call path. Task 11 docs
+  drafted same pass.
+- 2026-07-19 ~03:05 · commit 3c5269a (@devops): tasks 10-11 final. Tasks 1-11 ALL DONE;
+  Task 12 (QA gate) running.

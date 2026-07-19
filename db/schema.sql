@@ -599,6 +599,44 @@ CREATE OR REPLACE TRIGGER trg_memos_forbid_mutation
   BEFORE UPDATE OR DELETE ON memos
   FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
 
+-- TRUNCATE bypass fix (QA gate Task 12 finding, fed back into Task 9 per
+-- plan.md's acceptance criteria). BEFORE UPDATE OR DELETE triggers never fire
+-- on TRUNCATE -- a Postgres-level fact, not a gap in forbid_mutation()'s own
+-- logic -- and this database's ALTER DEFAULT PRIVILEGES IN SCHEMA public
+-- (Supabase's own self-hosted provisioning, confirmed via pg_default_acl, not
+-- something this project's DDL added) grants TRUNCATE to anon/authenticated/
+-- service_role on every table at CREATE TABLE time, including these six. A
+-- caller running raw SQL as service_role (a future n8n "Execute Query" node,
+-- a custom RPC, a leaked key used outside PostgREST -- PostgREST itself
+-- exposes no TRUNCATE verb, so this was not reachable over REST) could wipe
+-- an entire append-only table in one statement: no P0001, no audit trail, no
+-- recovery but backups. Revoking the privilege is the correct fix -- Postgres
+-- rejects the statement with 42501 before any trigger would even run.
+--
+-- NOT revoked from `postgres`: it owns these tables, and table owners retain
+-- full privileges regardless of explicit GRANT/REVOKE (an owner-targeted
+-- REVOKE would be a silent no-op). purge_founder() runs SECURITY DEFINER as
+-- postgres and uses DELETE, never TRUNCATE, so this doesn't touch it.
+--
+-- Belt-and-suspenders BEFORE TRUNCATE trigger considered and skipped
+-- (documented choice, per QA's own conclusion): the REVOKE alone is
+-- sufficient for the current role set, and Postgres blocks the statement
+-- before any trigger logic would fire anyway -- a statement-level trigger
+-- would only add value against a role nobody currently holds, at the cost of
+-- a second enforcement mechanism to keep in sync. Reconsider only if a future
+-- elevated role needs blocking too.
+--
+-- IMPORTANT for later features: this REVOKE is per-table on purpose, NOT a
+-- change to the schema-wide default privileges (those also cover SELECT/
+-- INSERT/UPDATE, which anon/authenticated/service_role legitimately need for
+-- normal CRUD via PostgREST -- narrowing them globally would break far more
+-- than TRUNCATE). Because the default-privileges mechanism is schema-wide and
+-- still active, ANY new append-only table added in a later feature is born
+-- with TRUNCATE already granted to all three roles -- copy this REVOKE for
+-- that table too. See db/README.md > "Append-only tables".
+REVOKE TRUNCATE ON scores, raw_signals, evidence, ai_runs, events, memos
+  FROM anon, authenticated, service_role;
+
 -- ---- Step 2: updated_at on the mutable set (design.md SS5.3) --------------
 
 CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger

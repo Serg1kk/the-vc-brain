@@ -92,6 +92,15 @@ rejected at the trigger level (`forbid_mutation()`, SQLSTATE `P0001`) for **any*
 including `service_role` over PostgREST. The only way data in these tables is ever removed is
 via `purge_founder()` (below). Do not build a write path that assumes these are ever editable.
 
+**`TRUNCATE` is separately revoked** (`REVOKE TRUNCATE ... FROM anon, authenticated,
+service_role`), not just trigger-guarded: `BEFORE UPDATE OR DELETE` triggers never fire on
+`TRUNCATE`, and Supabase's self-hosted default privileges (`ALTER DEFAULT PRIVILEGES IN SCHEMA
+public`) grant `TRUNCATE` to those three roles on every table at creation time — a QA-gate
+finding (Task 12), not something this project's DDL added on purpose. **Any new append-only
+table added in a later feature is born with `TRUNCATE` already granted the same way — copy the
+`REVOKE` for it too**; this is a per-table fix, deliberately not a change to the schema-wide
+default (which also governs `SELECT`/`INSERT`/`UPDATE` that these roles legitimately need).
+
 ## Idempotency keys (for n8n `ON CONFLICT` targets)
 
 | Table | Conflict target | Notes |

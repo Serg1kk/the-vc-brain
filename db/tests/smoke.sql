@@ -798,6 +798,42 @@ END $$;
 RESET ROLE;
 RESET vcbrain.purging;
 
+-- TRUNCATE bypass fix (QA gate Task 12 finding): BEFORE UPDATE OR DELETE
+-- triggers never fire on TRUNCATE, and Supabase's schema-wide default
+-- privileges grant TRUNCATE to anon/authenticated/service_role on every
+-- table at creation time. Assert the grant is actually gone, then assert an
+-- attempted TRUNCATE as service_role is rejected at the privilege level
+-- (42501) -- before forbid_mutation() would even get a chance to run.
+DO $$
+DECLARE
+  v_grant_count int;
+BEGIN
+  SELECT count(*) INTO v_grant_count
+  FROM information_schema.role_table_grants
+  WHERE table_schema = 'public'
+    AND table_name IN ('scores', 'raw_signals', 'evidence', 'ai_runs', 'events', 'memos')
+    AND grantee IN ('anon', 'authenticated', 'service_role')
+    AND privilege_type = 'TRUNCATE';
+
+  IF v_grant_count <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: expected 0 TRUNCATE grants to anon/authenticated/service_role on the 6 append-only tables, found %', v_grant_count;
+  END IF;
+END $$;
+
+SET ROLE service_role;
+DO $$
+BEGIN
+  BEGIN
+    TRUNCATE scores;
+    RAISE EXCEPTION 'smoke FAIL: TRUNCATE scores succeeded as service_role, expected 42501 permission denied';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '42501' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 42501 (insufficient_privilege) on TRUNCATE scores as service_role, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+RESET ROLE;
+
 -- purge_founder(): the exhaustive fixture -- a sole-founder company with a
 -- full application/interview/voice_artifact/memo chain, a merged-duplicate
 -- tombstone founder with its own founder_identities row and score, a
