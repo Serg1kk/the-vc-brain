@@ -891,10 +891,16 @@ export interface ScoreComponentRow {
   created_at: string;
 }
 
+/**
+ * ⚠️ Default order is `created_at.desc`, not `run_id.desc` — `run_id` is a random
+ * UUID, not a timestamp, so sorting on it does not mean "most recent run" and can
+ * silently return an older run's rows. All rows in one run share an identical
+ * insert timestamp, so `created_at.desc` orders runs correctly by default.
+ */
 export function getScoreComponents(query?: RestQuery): Promise<Result<ScoreComponentRow[]>> {
   return restGet<ScoreComponentRow[]>("/score_components", {
     select: "*",
-    order: "run_id.desc,subscorer.asc",
+    order: "created_at.desc,subscorer.asc",
     ...query,
   });
 }

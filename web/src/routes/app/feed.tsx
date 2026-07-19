@@ -170,7 +170,7 @@ function Feed() {
 
   if (items === null && loading) {
     return (
-      <div className="max-w-[1160px] px-9 py-7">
+      <div className="px-9 py-7">
         <h1 className="text-[36px] leading-[1.15] font-medium tracking-[-0.02em]">Feed</h1>
         <div className="ms-rule mt-3.5" />
         <div className="mt-6">
@@ -190,7 +190,7 @@ function Feed() {
 
   if (items === null && error) {
     return (
-      <div className="max-w-[1160px] px-9 py-7">
+      <div className="px-9 py-7">
         <h1 className="text-[36px] leading-[1.15] font-medium tracking-[-0.02em]">Feed</h1>
         <div className="ms-rule mt-3.5" />
         <div className="mt-6 flex items-baseline justify-between gap-4 border border-[color:var(--color-border)] p-4">
@@ -217,7 +217,7 @@ function Feed() {
   ).length;
 
   return (
-    <div className="max-w-[1160px] px-9 pt-7 pb-16">
+    <div className="px-9 pt-7 pb-16">
       <div className="flex flex-wrap items-baseline gap-4">
         <h1 className="text-[36px] leading-[1.15] font-medium tracking-[-0.02em]">Feed</h1>
         <span className="font-mono text-[12px] text-[color:var(--color-text-muted)]">

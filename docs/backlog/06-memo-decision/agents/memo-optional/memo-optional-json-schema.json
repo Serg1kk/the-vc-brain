@@ -1,0 +1,75 @@
+{
+  "name": "memo_optional",
+  "strict": true,
+  "note": "Strict mode requires every key present. Absent sections are emitted as null (NOT omitted); the assembler [D] drops null keys. _sentinel=true means no optional section had input.",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["_sentinel", "risk_matrix", "competition", "financials_lite"],
+    "properties": {
+      "_sentinel": { "type": "boolean" },
+      "risk_matrix": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["risks"],
+        "properties": {
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "severity", "likelihood", "claim_ids"],
+              "properties": {
+                "text": { "type": "string" },
+                "severity": { "type": "string", "enum": ["minor", "moderate", "material"] },
+                "likelihood": { "type": "string", "enum": ["low", "medium", "high"] },
+                "claim_ids": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      },
+      "competition": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["statements", "competitors"],
+        "properties": {
+          "statements": { "type": "array", "items": { "$ref": "#/$defs/statement" } },
+          "competitors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "named_by_founder", "claim_ids"],
+              "properties": {
+                "name": { "type": "string" },
+                "named_by_founder": { "type": "boolean" },
+                "claim_ids": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      },
+      "financials_lite": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["statements"],
+        "properties": {
+          "statements": { "type": "array", "items": { "$ref": "#/$defs/statement" } }
+        }
+      }
+    },
+    "$defs": {
+      "statement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "claim_ids", "kind"],
+        "properties": {
+          "text": { "type": "string" },
+          "claim_ids": { "type": "array", "items": { "type": "string" } },
+          "kind": { "type": "string", "enum": ["fact", "not_disclosed", "benchmark", "structural"] }
+        }
+      }
+    }
+  }
+}

@@ -8,6 +8,10 @@
 import { cn } from "@/lib/utils";
 import type { FiredRule } from "@/lib/investor-api";
 import { ProvenanceChip } from "./provenance-chip";
+import { InfoTooltip } from "./info-tooltip";
+
+const THESIS_FIT_TOOLTIP =
+  "How well this company matches the fund's stated mandate — a fit-to-mandate score, not a quality judgement about the company.";
 
 const GROUPS: Array<{ key: FiredRule["outcome"]; heading: string; glyph: string }> = [
   { key: "triggered", heading: "Triggered", glyph: "⛔" },
@@ -49,19 +53,23 @@ export function ThesisFitLedger({
   return (
     <div className={className}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
-        <span className="font-mono">
-          {fit == null ? (
-            "Not assessable against this thesis"
-          ) : (
-            <>
-              WHY THIS FIT — <span className="font-semibold">{fit}</span>
-            </>
-          )}
-        </span>
-        {coverage != null ? (
-          <span className="text-[color:var(--color-text-muted)]">
-            coverage {Math.round(coverage * 100)}%
+        <InfoTooltip content={THESIS_FIT_TOOLTIP}>
+          <span className="font-mono">
+            {fit == null ? (
+              "Not assessable against this thesis"
+            ) : (
+              <>
+                WHY THIS FIT — <span className="font-semibold">{fit}</span>
+              </>
+            )}
           </span>
+        </InfoTooltip>
+        {coverage != null ? (
+          <InfoTooltip content="How much of what we'd want to know about this we actually have.">
+            <span className="text-[color:var(--color-text-muted)]">
+              coverage {Math.round(coverage * 100)}%
+            </span>
+          </InfoTooltip>
         ) : null}
         <ProvenanceChip kind="rule" />
       </div>

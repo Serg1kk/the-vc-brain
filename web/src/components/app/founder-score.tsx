@@ -9,6 +9,10 @@
 import { useState, type MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import type { CriterionVerdict } from "@/lib/investor-api";
+import { InfoTooltip } from "./info-tooltip";
+
+const FOUNDER_SCORE_EXPLANATION =
+  "A persistent score for this person, not this application — it follows them across every company they found, and never resets.";
 
 export type FounderScoreTrendDirection = "improving" | "stable" | "declining";
 
@@ -124,20 +128,21 @@ interface FounderScoreChipProps {
  * different deals reads as "the score follows the person" without a tooltip. */
 export function FounderScoreChip({ founderName, onClick, className }: FounderScoreChipProps) {
   return (
-    <span
-      onClick={onClick}
-      title={`Person-scoped — this chip follows ${founderName} across companies`}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] px-2.5 py-0.5 text-[12.5px]",
-        onClick && "cursor-pointer",
-        className,
-      )}
-    >
-      <span aria-hidden="true" className="font-mono">
-        ⌾
-      </span>{" "}
-      {founderName} · person-scoped
-    </span>
+    <InfoTooltip content={FOUNDER_SCORE_EXPLANATION}>
+      <span
+        onClick={onClick}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] px-2.5 py-0.5 text-[12.5px]",
+          onClick && "cursor-pointer",
+          className,
+        )}
+      >
+        <span aria-hidden="true" className="font-mono">
+          ⌾
+        </span>{" "}
+        {founderName} · person-scoped
+      </span>
+    </InfoTooltip>
   );
 }
 
@@ -166,12 +171,14 @@ export function FounderScoreCard({
   return (
     <div className={cn("border border-[color:var(--color-border)] p-4", className)}>
       <div className="flex items-center gap-2.5">
-        <span className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11.5px]">
-          <span aria-hidden="true" className="font-mono">
-            ⌾
-          </span>{" "}
-          FOUNDER SCORE · person-scoped
-        </span>
+        <InfoTooltip content={FOUNDER_SCORE_EXPLANATION}>
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11.5px]">
+            <span aria-hidden="true" className="font-mono">
+              ⌾
+            </span>{" "}
+            FOUNDER SCORE · person-scoped
+          </span>
+        </InfoTooltip>
         <span className="flex-1" />
         <span className="font-mono text-[11px] text-[color:var(--color-text-muted)]">
           {formulaVersion}

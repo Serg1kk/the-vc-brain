@@ -1,0 +1,29 @@
+# vcbrain-web -- SSR node server for TanStack Start (feature 12, design.md §5).
+# web/ defaults to nitro's cloudflare preset (@lovable.dev/vite-tanstack-config) --
+# NITRO_PRESET=node_server overrides that for this build only. VITE_* are baked in
+# at build time, so the prod URLs must be passed as build ARGs (not runtime env).
+
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ARG VITE_SUPABASE_REST_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_N8N_BASE_URL
+ENV VITE_SUPABASE_REST_URL=$VITE_SUPABASE_REST_URL \
+    VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
+    VITE_N8N_BASE_URL=$VITE_N8N_BASE_URL \
+    NITRO_PRESET=node_server
+
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000
+COPY --from=build /app/.output ./.output
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]

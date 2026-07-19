@@ -1,0 +1,34 @@
+{
+  "name": "memo_descriptive",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["snapshot", "problem_product", "traction"],
+    "properties": {
+      "snapshot":        { "$ref": "#/$defs/section" },
+      "problem_product": { "$ref": "#/$defs/section" },
+      "traction":        { "$ref": "#/$defs/section" }
+    },
+    "$defs": {
+      "section": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statements"],
+        "properties": {
+          "statements": { "type": "array", "items": { "$ref": "#/$defs/statement" } }
+        }
+      },
+      "statement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "claim_ids", "kind"],
+        "properties": {
+          "text": { "type": "string" },
+          "claim_ids": { "type": "array", "items": { "type": "string" } },
+          "kind": { "type": "string", "enum": ["fact", "not_disclosed", "benchmark", "structural"] }
+        }
+      }
+    }
+  }
+}

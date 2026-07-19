@@ -1,0 +1,49 @@
+{
+  "subscorer": "expertise-signals",
+  "verdicts": [
+    {
+      "criterion_id": "X1",
+      "reasoning": "The claim documents roughly twelve months maintaining a prototype that performs the same core workflow as the startup: capability sandboxing for autonomous agents. This is direct proximity to the target technical vertical, not merely general software experience.",
+      "verdict": "met",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000904"
+      ],
+      "quote_verbatim": "Maintained agent-fence, an open-source Rust capability-sandboxing prototype, for roughly 12 months before founding ferrofluid",
+      "rationale": "The prior work directly matches ferrofluid's autonomous-agent sandboxing problem and lasted long enough to constitute documented domain tenure.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "X2",
+      "reasoning": "The claim establishes that the founder built and maintained a relevant prototype, but it does not state a non-obvious mechanism of agent sandboxing, a specific failure mode, a decision-maker, or why common approaches fail. There is not enough content to apply the outsider test positively.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "Relevant experience is evidence of proximity, not by itself evidence of an articulated industry insight.",
+      "what_would_close_it": "A concrete statement explaining a non-obvious autonomous-agent sandboxing failure mode, such as which capability boundaries break in production, how agents bypass or misuse standard isolation, or why existing sandboxing approaches fail operationally."
+    },
+    {
+      "criterion_id": "X5",
+      "reasoning": "The context pack contains no description of competing runtimes, sandboxing systems, or alternative approaches, and gives no evidence about where competitors fail in production or lose deployments.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "No competitor-specific operational detail is provided.",
+      "what_would_close_it": "A comparison naming relevant competitors or alternative isolation approaches and describing specific production limitations, failed integrations, deployment objections, or deal-loss patterns."
+    },
+    {
+      "criterion_id": "X6",
+      "reasoning": "The claim describes sustained maintenance of an open-source capability-sandboxing prototype for roughly twelve months before founding the company, with no commercial engagement at the time. The GitHub evidence documents the project's creation and archival timeline, supporting substantial pre-commercial effort.",
+      "verdict": "met",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000904"
+      ],
+      "quote_verbatim": "Maintained agent-fence, an open-source Rust capability-sandboxing prototype, for roughly 12 months before founding ferrofluid, with no commercial engagement at the time.",
+      "rationale": "This is sustained, public, unrequested work on the same problem before the company and commercial incentives.",
+      "what_would_close_it": null
+    }
+  ],
+  "pedigree": {
+    "prior_companies": [],
+    "notable_employers": []
+  }
+}

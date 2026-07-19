@@ -2,6 +2,16 @@
 @source "../src";
 @import "tw-animate-css";
 
+/* Inter, self-hosted via @fontsource/inter — replaces the removed Google Fonts
+   <link> in __root.tsx. Local woff2, bundled by Vite, zero network requests at
+   runtime. Weights match actual usage in this codebase (font-normal/medium/
+   semibold/bold); the original Google Fonts URL only carried 300/400/500/600 and
+   never actually backed font-bold — that gap is fixed here, not carried forward. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
 @custom-variant dark (&:is([data-theme="dark"] *), &:is(.dark *));
 
 /*

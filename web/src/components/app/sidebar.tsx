@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { getTheses } from "@/lib/investor-api";
+import { clearDashboardAuthentication } from "@/lib/dashboard-auth";
 import { useExplainPanel } from "./explain-panel";
 import { lockedChannelExplainData, type LockedChannelId } from "./locked-channels";
 
@@ -33,8 +34,14 @@ export function Sidebar() {
 
   return (
     <aside className="sticky top-0 flex h-screen w-[240px] flex-none flex-col border-r border-[color:var(--color-border)] bg-[color:var(--color-bg)] py-5.5">
+      {/* Brand hierarchy matches the intake form (PageShell.tsx): the fund's name
+          leads, full text color; the product name is a smaller, muted line beneath
+          it — this is a Maschmeyer Group tool named "The VC Brain", not the reverse. */}
       <Link to="/app/feed" className="px-5 pb-2.5">
-        <span className="text-[12px] font-medium tracking-[0.02em] text-[color:var(--color-text-muted)]">
+        <span className="block text-[14px] font-medium tracking-[-0.01em] text-[color:var(--color-text)]">
+          Maschmeyer Group
+        </span>
+        <span className="mt-0.5 block text-[11px] font-medium tracking-[0.02em] text-[color:var(--color-text-muted)]">
           The VC Brain
         </span>
       </Link>
@@ -120,6 +127,25 @@ export function Sidebar() {
         >
           {thesisName ?? "Configure thesis"}
         </Link>
+
+        {/* Settings + Log out — the demo-grade login gate's other half (route.tsx). Grouped
+            in this footer block rather than the top nav list: both are account-level utility,
+            not content navigation. */}
+        <div className="mt-3 border-t border-[color:var(--color-border)] pt-2.5">
+          <Link to="/app/settings" className="block text-[13px] font-medium">
+            Settings
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              clearDashboardAuthentication();
+              window.location.reload();
+            }}
+            className="mt-1.5 block cursor-pointer text-left text-[13px] text-[color:var(--color-text-muted)]"
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </aside>
   );

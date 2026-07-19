@@ -1,0 +1,32 @@
+{
+  "subscorer": "leadership-sales-proxies",
+  "verdicts": [
+    {
+      "criterion_id": "L2",
+      "reasoning": "The context pack contains no claims about customers, pilots, letters of intent, discovery interviews, waitlists, or other commercial commitments.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "Evidence of a real customer or counterparty commitment, such as a paid customer, signed LOI, named organisation running a pilot with an outcome, documented discovery interviews showing a consistent demand pattern, or a waitlist with measured conversion intent."
+    },
+    {
+      "criterion_id": "L3",
+      "reasoning": "The context pack contains no founder claim specifying the target vertical, company size, buyer role, trigger, and current alternative.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A concrete ICP statement identifying the target vertical, company size, buyer role, triggering problem or event, and current alternative, specific enough for a stranger to find fifty matching companies."
+    },
+    {
+      "criterion_id": "L5",
+      "reasoning": "The context pack contains no constrained public communication artifact, such as a homepage, Show HN post, or launch comment, that can be tested for concise explanation of the product, audience, and value.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A constrained public artifact containing a clear description of what the product does, who it is for, and why it matters, such that a stranger could explain it after ten seconds."
+    }
+  ]
+}

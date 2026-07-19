@@ -5,6 +5,7 @@
 
 import { cn } from "@/lib/utils";
 import { VerdictBadge } from "./claim-badges";
+import { InfoTooltip } from "./info-tooltip";
 
 // --- 1. Not assessed — no `scores` row exists for an axis --------------------
 
@@ -19,13 +20,13 @@ interface NotAssessedTrackProps {
  * on in the first place; see `investor-api.ts`'s `AxisScore.assessed`). */
 export function NotAssessedTrack({ reason, className }: NotAssessedTrackProps) {
   const title = reason ? `Not assessed — ${reason}` : "Not assessed — no score row exists";
+  const tooltip = reason
+    ? `We haven't scored this yet — no assessment has been run. ${reason}`
+    : "We haven't scored this yet — no assessment has been run.";
   return (
-    <div
-      role="img"
-      aria-label={title}
-      title={title}
-      className={cn("track-hatch h-1 w-full", className)}
-    />
+    <InfoTooltip content={tooltip}>
+      <div role="img" aria-label={title} className={cn("track-hatch h-1 w-full", className)} />
+    </InfoTooltip>
   );
 }
 
@@ -41,7 +42,9 @@ interface NotCheckedNoticeProps {
 export function NotCheckedNotice({ what, trigger, className }: NotCheckedNoticeProps) {
   return (
     <div className={cn("grid grid-cols-2 gap-x-4 text-[13.5px]", className)}>
-      <span className="italic text-[color:var(--color-text-muted)]">{what}</span>
+      <InfoTooltip content="We haven't looked into this specific claim yet.">
+        <span className="italic text-[color:var(--color-text-muted)]">{what}</span>
+      </InfoTooltip>
       {trigger ? (
         <span className="text-[12.5px] text-[color:var(--color-text-muted)]">
           would trigger a check: {trigger}
@@ -78,13 +81,15 @@ export function SearchedNothingFoundCard({
 }: SearchedNothingFoundCardProps) {
   return (
     <div className={cn("border border-[color:var(--color-border)] p-4", className)}>
-      <div className="flex items-baseline gap-2.5">
-        <span
-          aria-hidden="true"
-          className="inline-block h-[13px] w-[13px] translate-y-px rounded-full border-[1.5px] border-[color:var(--color-text)]"
-        />
-        <span className="text-[15px] font-medium">We looked and found nothing</span>
-      </div>
+      <InfoTooltip content="We actively searched for evidence on this and found none — a real finding, not an oversight.">
+        <div className="flex items-baseline gap-2.5">
+          <span
+            aria-hidden="true"
+            className="inline-block h-[13px] w-[13px] translate-y-px rounded-full border-[1.5px] border-[color:var(--color-text)]"
+          />
+          <span className="text-[15px] font-medium">We looked and found nothing</span>
+        </div>
+      </InfoTooltip>
       <dl className="mt-3 ml-[23px] grid grid-cols-[110px_1fr] gap-x-4 gap-y-1 text-[13px]">
         <dt className="text-[color:var(--color-text-muted)]">Checked</dt>
         <dd className="font-mono text-[12.5px]">{checked}</dd>
@@ -127,17 +132,19 @@ export function SearchedNothingFoundAggregate({
   className,
 }: SearchedNothingFoundAggregateProps) {
   return (
-    <div
-      className={cn(
-        "border border-t-0 border-[color:var(--color-border)] px-4.5 py-2.5 text-[13px] text-[color:var(--color-text-muted)]",
-        className,
-      )}
-    >
-      <span aria-hidden="true" className="font-mono text-[12px]">
-        ⃝
-      </span>{" "}
-      Provenance: checked {count} claims across {topic}.
-    </div>
+    <InfoTooltip content="We actively searched for evidence on this and found none — a real finding, not an oversight.">
+      <div
+        className={cn(
+          "border border-t-0 border-[color:var(--color-border)] px-4.5 py-2.5 text-[13px] text-[color:var(--color-text-muted)]",
+          className,
+        )}
+      >
+        <span aria-hidden="true" className="font-mono text-[12px]">
+          ⃝
+        </span>{" "}
+        Provenance: checked {count} claims across {topic}.
+      </div>
+    </InfoTooltip>
   );
 }
 
@@ -154,7 +161,10 @@ export function NotDisclosedNote({ what, closes, className }: NotDisclosedNotePr
   return (
     <div className={cn("border-t border-[color:var(--color-border)] py-2.5", className)}>
       <div className="text-[13.5px] font-medium">
-        {what} <VerdictBadge status="missing" className="ml-1.5" />
+        <InfoTooltip content="The founder hasn't shared this — a declared gap, not something we failed to find.">
+          <span>{what}</span>
+        </InfoTooltip>{" "}
+        <VerdictBadge status="missing" className="ml-1.5" />
       </div>
       <div className="mt-1 max-w-[680px] text-[13px] text-[color:var(--color-text-muted)]">
         {closes}

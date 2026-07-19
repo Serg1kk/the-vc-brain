@@ -95,13 +95,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap",
-      },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      // No external fonts, ever — the demo runs offline on localhost (lovable-brief
+      // constraint, feature 09 §3). `--font-sans` in styles.css already lists Inter
+      // first with real system fallbacks (ui-sans-serif, -apple-system, Segoe UI), so
+      // dropping the Google Fonts request costs nothing but a webfont: the browser
+      // renders the platform's own UI face, which reads close to Inter on both macOS
+      // and Windows and requires zero network access to load.
     ],
   }),
   shellComponent: RootShell,

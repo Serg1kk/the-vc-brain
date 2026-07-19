@@ -1,0 +1,47 @@
+{
+  "subscorer": "expertise-signals",
+  "verdicts": [
+    {
+      "criterion_id": "X1",
+      "reasoning": "The context identifies a GPU scheduling product but provides no documented prior tenure in GPU infrastructure, cluster operations, or the specific target workflow.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "No claim establishes prior employment or substantial work in the target vertical.",
+      "what_would_close_it": "A documented account of substantial prior work operating or engineering GPU clusters, schedulers, or closely matching infrastructure workflows."
+    },
+    {
+      "criterion_id": "X2",
+      "reasoning": "The claim indicates that the founder ran the scheduler on personal machines, but it does not state a concrete, non-obvious mechanism of small-cluster GPU scheduling or an industry-specific failure mode that would pass the outsider test.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "The available claim concerns duration and self-hosting, not an operational insight about how the industry works.",
+      "what_would_close_it": "A corroborated explanation of a specific non-obvious GPU scheduling mechanism, failure mode, decision process, or production constraint in small on-prem clusters."
+    },
+    {
+      "criterion_id": "X5",
+      "reasoning": "The context contains no description of competitors, their operational limitations, failed integrations, sales processes, or production behavior.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "No competitor information is provided.",
+      "what_would_close_it": "A description of named competing schedulers or alternatives at operational granularity, including where they fail in small on-prem clusters or why customers choose or reject them."
+    },
+    {
+      "criterion_id": "X6",
+      "reasoning": "The founder claims the scheduler was self-hosted on personal machines for about six months before a public post and before any funding or commercial engagement. This is evidence of sustained pre-funding effort, but the claim is self-reported and lacks independent corroboration in the context.",
+      "verdict": "self_asserted",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000705"
+      ],
+      "quote_verbatim": "Been running this on my own boxes for about six months before posting here",
+      "rationale": "The claim describes sustained, unrequested work before public exposure and commercial incentive, but its source is the founder's own statement.",
+      "what_would_close_it": null
+    }
+  ],
+  "pedigree": {
+    "prior_companies": [],
+    "notable_employers": []
+  }
+}

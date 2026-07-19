@@ -9,6 +9,10 @@
 
 import { cn } from "@/lib/utils";
 import type { EvidenceTier } from "./claim-badges";
+import { InfoTooltip } from "./info-tooltip";
+
+const TRUST_PIP_EXPLANATION =
+  "Per-claim trust: how well-evidenced this specific claim is, 0–4 pips. More independent sources and stronger evidence = more pips.";
 
 export interface TrustPipInput {
   hasSupport: boolean;
@@ -41,13 +45,14 @@ interface TrustPipMeterProps {
 export function TrustPipMeter({ pips, title, className }: TrustPipMeterProps) {
   const clamped = Math.max(0, Math.min(4, Math.round(pips)));
   return (
-    <span
-      title={title}
-      aria-label={title ? `Trust ${clamped} of 4 — ${title}` : `Trust ${clamped} of 4`}
-      className={cn("font-mono text-[12px] tracking-[2px]", className)}
-    >
-      {"●".repeat(clamped)}
-      {"○".repeat(4 - clamped)}
-    </span>
+    <InfoTooltip content={title ? `${TRUST_PIP_EXPLANATION} ${title}.` : TRUST_PIP_EXPLANATION}>
+      <span
+        aria-label={title ? `Trust ${clamped} of 4 — ${title}` : `Trust ${clamped} of 4`}
+        className={cn("font-mono text-[12px] tracking-[2px]", className)}
+      >
+        {"●".repeat(clamped)}
+        {"○".repeat(4 - clamped)}
+      </span>
+    </InfoTooltip>
   );
 }

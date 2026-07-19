@@ -347,29 +347,53 @@ function FounderCard() {
   const scoreComponentRows: ScoreComponentRow[] = useMemo(() => {
     const rows = scoreComponentsQ.data?.ok ? scoreComponentsQ.data.data : [];
     if (rows.length === 0) return rows;
-    // Rows are ordered `run_id.desc` — keep only the latest run, defending
-    // against a re-scored founder accumulating more than 12 rows.
-    const latest = rows[0].run_id;
-    return rows.filter((r) => r.run_id === latest);
+    // Keep only the latest run, defending against a re-scored founder
+    // accumulating more than 12 rows. `run_id` is a random UUID, not a
+    // timestamp — the API's default `run_id.desc` order does NOT mean "most
+    // recent run" (found live on Voltaic: its founder has two runs 68s apart,
+    // and the lexicographically-larger run_id belongs to the OLDER one, which
+    // silently fed a stale all-`cannot_assess` run into this card while the
+    // insufficient-evidence event below — sorted by `created_at` — correctly
+    // showed the newer run). Select the latest run by `created_at` instead;
+    // every row in one run shares the exact same insert timestamp.
+    const latestCreatedAt = rows.reduce(
+      (latest, r) => (r.created_at > latest ? r.created_at : latest),
+      rows[0].created_at,
+    );
+    return rows.filter((r) => r.created_at === latestCreatedAt);
   }, [scoreComponentsQ.data]);
+
+  // The single live coverage figure — computed once here and reused for both
+  // the headline number and the below-threshold note, so the two can never
+  // disagree the way they did when the note read a stale event payload
+  // (task #18: Voltaic showed headline 0.00 against a note reading 0.15 from
+  // an earlier run's `founder_score_insufficient_evidence` event).
+  const founderCoverage =
+    scoreComponentRows.length === 0
+      ? 0
+      : scoreComponentRows.reduce((sum, r) => sum + (r.verdict !== "cannot_assess" ? r.weight : 0), 0) /
+        Math.max(
+          scoreComponentRows.reduce((sum, r) => sum + r.weight, 0),
+          1e-9,
+        );
 
   if (appQ.isLoading) {
     return (
-      <div className="max-w-[1160px] px-9 py-7">
+      <div className="px-9 py-7">
         <LoadingLine label="Loading card…" />
       </div>
     );
   }
   if (appQ.data && !appQ.data.ok) {
     return (
-      <div className="max-w-[1160px] px-9 py-7">
+      <div className="px-9 py-7">
         <ReadFailure error={appQ.data.error} onRetry={() => appQ.refetch()} />
       </div>
     );
   }
   if (!app) {
     return (
-      <div className="max-w-[1160px] px-9 py-7">
+      <div className="px-9 py-7">
         <p className="text-[14px]">This card doesn&apos;t exist, or it's been removed.</p>
         <Link to="/app/feed" className="mt-2 inline-block text-[13px] underline">
           ← Back to the feed
@@ -408,7 +432,7 @@ function FounderCard() {
     : undefined;
 
   return (
-    <div className="max-w-[1160px] px-9 pt-7 pb-16">
+    <div className="px-9 pt-7 pb-16">
       {/* --- top bar ------------------------------------------------------ */}
       <div className="flex items-center gap-3.5 text-[13px]">
         <Link to="/app/feed" className="text-[color:var(--color-text-muted)]">
@@ -596,17 +620,15 @@ function FounderCard() {
             value={founder.founder_score}
             assessedCount={scoreComponentRows.filter((r) => r.verdict !== "cannot_assess").length}
             totalCriteria={scoreComponentRows.length}
-            coverage={
-              scoreComponentRows.reduce((sum, r) => sum + (r.verdict !== "cannot_assess" ? r.weight : 0), 0) /
-              Math.max(
-                scoreComponentRows.reduce((sum, r) => sum + r.weight, 0),
-                1e-9,
-              )
-            }
+            coverage={founderCoverage}
             confidence={founder.founder_score_confidence}
             belowThresholdNote={
-              !founder.score_assessed && founderScoreReason
-                ? `below the 0.25 threshold — coverage ${(founderScoreReason.payload as { coverage?: number }).coverage ?? "?"}`
+              // Same `founderCoverage` value as the headline number above —
+              // never the insufficient-evidence event's stored payload, which
+              // is only as fresh as whichever run last wrote it and can lag a
+              // later re-score (task #18).
+              !founder.score_assessed && founderCoverage < 0.25
+                ? `below the 0.25 threshold — coverage ${founderCoverage.toFixed(2)}`
                 : undefined
             }
             trend={
@@ -616,6 +638,10 @@ function FounderCard() {
             }
             gapsCount={scoreComponentRows.filter((r) => r.verdict === "cannot_assess").length}
             groups={buildFounderScoreGroups(scoreComponentRows)}
+            // `pedigree` intentionally left unwired — like the TAM/competitor-
+            // table cuts elsewhere in this file, this is a scope cut, not an
+            // oversight: `api_founders` exposes no pedigree column, so there
+            // is no live data source to feed the "Pedigree (not scored)" block.
           />
         ) : null
       ) : null}

@@ -1,0 +1,36 @@
+{
+  "subscorer": "leadership-sales-proxies",
+  "verdicts": [
+    {
+      "criterion_id": "L2",
+      "reasoning": "The pack contains a founder-reported waitlist claim, but no independent verification or measured conversion intent. A waitlist count alone is not corroborated evidence of a committed customer, pilot, LOI, or converted demand.",
+      "verdict": "self_asserted",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000704"
+      ],
+      "quote_verbatim": "Author states 40 people joined the quietgpu waitlist since the Show HN post; no independent verification of signups.",
+      "rationale": "The waitlist is explicitly self-reported and unverified, so it supports only an assertion rather than demonstrated first-customer or pilot evidence.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "L3",
+      "reasoning": "The pack describes the technical product but does not specify a concrete vertical, customer size, buyer role, trigger, or current alternative. Without those ICP components, a stranger could not use the statement to identify fifty matching companies.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A claim naming the target vertical, company or cluster size, economic buyer or user role, purchase trigger, and current alternative—for example, which organizations run small on-prem GPU clusters, who controls their infrastructure budget, what event causes them to seek fractional scheduling, and what they use today."
+    },
+    {
+      "criterion_id": "L5",
+      "reasoning": "A constrained public-format description is present and clearly states the core technical function, but it does not state who the product is for. A stranger can understand the mechanism, yet cannot identify the intended customer from this description alone.",
+      "verdict": "not_met",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000701"
+      ],
+      "quote_verbatim": "quietgpu slices a single A100 across up to nine inference jobs with per-job memory fences. No k8s, one binary.",
+      "rationale": "The wording is concise and explains what the product does, but it omits the target user or organization and therefore does not fully pass the stranger test.",
+      "what_would_close_it": null
+    }
+  ]
+}

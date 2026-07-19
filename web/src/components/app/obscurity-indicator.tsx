@@ -7,6 +7,10 @@
 
 import { cn } from "@/lib/utils";
 import { ProvenanceChip } from "./provenance-chip";
+import { InfoTooltip } from "./info-tooltip";
+
+const OBSCURITY_TOOLTIP =
+  "How invisible this person is to conventional databases — a high value means we found them before others would. Not a quality signal.";
 
 const BASIS_LABEL: Record<string, string> = {
   gh_followers: "followers only",
@@ -46,25 +50,30 @@ export function ObscurityIndicator({ obscurity, basis, className }: ObscurityInd
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <ProvenanceChip kind="rule" />
-      <span className="font-mono text-[12px]">{obscurity.toFixed(2)}</span>
-      <span className="relative block h-1 w-16 bg-[color:var(--color-track)]">
-        <span
-          className="absolute inset-y-0 left-0 bg-[color:var(--color-text)]"
-          style={{ width: `${obscurity * 100}%` }}
-        />
-      </span>
-      {basisLabel ? (
-        <span className="font-mono text-[10px] text-[color:var(--color-text-muted)]">
-          basis: {basisLabel}
+      <InfoTooltip content={OBSCURITY_TOOLTIP}>
+        <span className="font-mono text-[12px]">{obscurity.toFixed(2)}</span>
+      </InfoTooltip>
+      <InfoTooltip content={OBSCURITY_TOOLTIP}>
+        <span className="relative block h-1 w-16 bg-[color:var(--color-track)]">
+          <span
+            className="absolute inset-y-0 left-0 bg-[color:var(--color-text)]"
+            style={{ width: `${obscurity * 100}%` }}
+          />
         </span>
+      </InfoTooltip>
+      {basisLabel ? (
+        <InfoTooltip content="A one-term basis is weaker evidence than a two-term one — this is how many signals fed the number.">
+          <span className="font-mono text-[10px] text-[color:var(--color-text-muted)]">
+            basis: {basisLabel}
+          </span>
+        </InfoTooltip>
       ) : null}
       {suspicious ? (
-        <span
-          title="A perfect 1.0 from a single karma term is more likely a downvoted account than a discovery."
-          className="font-mono text-[10px] text-[color:var(--color-text-muted)]"
-        >
-          ⚑ check karma sign
-        </span>
+        <InfoTooltip content="A perfect 1.0 from a single karma term is more likely a downvoted account than a discovery.">
+          <span className="font-mono text-[10px] text-[color:var(--color-text-muted)]">
+            ⚑ check karma sign
+          </span>
+        </InfoTooltip>
       ) : null}
     </span>
   );

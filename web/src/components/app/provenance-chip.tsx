@@ -6,6 +6,7 @@
 
 import type { MouseEvent } from "react";
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "./info-tooltip";
 
 export type ProvenanceKind = "rule" | "rule_on_model" | "model";
 
@@ -21,10 +22,13 @@ const LABEL: Record<ProvenanceKind, string> = {
   model: "Model",
 };
 
+// One plain sentence each, grounded in scoring-ux.md §4.1 — this chip system is the
+// operator's most-asked-about UI element ("ромбики, квадратики непонятные"), so the
+// hover explanation carries real weight here.
 const DESCRIPTION: Record<ProvenanceKind, string> = {
-  rule: "computed by a published deterministic formula from stored inputs",
-  rule_on_model: "a deterministic formula, but at least one input was judged by a model",
-  model: "a language model's judgement — not reproducible",
+  rule: "Computed by a fixed rule or formula — deterministic, no model involved.",
+  rule_on_model: "A fixed rule applied to values a model extracted from evidence.",
+  model: "Produced by an AI model's judgement — weigh it accordingly.",
 };
 
 const CHIP_CLASS: Record<ProvenanceKind, string> = {
@@ -43,19 +47,20 @@ interface ProvenanceChipProps {
 
 export function ProvenanceChip({ kind, showLabel, onClick, className }: ProvenanceChipProps) {
   return (
-    <span
-      onClick={onClick}
-      title={`${LABEL[kind]} — ${DESCRIPTION[kind]}`}
-      className={cn(
-        "inline-flex items-center gap-1 leading-none",
-        CHIP_CLASS[kind],
-        onClick ? "cursor-pointer" : "",
-        className,
-      )}
-    >
-      <span aria-hidden="true">{GLYPH[kind]}</span>
-      {showLabel ? <span>{LABEL[kind]}</span> : <span className="sr-only">{LABEL[kind]}</span>}
-    </span>
+    <InfoTooltip content={`${LABEL[kind]}. ${DESCRIPTION[kind]}`}>
+      <span
+        onClick={onClick}
+        className={cn(
+          "inline-flex items-center gap-1 leading-none",
+          CHIP_CLASS[kind],
+          onClick ? "cursor-pointer" : "",
+          className,
+        )}
+      >
+        <span aria-hidden="true">{GLYPH[kind]}</span>
+        {showLabel ? <span>{LABEL[kind]}</span> : <span className="sr-only">{LABEL[kind]}</span>}
+      </span>
+    </InfoTooltip>
   );
 }
 

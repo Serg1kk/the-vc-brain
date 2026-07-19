@@ -1,0 +1,51 @@
+# vcbrain-n8n -- server n8n instance (feature 12, design.md §3/§4/§5).
+# Derived from infra/n8n/docker-compose.yml: same env knobs, pointed at the
+# remote vcbrain-kong instead of host.docker.internal, HTTPS host config, zero
+# published host ports (Caddy reaches it by container name on localai_default).
+
+name: vcbrain-n8n
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: vcbrain-n8n
+    restart: unless-stopped
+    networks:
+      - localai_default
+    environment:
+      - N8N_HOST=vc-n8n.prodsignal.me
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://vc-n8n.prodsignal.me/
+      - N8N_SECURE_COOKIE=true
+      # Both SPA origins (dashboard.prodsignal.me / submit.prodsignal.me) plus
+      # localhost kept for parity with the local dev instance.
+      - N8N_CORS_ALLOW_ORIGIN=https://submit.prodsignal.me,https://dashboard.prodsignal.me,http://localhost:5173,http://localhost:3000,http://localhost:8080
+      - N8N_PAYLOAD_SIZE_MAX=192
+      # SUPABASE_URL includes /rest/v1 -- matches the local working shape
+      # (infra/n8n/.env: host.docker.internal:8000/rest/v1) so f04/f09/f10/f11
+      # workflows' $env.SUPABASE_URL-based HTTP Request nodes need no edits.
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto,url
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+    volumes:
+      - vcbrain-n8n-data:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+networks:
+  localai_default:
+    external: true
+
+volumes:
+  vcbrain-n8n-data:
+    driver: local

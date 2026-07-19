@@ -64,6 +64,21 @@ export interface ExplainPanelData {
   model?: ExplainModelInfo;
   evidence?: ExplainEvidenceItem[];
   unknowns?: ExplainUnknown[];
+  /** Brief §4.4's dedicated section: "Coverage x% · Confidence y — always both,
+   * always next to the value. Never the value alone." A plain number 0–1, or
+   * omitted when this number genuinely has no confidence (e.g. a locked-channel
+   * disclosure). */
+  confidence?: number | null;
+  /**
+   * A real number (0–1) when one exists. When it doesn't — true for the three
+   * application axes, which carry no coverage figure in `api_applications` — pass
+   * an honest plain-language proxy string instead (e.g. `"7 of 12 signals
+   * present"` derived from the axis's `missing[]` gap codes, or `"Coverage not
+   * separately measured for this axis."`). Never fabricate a number and never
+   * omit both this and `confidence` when either is knowable — the whole point of
+   * this section is not to hide the limit.
+   */
+  coverage?: number | string | null;
   audit?: ExplainAudit;
 }
 
@@ -233,6 +248,26 @@ function ExplainPanel({
                       </div>
                     </div>
                   ))}
+                </>
+              ) : null}
+
+              {data.confidence != null || data.coverage != null ? (
+                <>
+                  <SectionHeading>Coverage &amp; confidence</SectionHeading>
+                  <div className="text-[13px] text-[color:var(--color-text-muted)]">
+                    {data.coverage != null ? (
+                      <div>
+                        {typeof data.coverage === "number"
+                          ? `Coverage ${Math.round(data.coverage * 100)}%`
+                          : data.coverage}
+                      </div>
+                    ) : null}
+                    {data.confidence != null ? (
+                      <div className={data.coverage != null ? "mt-1" : undefined}>
+                        Confidence {data.confidence.toFixed(2)}
+                      </div>
+                    ) : null}
+                  </div>
                 </>
               ) : null}
 

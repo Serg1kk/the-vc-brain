@@ -15,6 +15,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ATokenRouteImport } from './routes/a.$token'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppFeedRouteImport } from './routes/app/feed'
+import { Route as AppSettingsRouteImport } from './routes/app/settings'
 import { Route as AppThesisRouteImport } from './routes/app/thesis'
 import { Route as ApplyIndexRouteImport } from './routes/apply.index'
 import { Route as ApplyQuestionsRouteImport } from './routes/apply.questions'
@@ -50,6 +51,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppFeedRoute = AppFeedRouteImport.update({
   id: '/feed',
   path: '/feed',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppThesisRoute = AppThesisRouteImport.update({
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
   '/app/feed': typeof AppFeedRoute
+  '/app/settings': typeof AppSettingsRoute
   '/app/thesis': typeof AppThesisRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
   '/app/feed': typeof AppFeedRoute
+  '/app/settings': typeof AppSettingsRoute
   '/app/thesis': typeof AppThesisRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/a/$token': typeof ATokenRoute
   '/app/feed': typeof AppFeedRoute
+  '/app/settings': typeof AppSettingsRoute
   '/app/thesis': typeof AppThesisRoute
   '/apply/questions': typeof ApplyQuestionsRoute
   '/apply/status': typeof ApplyStatusRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/a/$token'
     | '/app/feed'
+    | '/app/settings'
     | '/app/thesis'
     | '/apply/questions'
     | '/apply/status'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/a/$token'
     | '/app/feed'
+    | '/app/settings'
     | '/app/thesis'
     | '/apply/questions'
     | '/apply/status'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/a/$token'
     | '/app/feed'
+    | '/app/settings'
     | '/app/thesis'
     | '/apply/questions'
     | '/apply/status'
@@ -223,6 +235,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFeedRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/settings': {
+      id: '/app/settings'
+      path: '/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/thesis': {
       id: '/app/thesis'
       path: '/thesis'
@@ -270,6 +289,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteRouteChildren {
   AppFeedRoute: typeof AppFeedRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppThesisRoute: typeof AppThesisRoute
   AppIndexRoute: typeof AppIndexRoute
   AppFApplicationIdRoute: typeof AppFApplicationIdRoute
@@ -278,6 +298,7 @@ interface AppRouteRouteChildren {
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppFeedRoute: AppFeedRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppThesisRoute: AppThesisRoute,
   AppIndexRoute: AppIndexRoute,
   AppFApplicationIdRoute: AppFApplicationIdRoute,

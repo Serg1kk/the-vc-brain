@@ -1,0 +1,26 @@
+{
+  "name": "deep_dive_questions",
+  "strict": true,
+  "note": "No minItems/maxItems (strict mode forbids them); the prompt's 'produce 5 to 7' + 'cap at 7' is the sole enforcement. The n8n generator (n8n/build-f06-workflow.py, QUESTIONS_SCHEMA_RAW) carries an equivalent inline copy that is authoritative for the build — keep this file in sync with it.",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["deep_dive_questions"],
+    "properties": {
+      "deep_dive_questions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["question", "closes_gap", "gap_kind", "claim_ids"],
+          "properties": {
+            "question": { "type": "string" },
+            "closes_gap": { "type": "string" },
+            "gap_kind": { "type": "string", "enum": ["contradiction", "missing", "ambiguous"] },
+            "claim_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

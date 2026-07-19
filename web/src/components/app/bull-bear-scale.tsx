@@ -6,6 +6,10 @@
 // "middling" and "could not assess" must differ in component, not in colour or copy.
 
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "./info-tooltip";
+
+const BULL_BEAR_TOOLTIP =
+  "The model's read on this market, from bearish to bullish, based on the evidence we found — a judgement, not a measured fact.";
 
 interface BullBearScaleProps {
   /** false when no TAM was ever established — the market categoriser ran, but
@@ -28,15 +32,17 @@ export function BullBearScale({ determined, value, confidence, className }: Bull
 
   if (!determined || value == null) {
     return (
-      <div className={cn("max-w-[420px]", className)}>
-        {labels}
-        <div className="relative mt-0.5 h-[18px]">
-          <div className="track-hatch absolute inset-x-0 top-[7px] h-1" />
+      <InfoTooltip content={BULL_BEAR_TOOLTIP}>
+        <div className={cn("max-w-[420px]", className)}>
+          {labels}
+          <div className="relative mt-0.5 h-[18px]">
+            <div className="track-hatch absolute inset-x-0 top-[7px] h-1" />
+          </div>
+          <div className="mt-0.5 text-[12px] text-[color:var(--color-text-muted)]">
+            not assessed — no TAM established
+          </div>
         </div>
-        <div className="mt-0.5 text-[12px] text-[color:var(--color-text-muted)]">
-          not assessed — no TAM established
-        </div>
-      </div>
+      </InfoTooltip>
     );
   }
 
@@ -49,33 +55,35 @@ export function BullBearScale({ determined, value, confidence, className }: Bull
   const veryLow = confidence == null || confidence < 0.2;
 
   return (
-    <div className={cn("max-w-[420px]", className)}>
-      {labels}
-      <div className="relative mt-0.5 h-[18px]">
-        <div
-          className={cn(
-            "absolute inset-x-0 top-2 border-t",
-            veryLow ? "border-dashed" : "border-solid",
-            "border-[color:var(--color-text)]",
-          )}
-        />
-        <div className="absolute top-1 left-0 h-[9px] w-px bg-[color:var(--color-text)]" />
-        <div className="absolute top-1 right-0 h-[9px] w-px bg-[color:var(--color-text)]" />
-        <div
-          title={confidence != null ? `confidence ${confidence}` : "confidence unknown"}
-          className={cn(
-            "absolute top-0.5 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-[color:var(--color-text)]",
-            solid ? "bg-[color:var(--color-text)]" : "bg-[color:var(--color-bg)]",
-          )}
-          style={{ left: `${pct}%` }}
-        />
-        <div
-          className="absolute top-[18px] -translate-x-1/2 font-mono text-[11px]"
-          style={{ left: `${pct}%` }}
-        >
-          {Math.round(value)}
+    <InfoTooltip content={BULL_BEAR_TOOLTIP}>
+      <div className={cn("max-w-[420px]", className)}>
+        {labels}
+        <div className="relative mt-0.5 h-[18px]">
+          <div
+            className={cn(
+              "absolute inset-x-0 top-2 border-t",
+              veryLow ? "border-dashed" : "border-solid",
+              "border-[color:var(--color-text)]",
+            )}
+          />
+          <div className="absolute top-1 left-0 h-[9px] w-px bg-[color:var(--color-text)]" />
+          <div className="absolute top-1 right-0 h-[9px] w-px bg-[color:var(--color-text)]" />
+          <div
+            aria-label={confidence != null ? `confidence ${confidence}` : "confidence unknown"}
+            className={cn(
+              "absolute top-0.5 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-[color:var(--color-text)]",
+              solid ? "bg-[color:var(--color-text)]" : "bg-[color:var(--color-bg)]",
+            )}
+            style={{ left: `${pct}%` }}
+          />
+          <div
+            className="absolute top-[18px] -translate-x-1/2 font-mono text-[11px]"
+            style={{ left: `${pct}%` }}
+          >
+            {Math.round(value)}
+          </div>
         </div>
       </div>
-    </div>
+    </InfoTooltip>
   );
 }

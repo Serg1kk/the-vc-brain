@@ -642,7 +642,7 @@ function ThesisConfigScreen() {
   if (thesisQ.data && !thesisQ.data.ok) {
     return (
       <div className="px-9 py-7">
-        <div className="max-w-[900px] border border-[color:var(--color-border)] p-5">
+        <div className="mx-auto max-w-[1100px] border border-[color:var(--color-border)] p-5">
           <p className="text-[14px]">{thesisQ.data.error.message}</p>
           <button
             type="button"
@@ -670,7 +670,13 @@ function ThesisConfigScreen() {
 
   return (
     <div className="px-9 py-7 pb-24">
-      <div className="max-w-[900px]">
+      {/* Widened + centered (operator request, 19.07): a bare 900px block sat
+          left-pinned with dead space on the right on a 1440px monitor. This
+          form has a 6-column rules table and multi-chip toggle rows that
+          genuinely use the extra room — a config form earns width a plain
+          document doesn't, unlike the memo's intentionally narrow 760px
+          reading column, which stays as-is. */}
+      <div className="mx-auto max-w-[1100px]">
         <h1 className="m-0 text-[36px] leading-[1.15] font-medium tracking-[-0.02em]">
           {name} v{loadedThesis.version}
         </h1>

@@ -14,6 +14,7 @@
 import type { MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import { NotAssessedTrack } from "./not-known-states";
+import { InfoTooltip } from "./info-tooltip";
 import { ProvenanceChip, type ProvenanceKind } from "./provenance-chip";
 
 export type AxisTrendDirection = "improving" | "stable" | "declining";
@@ -23,6 +24,36 @@ const TREND_ARROW: Record<AxisTrendDirection, string> = {
   stable: "—",
   declining: "▼",
 };
+
+// One plain sentence per axis, grounded in scoring-ux.md §0's own question for each
+// — keyed on both the full display label a screen passes and the single-letter
+// column header form, normalized, so this works regardless of which `AxisScore*`
+// component the caller uses.
+const AXIS_EXPLANATION: Record<string, string> = {
+  founder:
+    "How much builder-capability we've evidenced for this person, combined with founder-market fit and competitor knowledge.",
+  f: "Founder axis: how much builder-capability we've evidenced for this person, combined with founder-market fit and competitor knowledge.",
+  market: "Is this market worth a $100K check — sized, growing, and reachable by this company.",
+  m: "Market axis: is this market worth a $100K check — sized, growing, and reachable by this company.",
+  "idea-vs-market": "Is this product defensible against competitors in this specific market.",
+  i: "Idea-vs-Market axis: is this product defensible against competitors in this specific market.",
+  trust: "The share of checkable claims that hold up, with the disagreement breakdown behind it.",
+  t: "Trust: the share of checkable claims that hold up, with the disagreement breakdown behind it.",
+};
+
+const AXIS_FALLBACK_TOOLTIP =
+  "One of the independent screening axes — never averaged with the others.";
+
+function axisExplanation(label: string): string {
+  const key = label
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
+  return AXIS_EXPLANATION[key] ?? AXIS_FALLBACK_TOOLTIP;
+}
+
+const CONFIDENCE_TOOLTIP = "Confidence: how sure we are, given the evidence we have.";
+const COVERAGE_TOOLTIP = "Coverage: how much of what we'd want to know we actually have.";
 
 interface AxisMiniBarProps {
   /** Used only for the title/aria text — the header letter (F/M/I/T) is rendered
@@ -62,18 +93,15 @@ export function AxisMiniBar({
   className,
 }: AxisMiniBarProps) {
   const lowConfidence = assessed && confidence != null && confidence < 0.2;
-  const title = assessed
-    ? `${label}: value ${value}${confidence != null ? ` · confidence ${confidence}` : ""}${coverage ? ` · coverage ${coverage}` : ""}${lowConfidence ? " — confidence below 0.2, rendered hollow" : ""}`
-    : `${label}: Not assessed${notAssessedReason ? ` — ${notAssessedReason}` : ""}`;
 
-  return (
-    <span
-      onClick={onClick}
-      title={title}
-      className={cn("block pt-0.5", onClick && "cursor-pointer", className)}
-    >
-      {assessed && value != null ? (
-        <>
+  if (assessed && value != null) {
+    const title = `value ${value}${confidence != null ? ` · confidence ${confidence}` : ""}${coverage ? ` · coverage ${coverage}` : ""}${lowConfidence ? " — confidence below 0.2, rendered hollow" : ""}`;
+    return (
+      <InfoTooltip content={`${axisExplanation(label)} ${title}.`}>
+        <span
+          onClick={onClick}
+          className={cn("block pt-0.5", onClick && "cursor-pointer", className)}
+        >
           <span className="relative block h-1 bg-[color:var(--color-track)]">
             <span
               className={cn(
@@ -96,15 +124,19 @@ export function AxisMiniBar({
             </span>
             <span aria-hidden="true">{trend ? TREND_ARROW[trend] : ""}</span>
           </span>
-        </>
-      ) : (
-        <>
-          <NotAssessedTrack reason={notAssessedReason} className="h-[3px]" />
-          <span className="mt-[3px] block text-[8.5px] text-[color:var(--color-text-muted)] italic">
-            not assessed
-          </span>
-        </>
-      )}
+        </span>
+      </InfoTooltip>
+    );
+  }
+
+  // Not assessed — no outer tooltip wrap here: `NotAssessedTrack` already carries
+  // its own explanation, and nesting a second tooltip on top would double up.
+  return (
+    <span onClick={onClick} className={cn("block pt-0.5", onClick && "cursor-pointer", className)}>
+      <NotAssessedTrack reason={notAssessedReason} className="h-[3px]" />
+      <span className="mt-[3px] block text-[8.5px] text-[color:var(--color-text-muted)] italic">
+        not assessed
+      </span>
     </span>
   );
 }
@@ -144,7 +176,10 @@ export function AxisScoreHero({
   return (
     <div onClick={onClick} className={cn("p-4.5", onClick && "cursor-pointer", className)}>
       <div className="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[color:var(--color-text-muted)] uppercase">
-        {axis} <ProvenanceChip kind={chip} />
+        <InfoTooltip content={axisExplanation(axis)}>
+          <span>{axis}</span>
+        </InfoTooltip>{" "}
+        <ProvenanceChip kind={chip} />
       </div>
       {assessed && value != null ? (
         <>
@@ -160,11 +195,15 @@ export function AxisScoreHero({
             {Math.round(value)}
           </div>
           <div className="font-mono text-[11px] leading-[1.5] text-[color:var(--color-text-muted)]">
-            confidence {confidence ?? "—"}
+            <InfoTooltip content={CONFIDENCE_TOOLTIP}>
+              <span>confidence {confidence ?? "—"}</span>
+            </InfoTooltip>
             {assessedOf ? (
               <>
                 <br />
-                assessed {assessedOf}
+                <InfoTooltip content={COVERAGE_TOOLTIP}>
+                  <span>assessed {assessedOf}</span>
+                </InfoTooltip>
               </>
             ) : null}
           </div>

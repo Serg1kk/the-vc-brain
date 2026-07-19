@@ -1,0 +1,50 @@
+{
+  "subscorer": "execution-signals",
+  "verdicts": [
+    {
+      "criterion_id": "E1",
+      "reasoning": "The claims provide no evidence of a pull request authored by the founder and merged into a repository owned by someone else. Claim 11f00004-0000-0000-0000-000000000702 concerns replies in a Show HN thread, not a merged pull request. Claim 11f00004-0000-0000-0000-000000000703 concerns a GitHub identity search, not contribution history.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A public repository record or GitHub API evidence showing a pull request authored by the founder and merged into a repository owned by another person or organization."
+    },
+    {
+      "criterion_id": "E3",
+      "reasoning": "The claims contain no commit history or activity distributed across at least 8 of the last 12 weeks. Claim 11f00004-0000-0000-0000-000000000702 reports 31 replies in one Show HN thread, which does not establish a weekly commit cadence. Claim 11f00004-0000-0000-0000-000000000703 is unrelated to activity cadence.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A dated commit or equivalent repository-activity record showing activity in at least 8 of the most recent 12 weeks."
+    },
+    {
+      "criterion_id": "E4",
+      "reasoning": "No claim refers to a deployed product, reachable production URL, uptime, or live service. Claim 11f00004-0000-0000-0000-000000000702 documents participation in a Show HN discussion, not a live product endpoint. Claim 11f00004-0000-0000-0000-000000000703 documents a GitHub account search and does not address deployment.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "An HTTP check or public evidence for a reachable product URL, such as a live demo, deployed service, uptime record, or production status page."
+    },
+    {
+      "criterion_id": "E5",
+      "reasoning": "The claims do not measure other people using the product through downloads, dependents, forks, transactions, or named users. Claim 11f00004-0000-0000-0000-000000000702 shows author engagement in a Show HN thread, including replies to critical comments, but thread participation is not product usage. Claim 11f00004-0000-0000-0000-000000000703 provides no usage evidence.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "Independent usage data such as download or installation counts, dependent packages or repositories, transaction records, or verifiable named users using the product."
+    },
+    {
+      "criterion_id": "E7",
+      "reasoning": "Claim 11f00004-0000-0000-0000-000000000703 provides limited provenance context by reporting that a linkable GitHub account was not found, but this neither establishes genuine authorship nor shows copying, backdating, or misattribution. Claim 11f00004-0000-0000-000000000702 concerns Show HN replies and does not establish provenance of flagship work. The available provenance information is insufficient to determine whether authorship is clean.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A verifiable repository and commit history linked to the founder, with first-commit dates, authorship metadata, and checks against earlier external sources for the same content."
+    }
+  ]
+}

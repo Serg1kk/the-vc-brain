@@ -1,0 +1,15 @@
+{
+  "subscorer": "red-flags",
+  "flags": [
+    {
+      "flag_id": "R2",
+      "reasoning": "The repository is reported to have 9,200 stars, but the same documented GitHub evidence reports only 3 forks, 0 dependents, and disabled issues. This combination provides little observable evidence of actual use or discussion and is consistent with manufactured or inflated popularity metrics.",
+      "severity": 2,
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000901"
+      ],
+      "quote_verbatim": "ferrofluid has 9,200 GitHub stars.",
+      "contradiction": "The claimed 9,200-star popularity conflicts with the observed 3 forks, 0 dependents, and disabled issues."
+    }
+  ]
+}

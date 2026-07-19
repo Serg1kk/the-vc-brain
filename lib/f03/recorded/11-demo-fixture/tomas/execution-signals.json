@@ -1,0 +1,56 @@
+{
+  "subscorer": "execution-signals",
+  "verdicts": [
+    {
+      "criterion_id": "E1",
+      "reasoning": "Claim 11f00004-0000-0000-0000-000000000903 reports a merged pull request into tokio-rs/tokio, which is identified as a repository separate from the founder's own ferrofluid repository. The claim is sourced from the GitHub API and describes the PR as merged, satisfying the foreign-repository and merged requirements.",
+      "verdict": "met",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000903"
+      ],
+      "quote_verbatim": "Merged PR into tokio-rs/tokio",
+      "rationale": "The documented GitHub signal supports authorship of a merged contribution to another repository.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "E3",
+      "reasoning": "Claim 11f00004-0000-0000-0000-000000000902 directly measures recent commit consistency and reports activity in only 6 of the last 12 weeks. This is below the criterion's requirement of activity in at least 8 of the last 12 weeks.",
+      "verdict": "not_met",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000902"
+      ],
+      "quote_verbatim": "Commits present in 6 of the last 12 weeks.",
+      "rationale": "The documented activity window shows fewer than the required 8 active weeks.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "E4",
+      "reasoning": "Claims 11f00004-0000-0000-0000-000000000903, 11f00004-0000-0000-0000-000000000901, and 11f00004-0000-0000-0000-000000000902 concern a merged contribution, GitHub stars and repository metadata, and commit timing. None provides a live production URL, uptime evidence, or evidence that a deployed service responds. Deployment was not observed as absent; it was not assessed in the supplied claims.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "An HTTP check of a product URL or documented evidence of a reachable deployed service, such as a live demo, production endpoint, uptime record, or deployment status."
+    },
+    {
+      "criterion_id": "E5",
+      "reasoning": "Claim 11f00004-0000-0000-0000-000000000901 includes documented GitHub repository metadata reporting 3 forks and 0 dependents. Forks are explicitly an accepted form of measured external usage under E5. The 9,200 stars are not used as evidence because stars do not count as usage.",
+      "verdict": "met",
+      "claim_ids": [
+        "11f00004-0000-0000-0000-000000000901"
+      ],
+      "quote_verbatim": "forks: 3, dependents: 0, issues_enabled: false",
+      "rationale": "The documented fork count provides evidence that other people copied or used the repository, satisfying the criterion's accepted forks signal.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "E7",
+      "reasoning": "Claims 11f00004-0000-0000-0000-000000000903, 11f00004-0000-0000-0000-000000000901, and 11f00004-0000-0000-0000-000000000902 provide evidence about a merged PR, repository popularity and forks, and commit consistency. None addresses first-commit timing, account age compatibility, prior external sources, or coherent authorship history. The pack contains no provenance information sufficient to establish either clean or fraudulent authorship.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A provenance record showing the flagship repository's first commit, the founder account's creation date, authorship history, and checks for earlier external copies or sources of the same content."
+    }
+  ]
+}
