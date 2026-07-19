@@ -1,0 +1,121 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is([data-theme="dark"] *), &:is(.dark *));
+
+/*
+ * Design tokens — brief §5.
+ * Light default; dark via prefers-color-scheme or [data-theme="dark"] on :root.
+ */
+
+@theme inline {
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Inter, sans-serif;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+
+  /* shadcn aliases, kept mapped so any leftover primitives still render */
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent-foreground: #ffffff;
+  --color-destructive: var(--warn);
+  --color-destructive-foreground: #ffffff;
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+}
+
+:root {
+  --bg: #FAFAF9;
+  --surface: #FFFFFF;
+  --border: #E7E5E4;
+  --text: #1C1917;
+  --text-muted: #78716C;
+  --accent: #1D4ED8;
+  --warn: #B45309;
+  --ok: #15803D;
+  --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0C0C0D;
+    --surface: #161618;
+    --border: #27272A;
+    --text: #FAFAF9;
+    --text-muted: #A1A1AA;
+    --accent: #60A5FA;
+    --warn: #FBBF24;
+    --ok: #4ADE80;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0C0C0D;
+  --surface: #161618;
+  --border: #27272A;
+  --text: #FAFAF9;
+  --text-muted: #A1A1AA;
+  --accent: #60A5FA;
+  --warn: #FBBF24;
+  --ok: #4ADE80;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html, body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  label {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  input, textarea, select, button {
+    font: inherit;
+    color: inherit;
+  }
+}

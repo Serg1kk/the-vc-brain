@@ -22,7 +22,16 @@ total. Calm, dense, trustworthy — think Notion's approachability with a financ
 tool's seriousness. No hero sections, no testimonials, no pricing, no feature grids,
 no gradients, no glassmorphism, no emoji, no stock photos, no animated blobs.
 
-Stack: React + TypeScript + Vite + Tailwind + shadcn/ui. React Router for routing.
+Stack: React + TypeScript + Vite + Tailwind + shadcn/ui, with TanStack Router
+(file-based routes in src/routes/). Keep the template's router — do not swap it.
+
+This app only ever talks to a backend on localhost, so it must be rendered entirely
+in the browser:
+- No server-side data fetching. No route `loader`s, no `createServerFn`, no server
+  functions, no SSR or prerender hook may call our API.
+- Every API call happens in the browser, inside a component effect or a client query.
+- No route that calls the API may be prerendered or statically generated.
+- `npm run build` must succeed with no .env file and with no network access.
 
 CRITICAL CONSTRAINTS — do not violate any of these:
 - Do NOT connect Lovable's native Supabase integration. Do NOT create a database,
@@ -36,12 +45,15 @@ CRITICAL CONSTRAINTS — do not violate any of these:
 - Everything must work offline apart from the fetch calls: bundle fonts, no CDN
   <script> or <link> tags, no external image hosts.
 
-Routes:
+Routes (URLs are fixed — the backend and the links it generates depend on them;
+express them in whatever syntax the router uses, e.g. /a/$token):
   /apply           — the application form (default route, redirect / to it)
   /apply/questions — optional follow-up questions, shown after a successful submit
   /apply/status    — confirmation screen
   /a/:token        — standalone follow-up questions page opened from a link
   /privacy         — a plain text disclosure page
+
+Name the route components exactly: Apply, Questions, Status, FollowUp, Privacy.
 
 I will give you each screen's exact fields, states, and copy next. Start by scaffolding
 the app shell, routing, the design tokens, and a typed API client module.
@@ -111,12 +123,18 @@ Keep the shell generic: routing, design tokens, and the API client must live in 
 modules, not inside the founder pages. **Do not build any dashboard, feed, or investor
 screens now** — they are out of scope for this brief and will conflict.
 
-Suggested layout:
+Suggested layout (route files follow the template's own convention — the point is
+that `lib/` and `components/` are shared, not owned by the founder routes):
 
 ```
 src/
-  main.tsx
-  App.tsx                     # router only
+  routes/                     # TanStack file-based routes
+    index.tsx                 # redirect to /apply
+    apply/index.tsx           # Apply
+    apply/questions.tsx       # Questions
+    apply/status.tsx          # Status
+    a.$token.tsx              # FollowUp
+    privacy.tsx               # Privacy
   lib/
     api.ts                    # typed fetch client, all endpoints from §4
     types.ts                  # shared response types
@@ -129,12 +147,6 @@ src/
     QuestionCard.tsx
     NextPhasePanel.tsx
     StatusTimeline.tsx
-  pages/
-    Apply.tsx
-    Questions.tsx
-    Status.tsx
-    FollowUp.tsx
-    Privacy.tsx
 ```
 
 ---
@@ -593,6 +605,9 @@ Tick every line before handing the export back.
 - [ ] No absolute URL, API key, or hostname is hardcoded anywhere in `src/`.
 - [ ] No Supabase client, no auth library, no backend folder, no serverless function.
 - [ ] All network calls live in `src/lib/api.ts` and are typed against §4.
+- [ ] **No route `loader`, server function, or prerender hook calls our API** — every
+      request to `VITE_N8N_BASE_URL` originates in the browser. Verify by running
+      `npm run build` with the network disabled and no `.env` present.
 - [ ] No external `<script>`, `<link>`, font CDN, or image host in `index.html`.
 
 **Flow**
