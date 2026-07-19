@@ -20,7 +20,7 @@ investor, and gaps are logged honestly. Trust is per-claim, never one number per
 
 ## Where the idea comes from
 
-- Generator-Validator-Critic pattern from e/acc (REC-007, t.me/eaccchat/208635): the validator
+- Generator-Validator-Critic pattern (REC-007): the validator
   checks claims against FACTS (code execution, API calls, metrics, search results), never
   against another LLM's opinion.
 - Evidence ledger over vibes (REC-013); verbatim preservation vs LLM echo chamber (REC-009,

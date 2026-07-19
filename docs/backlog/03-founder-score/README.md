@@ -1,6 +1,25 @@
 # 03 · Founder Score (cold-start core)
 
-Status: backlog · Depends on: 01 · The heart of the product
+Status: **DONE** (2026-07-19, QA gate PASSED, commit `f64b66b`) · Depends on: 01 · The heart of the product
+
+> **Built.** Spec: [design.md](design.md) rev 3 · Plan: [plan.md](plan.md) rev 2 ·
+> Execution: [tracker.md](tracker.md) · QA: [qa-report-03.md](qa-report-03.md) ·
+> Agent specs: [agents/](agents/)
+>
+> **What shipped:** 12-criterion boolean rubric across 4 LLM sub-scorers (the model emits only
+> verdicts + evidence citations); deterministic aggregation in `lib/f03/scoring.js`; a validation
+> gate in `lib/f03/gate.js` that enforces the invariants in code rather than in prompts; a
+> headless runner `lib/f03/run.js` with record/replay; and the n8n workflow `f03-score-founder`,
+> whose Code nodes paste the deterministic core verbatim.
+>
+> **Verified end to end on 3 founders:** Devon (synthetic) → `scored` 29.16 / conf 0.53, all three
+> red flags firing and demoting 5 verdicts · Kwame (sparse) → `insufficient_evidence`, coverage
+> 0.06, **no score row invented** · Pieter (real, sources verified) → `scored` 67.96 / conf 0.63.
+> 77 unit tests, smoke green, QA gate passed 8/8 mandatory cases.
+>
+> ⚠️ **Outstanding:** `db/schema.sql`, `db/seed.sql`, `db/tests/smoke.sql` are applied locally but
+> **not yet committed** — feature 07's DDL is interleaved and one `smoke.sql` line is genuinely
+> shared. See the OPEN section in [../TRACKER.md](../TRACKER.md) for the resolution rule.
 
 ## What it is
 
@@ -24,9 +43,9 @@ aggregates by versioned weights; Supabase stores every version append-only.
 - Carl's three questions (Q&A @33-35min): would I work for them / can they sell / can they
   scale (SIG-003/004/005). Fund triad integrity/energy/resilience (SIG-022); 8-trait rubric
   (SIG-023); founder-first thesis «almost nothing but the founder matters» (SIG-021).
-- **2026-fresh signal calibration from our e/acc KB (906 items)** — our unfair advantage:
-  - shipped-vs-built: prod deploy + external traction, not code volume (SIG-012, t.me/eaccchat/187646)
-  - vibe-coding decayed the prototype signal (RSK-002, t.me/eaccchat/3061, Jun 30)
+- **2026-fresh signal calibration from our internal KB (906 items)** — our unfair advantage:
+  - shipped-vs-built: prod deploy + external traction, not code volume (SIG-012)
+  - vibe-coding decayed the prototype signal (RSK-002, Jun 30)
   - GitHub stars = vanity; provenance check first-commit-date vs earlier source (SIG-014, /3033, /211095)
   - agency/completion ratio: finished vs abandoned projects (SIG-011, cryptoessay/2753)
   - domain expertise 40+ / management skill as predictor (SIG-016), hands-on-at-scale (SIG-017)

@@ -33,7 +33,7 @@ originals stored as provenance artifacts.
   the card IS that infrastructure; «prove once».
 - Brief minimum: deck + company name; over-collecting counts against (REQ-008, FAQ-4). Form
   asks for artifacts — «GitHub, jupyter NB, replit app — 100x more useful than a deck»
-  (REC-014, t.me/eaccchat/47812).
+  (REC-014).
 - Interview guardrails (research-locked in roadmap): disclosure upfront + human-review note ·
   questions only from gaps · pre-fill before asking · answers = self-reported claims (low base
   confidence, NOT scored for eloquence — SIG-018) · outcome immediately · duration stated +

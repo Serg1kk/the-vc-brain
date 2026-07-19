@@ -2,7 +2,26 @@
 
 > English version (primary): [README.md](README.md)
 
-Status: backlog · Depends on: 01 · The heart of the product
+Status: **DONE** (19.07.2026, QA-гейт PASSED, коммит `f64b66b`) · Depends on: 01 · Сердце продукта
+
+> **Сделано.** Спека: [design.md](design.md) rev 3 · План: [plan.md](plan.md) rev 2 ·
+> Исполнение: [tracker.md](tracker.md) · QA: [qa-report-03.md](qa-report-03.md) ·
+> Спеки агентов: [agents/](agents/)
+>
+> **Что поехало:** рубрика из 12 булевых критериев в 4 LLM-сабскорерах (модель выдаёт только
+> вердикты + цитаты evidence, ни одного числа); детерминированная агрегация в
+> `lib/f03/scoring.js`; гейт валидации `lib/f03/gate.js`, который обеспечивает инварианты кодом,
+> а не текстом промпта; headless-runner `lib/f03/run.js` с записью/воспроизведением; и n8n-workflow
+> `f03-score-founder`, чьи Code-ноды содержат детерминированное ядро дословно.
+>
+> **Проверено сквозняком на 3 фаундерах:** Devon (синтетический) → `scored` 29.16 / conf 0.53,
+> сработали все три red-flag и понизили 5 вердиктов · Kwame (разреженный) →
+> `insufficient_evidence`, coverage 0.06, **скор не выдуман** · Pieter (реальный, источники
+> проверены) → `scored` 67.96 / conf 0.63. 77 юнит-тестов, smoke зелёный, QA-гейт 8/8.
+>
+> ⚠️ **Осталось:** `db/schema.sql`, `db/seed.sql`, `db/tests/smoke.sql` применены локально, но
+> **ещё не закоммичены** — DDL фичи 07 переплетён с нашим, а одна строка в `smoke.sql` общая.
+> Правило разрешения — в секции OPEN в [../TRACKER.md](../TRACKER.md).
 
 ## Что это
 
@@ -28,10 +47,10 @@ score** по оси Founder — рассчитан на founder'а БЕЗ track 
   могут ли они масштабироваться (SIG-003/004/005). Триада фонда integrity/energy/resilience
   (SIG-022); rubric из 8 черт (SIG-023); founder-first тезис «важен почти только founder»
   (SIG-021).
-- **Калибровка сигналов 2026-го года из нашей e/acc KB (906 items)** — наше нечестное
+- **Калибровка сигналов 2026-го года из нашей internal KB (906 items)** — наше нечестное
   преимущество:
-  - shipped-vs-built: prod deploy + внешняя traction, а не объём кода (SIG-012, t.me/eaccchat/187646)
-  - vibe-coding обесценил сигнал прототипа (RSK-002, t.me/eaccchat/3061, 30 июня)
+  - shipped-vs-built: prod deploy + внешняя traction, а не объём кода (SIG-012)
+  - vibe-coding обесценил сигнал прототипа (RSK-002, 30 июня)
   - звёзды GitHub = vanity; provenance-проверка даты первого коммита против более раннего
     источника (SIG-014, /3033, /211095)
   - agency/completion ratio: завершённые vs брошенные проекты (SIG-011, cryptoessay/2753)

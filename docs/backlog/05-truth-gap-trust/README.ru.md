@@ -22,7 +22,7 @@ Status: backlog · Depends on: 01, 03, 04
 
 ## Откуда идея
 
-- Паттерн Generator-Validator-Critic из e/acc (REC-007, t.me/eaccchat/208635): валидатор
+- Паттерн Generator-Validator-Critic из e/acc (REC-007): валидатор
   проверяет claims против ФАКТОВ (исполнение кода, вызовы API, метрики, результаты поиска),
   никогда — против мнения другой LLM.
 - Evidence ledger вместо вайбов (REC-013); сохранение verbatim против LLM echo chamber
