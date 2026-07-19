@@ -114,6 +114,25 @@ choosing what to parallelize.
   `resultData.runData`). **Fix: use a real `Merge` node** (`n8n-nodes-base.merge`,
   typeVersion 3.2, `mode:'append'`, `numberInputs:N`), wiring branch *i* into input index *i*.
   IF/Switch reconverges are fine as-is (only one branch is ever live).
+- 2026-07-19 ~11:50 · **05 — ⚠️ NEVER COMPUTE A `content_hash` OVER LLM OUTPUT. Cross-feature, and
+  it silently defeats idempotency.** `gpt-5.6-luna` cannot be pinned with `temperature: 0` (it
+  rejects the parameter — see the entry below), so an extraction agent asked for a verbatim substring
+  returns a *legitimately different* substring on identical input, call to call. Feature 05 was using
+  that extracted text as the `quoteVerbatim`/hash input for a `contradicts` evidence row: re-running
+  the same candidate produced two different valid substrings → two different `content_hash` values →
+  **a duplicate row that `ON CONFLICT DO NOTHING` cannot catch.** For 05 a duplicate `contradicts`
+  doubles the trust penalty, so a retry silently halves a claim's score.
+  **Rule: hash only over values that are already stable in the database** (the cited evidence's own
+  `quote_verbatim`, ids, URLs). Keep the model's own extraction — it is valuable — but put it in
+  `events.payload` / `ai_runs.output_json`, never in a hash or an idempotency key. Same reasoning as
+  the existing "no `run_id` in the hash" rule, one level subtler.
+- 2026-07-19 ~11:50 · **05 — the `globalThis.crypto` gap goes one property deeper: `crypto.subtle`
+  is undefined too.** The entry below covers `randomUUID`; `sha256Hex()` hit the same wall on
+  `crypto.subtle.digest`. Workaround that works live, placed before any inlined module that needs it:
+  `globalThis.crypto = require('crypto').webcrypto;` — Node's WebCrypto exposes an identical
+  `.subtle.digest()` surface. This means **design docs across the project that instruct
+  "use `globalThis.crypto.subtle.digest`, not `require('crypto')`" are wrong for Code nodes**; the
+  module source can stay import-free while the Code node supplies the shim.
 - 2026-07-19 ~08:00 · **05 — ⚠️ CORRECTION to the SHA-256 guidance above: `globalThis.crypto` is
   UNDEFINED inside the n8n Code-node sandbox.** The entry above tells you to use
   `globalThis.crypto.subtle.digest('SHA-256', …)` instead of `require('crypto')`. Live result in a
