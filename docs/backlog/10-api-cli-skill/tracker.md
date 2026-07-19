@@ -17,7 +17,7 @@
 | E1 | live Q1/Q2 acceptance | orchestrator | C1 | pending | — | §5.8 criteria |
 | F1 | skill + api.md | @backend-developer | D1 | pending | — | written LAST by design |
 | G1 | QA gate | @qa-engineer | F1 | pending | — | independent, no dev-test reuse |
-| H1 | commit DB layer | @devops | A2 | **dispatched** 09:54 | — | commit only, NO push — `docs/` is tracked and the remote is public |
+| H1 | commit DB layer | @devops | A2 | **done** | `b2a7788` (11 files, 2557 ins) | commit only, NOT pushed — `docs/` is tracked and the remote is public |
 
 ## Design/spec phase — closed
 
@@ -45,6 +45,9 @@
 - **09:49** A1a/A1b verified independently: 122/122/3, 308, 724 (109 company-scoped), and **`GET /rest/v1/api_founders` returns 200 through Kong** — the views are live over PostgREST, not just valid SQL. `score_market` renders as `{"value": null, "assessed": false}`, i.e. an absent axis reads as "not assessed", never zero. `apply.sh` idempotent on a 3rd run; `smoke.sql` still green.
 
 - **09:54** A2 verified independently: smoke exits 0, 97 DO blocks, zero ERROR/FAIL, zero fixture rows left behind. Went further than the agent and **proved the regression guard actually bites** — `log(1 + (-2))` still raises, so reverting the `radar_candidates` fix aborts the whole suite instead of passing silently. DB layer handed to @devops (commit only; `docs/` is tracked and the remote is public, so nothing is pushed until the operator rules).
+
+- **09:58** Simulated Q1 against the live corpus before building the pipeline for it. Distribution is good (1 founder matches 4 attributes, 10 match 3, 90 match 2, 17 match 1) — **but running it through the real formula inverted the list**: `rank_score` is match-rate-among-assessed, so one documented match scores 100 while the best founder in the corpus scores 92.5. The confidence floor cannot catch it (1-of-4 = exactly 0.25, rule is `< 0.25`; and 2-of-4-documented = 100 at confidence 0.5). **Three adversarial review rounds missed this because it is invisible in the spec — it only shows up in numbers.**
+- **10:00** Review round 4 adjudicated the fix: bucket-then-rank ordering is not fusion (it produces no number; both inputs stay inspectable), but required four corrections — sort an **ordinal integer**, never the bucket string (`'high' < 'low' < 'mid'` alphabetically, so `DESC` yields mid→low→high, silently inverted); bucket on **attribute count**, not weight-normalised confidence (weight-based edges sit on the achievable lattice and diverge under non-uniform weights); **emit** `confidence_bucket` so the order is reproducible from the response; `bucket: null` + rank fallback when `low_confidence_only` fires. All applied → design rev.5. Delta pushed to the backend agent before it wrote `score.js`.
 
 ## Open cross-feature items to report at close
 

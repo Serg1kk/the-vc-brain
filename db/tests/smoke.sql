@@ -1902,7 +1902,7 @@ END $$;
 
 -- Regression guard (task A1a, TRACKER.md): radar_candidates must survive
 -- materialising `obscurity` for every row. Founder d2e2c8fb-3abc-4f31-9c65-
--- 66ecc16066e4 ("shlokkshahh", real data) has hn_karma=-2 -- HN karma
+-- 66ecc16066e4 (real data) has hn_karma=-2 -- HN karma
 -- legitimately goes negative for a downvoted user -- and log() of a
 -- non-positive argument used to raise "cannot take logarithm of a negative
 -- number", aborting any statement that reads `obscurity` across all rows.

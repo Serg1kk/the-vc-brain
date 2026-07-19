@@ -257,8 +257,7 @@ Consequences for every terminal:
 ## 2026-07-19 ~09:48 · 10 → 02/09, CROSS-FEATURE BUG FIXED (append by terminal 10)
 
 **`radar_candidates` aborted any query that materialised `obscurity`.** The view computes
-`log(1 + hn_karma)` with no domain guard. Founder `d2e2c8fb-3abc-4f31-9c65-66ecc16066e4`
-("shlokkshahh") has a genuine latest `hn_karma = -2` — HN karma legitimately goes negative when a
+`log(1 + hn_karma)` with no domain guard. One founder (`d2e2c8fb-3abc-4f31-9c65-66ecc16066e4`) has a genuine latest `hn_karma = -2` — HN karma legitimately goes negative when a
 user is downvoted, so this is real data, not corruption — and `log(-1)` raises
 `ERROR: cannot take logarithm of a negative number`, which aborts the whole statement.
 
@@ -293,3 +292,44 @@ from outside.
   (`{criterion_id, what_would_close_it}`), not of strings. 03's `done.md` says "array", which is
   true of the container but misleading about the elements. `what_would_close_it` is worth surfacing
   — 10 exposes it as `api_founders.founder_score_gaps`.
+
+## 2026-07-19 ~10:15 · 08 — ANNOUNCE BEFORE EDIT: `infra/n8n/docker-compose.yml` (shared file)
+
+08 will add **two env vars** to the shared n8n service, both currently unset (verified with
+`docker exec vcbrain-n8n printenv`), both affecting every feature's webhooks:
+
+- **`N8N_CORS_ALLOW_ORIGIN`** — the SPA in `web/` runs on its own dev-server origin and posts to
+  `localhost:5678`. Without this, **every browser call fails and every curl test still passes** —
+  which is what makes it expensive to find. Any feature exposing a webhook to the frontend needs
+  it, so this is a shared win, not an 08-local hack.
+- **`N8N_PAYLOAD_SIZE_MAX=192`** (default is 16 MB) — 08's intake contract carries the deck and
+  up to three extra files as base64 in one JSON request. Operator decision: raise the limit
+  rather than shrink the already-built frontend contract. Docker VM has 7.7 GB and the container
+  is unlimited within it, so the headroom is real. 08 additionally uploads extra files to Storage
+  first and drops their base64 from the item, so the large payload does not propagate through
+  the workflow.
+
+**Impact on you: none expected** — both are additive and neither changes existing node behaviour.
+Shout here if raising the payload ceiling is a problem for your workflow.
+
+## 2026-07-19 ~10:15 · 08 — CROSS-FEATURE facts established by 08's spec review
+
+Four of these came out of an adversarial review of 08's design and were verified against the
+live environment. They bind more than 08:
+
+1. **No Supabase Storage bucket exists** — `GET /storage/v1/bucket` returns `[]`, and nothing in
+   the repo has ever called the storage API. `db/apply.sh` does **not** create one, so the
+   cold-start sequence in `CLAUDE.md` will not either. 08 creates `decks` (private). Any feature
+   storing a file must provision its own bucket and add it to the cold-start docs.
+2. **`purge_founder()` does not delete Storage objects.** Erasure removes the `applications` row
+   holding `deck_storage_path`, so an uploaded file becomes both undeleted and unfindable. Same
+   defect class as 02's NULL-FK `raw_signals`, one layer up. Disclosed in 08's design §4.1.
+3. **The 07 gap-marker convention tie is broken in favour of `07/design.md:734`** — gaps are the
+   **base topic with `verification_status='missing'`**, and that line explicitly states the
+   `.gap` wording still present in `07/handoff.md` §4 is wrong. **Consequence for anyone
+   computing coverage: exclude `verification_status='missing'` claims**, or you will read an
+   explicit absence marker as evidence of presence.
+4. **Content hashes must include the application id** where a subject can legitimately recur.
+   `raw_signals`/`claims`/`evidence` all carry `content_hash NOT NULL UNIQUE`; a founder
+   re-applying with the same deck raises `23505` and fails the whole write unless the hash is
+   scoped. Re-application is a new row by design (01), so this is reachable, not theoretical.

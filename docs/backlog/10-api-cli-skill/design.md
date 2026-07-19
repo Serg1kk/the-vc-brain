@@ -578,8 +578,54 @@ Rules the executor enforces, each derived from a specific finding:
    **`truncated` refers to the 200-candidate cap only** — it means "more founders would have
    qualified as candidates than we scored". `total > limit` is normal, expected, and expressed by
    `total`; it is **not** truncation (rev.3 — review round 2 S2, the two were conflated).
-6. **Stable ordering:** `rank_score DESC, confidence DESC, founder_id ASC` — `founder_id` is the
-   unique final key, so the order is total, not merely mostly-determined.
+6. **Stable ordering:** `bucket_ordinal DESC, rank_score DESC NULLS LAST, founder_id ASC`.
+
+   ```js
+   coverage       = |{a : state ∈ assessed}| / |{a : resolvable}|   // COUNT, not weight
+   bucket         = coverage >= 0.75 ? 'high' : coverage >= 0.5 ? 'mid' : 'low'
+   BUCKET_ORDINAL = { high: 3, mid: 2, low: 1 }                     // sort the INTEGER
+   ```
+
+   **Sort the ordinal, never the string** (rev.5 — review round 4 F8). Alphabetically
+   `'high' < 'low' < 'mid'`, so a `DESC` string sort yields **mid → low → high**: the exact
+   inversion of intent, silently, on a list that still looks plausible. In JS this is the single
+   likeliest defect in the whole change.
+
+   **`coverage` counts attributes, it does not normalise weight** (review round 4 Q2). Weight-based
+   bucketing sits exactly on the achievable lattice — for a 4-attribute equal-weight query
+   `confidence` can only be {0.25, 0.5, 0.75, 1.0} and every edge lands on an attainable value —
+   and it diverges from its own meaning the moment weights differ by kind, which they do: with
+   three `provenance` (25) and one `structural` (20), *three* assessed criteria bucket as `high`
+   (75/95 = 0.789) or `mid` (70/95 = 0.737) depending on **which** three. The bucket is meant to say
+   "how much of your query we could assess"; only a count says that. `confidence` stays exactly as
+   it is — published on every item and still the floor.
+
+   `founder_id` is the unique final key, so the order is total.
+
+   **When `low_confidence_only` fires**, every candidate is below the floor and has no bucket:
+   `confidence_bucket` is `null` and ordering falls back to `rank_score DESC NULLS LAST,
+   founder_id ASC` (review round 4 F9 — otherwise the primary key is null on every row and the
+   order depends on sort stability).
+
+   **Rejected alternative, recorded because it is the obvious-looking one:** *absolute matched
+   weight* (`Σ weight × tier_credit` where matched, unnormalised). It needs no thresholds, no
+   buckets and no lattice, and it happens to order the live corpus correctly. **It is wrong because
+   it violates REQ-003:** unnormalised, a founder we simply have not researched can never rank
+   highly — missing data would lower the score directly, which is the inversion this product exists
+   to prevent. It would rank by how much we happen to know, i.e. by crawl luck.
+
+   **Why not `rank_score` first** (rev.5 — found by simulating Q1 against the live corpus, not by
+   review): `rank_score` is the match rate *among what we could assess*, so a founder assessed on
+   one attribute that matched with `documented` evidence scores **100**, while the single founder
+   who satisfies all four of Q1's attributes scores **92.5** (his evidence averages 0.93, not 1.0).
+   Sorting by rank first therefore puts the people we know least about at the head of the list —
+   and the confidence floor does not catch them, because 1 assessed attribute of 4 gives
+   `confidence` exactly 0.25, which is not `< 0.25`.
+
+   Bucketing is a **lexicographic sort, not arithmetic fusion** — the two numbers are never
+   combined into one, which invariant #1 forbids. It reads as: *show the founders we could actually
+   assess first, ranked by fit within that.* Measured Q1 distribution that motivated it: 1 founder
+   matches 4 attributes, 10 match 3, 90 match 2, 17 match 1.
 
 ### 5.5 Stage 3 — three-state matching and ranking
 
@@ -712,6 +758,7 @@ Every `matched` attribute carries its proof: `claim_id`, `quote_verbatim`, `sour
       "founder_id": "…", "full_name": "…", "is_synthetic": false,
       "company_id": "…", "company_name": "…", "application_id": "…",
       "rank_score": 72, "confidence": 0.61,
+      "confidence_bucket": "high", "coverage": 0.75, "evidence_quality": 0.85,
       "founder_score": 64, "founder_score_assessed": true,
       "attributes": [
         { "id": "technical_founder", "state": "matched", "weight": 25,
@@ -732,6 +779,13 @@ Every `matched` attribute carries its proof: `claim_id`, `quote_verbatim`, `sour
   "truncated": false
 }
 ```
+
+**`confidence_bucket` is emitted on every item, not just used internally** (review round 4 Q1).
+Bucketing is defensible as a *presentation ordering* rather than fusion precisely because both
+inputs survive intact and a consumer can re-sort on either — but that is only true if the sort key
+is visible. A returned order that cannot be explained from the returned data is worse than fusion:
+fusion is at least honest that it collapsed something. The skill states that list order is
+`bucket → rank_score` and is reproducible from the response alone.
 
 Deliberate properties, each answering a documented consumer failure mode:
 
@@ -899,6 +953,7 @@ Sole writer of: three `api_*` views, `lib/f10/*`, `n8n/workflows/f10-nl-search.j
 |---|---|
 | Scorer (`lib/f10/score.js`) | `node --test lib/f10/*.test.js` over plan+rows fixtures — no LLM, no network. Cases: negative never reaches FTS · empty-corpus negative → `unresolvable` · **negative against a sparse-but-nonempty topic yields `unknown` for candidates with no evidence in that family, never `matched`** (§5.4 rule 3, per-candidate) · six-attribute query returns rows · **`unknown` does NOT lower `rank_score`** — the explicit B2 regression: one match + two `unknown` must outrank one match + two `mismatch` · **`assessed = 0` → `rank_score: null`, not 0 and not a division by zero** · `confidence < 0.25` lands in `low_confidence[]` and never interleaves · tier credit orders `documented` above `discovered` above `inferred` · `missing`-tier evidence is never a match · negatives generate no candidates · zero-positive fallback returns an explained list · `truncated` reflects the 200-candidate cap, not `total > limit` — **unit-test only, over a >200-row fixture: the cap never binds on a 122-founder corpus, so this is unreachable end to end and QA must not chase it live** · identical plan → identical order across runs |
 | Views | `psql` assertions in `db/tests/smoke.sql` under `-- Feature 10:`: **a founder with `opt_out_at IS NULL` IS PRESENT** (the positive case — asserting only absence passes trivially against a view returning nothing, which is exactly how B1 survived rev.2) · opted-out and merged-tombstone founders absent · exactly one row per founder · no `overall_score` column · unscored founder yields NULL not 0 · thesis fit matches `thesis_evaluations` not a stale `scores` row · `missing` normalised to a string array on the three axes the views expose (`thesis_fit` is moot since §4.2's M2 fix), `_`-prefixed keys dropped |
+| Ordering regression | a founder with 1 assessed attribute at `documented` (rank 100, confidence 0.25) must NOT outrank a founder with 4 assessed at rank 92.5 / confidence 1.0 — this is the exact live-data case that motivated the bucket sort |
 | NL-search end to end | live calls for Q1 and Q2 (§5.8); Precision@10 hand-checked on Q1; Q2 asserted to return rows with `unresolvable` non-empty and reduced confidence |
 | CLI | smoke on all four commands incl. `schema` with `VCBRAIN_TOKEN` unset; error shape asserted for a missing required flag |
 
