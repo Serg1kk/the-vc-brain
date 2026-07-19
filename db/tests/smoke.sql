@@ -835,6 +835,13 @@ RESET vcbrain.purging;
 -- table at creation time. Assert the grant is actually gone, then assert an
 -- attempted TRUNCATE as service_role is rejected at the privilege level
 -- (42501) -- before forbid_mutation() would even get a chance to run.
+--
+-- Table list extended by features 03 and 07 (score_components,
+-- score_formulas, thesis_evaluations) as each added its own REVOKE TRUNCATE
+-- statement in schema.sql -- score_formulas is included even though it is
+-- NOT forbid_mutation-guarded (db/README.md > "Append-only tables": the
+-- TRUNCATE grant is schema-wide at CREATE TABLE time regardless of whether a
+-- given table is append-only, so it still needs the revoke).
 DO $$
 DECLARE
   v_grant_count int;
@@ -842,12 +849,13 @@ BEGIN
   SELECT count(*) INTO v_grant_count
   FROM information_schema.role_table_grants
   WHERE table_schema = 'public'
-    AND table_name IN ('scores', 'raw_signals', 'evidence', 'ai_runs', 'events', 'memos')
+    AND table_name IN ('scores', 'raw_signals', 'evidence', 'ai_runs', 'events', 'memos',
+                        'score_components', 'score_formulas', 'thesis_evaluations')
     AND grantee IN ('anon', 'authenticated', 'service_role')
     AND privilege_type = 'TRUNCATE';
 
   IF v_grant_count <> 0 THEN
-    RAISE EXCEPTION 'smoke FAIL: expected 0 TRUNCATE grants to anon/authenticated/service_role on the 6 append-only tables, found %', v_grant_count;
+    RAISE EXCEPTION 'smoke FAIL: expected 0 TRUNCATE grants to anon/authenticated/service_role on the 9 append-only(-adjacent) tables, found %', v_grant_count;
   END IF;
 END $$;
 
@@ -860,6 +868,36 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     IF SQLSTATE <> '42501' THEN
       RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 42501 (insufficient_privilege) on TRUNCATE scores as service_role, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+RESET ROLE;
+
+-- Feature 03/07 direct proof, same mechanism, on the two NEW append-only
+-- tables (not just the registry-grant check above).
+SET ROLE service_role;
+DO $$
+BEGIN
+  BEGIN
+    TRUNCATE score_components;
+    RAISE EXCEPTION 'smoke FAIL: TRUNCATE score_components succeeded as service_role, expected 42501 permission denied';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '42501' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 42501 (insufficient_privilege) on TRUNCATE score_components as service_role, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+RESET ROLE;
+
+SET ROLE service_role;
+DO $$
+BEGIN
+  BEGIN
+    TRUNCATE thesis_evaluations;
+    RAISE EXCEPTION 'smoke FAIL: TRUNCATE thesis_evaluations succeeded as service_role, expected 42501 permission denied';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '42501' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 42501 (insufficient_privilege) on TRUNCATE thesis_evaluations as service_role, got % (%)', SQLSTATE, SQLERRM;
     END IF;
   END;
 END $$;
@@ -1028,6 +1066,537 @@ BEGIN
 
   IF v_remaining <> 0 THEN
     RAISE EXCEPTION 'smoke FAIL: purge_founder left % row(s) behind for the application-scoped ai_runs regression fixture, expected 0', v_remaining;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Feature 03 (founder score) -- score_formulas + score_components assertions.
+-- docs/backlog/03-founder-score/design.md SS4.2. Id range 0935-0946.
+-- ============================================================================
+
+-- Fixture: two score_components rows off the existing Ada Lovelace
+-- founder_score score (id ...0701, Task 7 above) -- one normal met row tied
+-- to that score, one score_id IS NULL row from a DIFFERENT run (the
+-- insufficient_evidence branch, design.md SS2.4: coverage fell under
+-- min_coverage on that run and no scores row was ever written for it, but
+-- the criterion breakdown that got that far is kept).
+DO $$
+BEGIN
+  INSERT INTO score_components (id, score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight, credit, contribution, evidence_tier, claim_ids, quote_verbatim, rationale)
+  VALUES (
+    '00000000-0000-0000-0000-000000000935', '00000000-0000-0000-0000-000000000701',
+    '00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000936',
+    'execution-signals', 'E1', 'met', 0.10000, 1.00, 10.00000, 'documented',
+    ARRAY['00000000-0000-0000-0000-000000000603']::uuid[],
+    'Merged 40 PRs into kubernetes/kubernetes over 3 years.', 'Clear external merged-PR evidence.'
+  );
+
+  INSERT INTO score_components (id, score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight, what_would_close_it)
+  VALUES (
+    '00000000-0000-0000-0000-000000000937', NULL,
+    '00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000938',
+    'execution-signals', 'E1', 'cannot_assess', 0.10000,
+    'A merged pull request into a repository the founder does not own.'
+  );
+END $$;
+
+-- Positive: both rows round-trip, including the score_id IS NULL row.
+DO $$
+DECLARE
+  v_linked_count int;
+  v_null_count   int;
+BEGIN
+  SELECT count(*) INTO v_linked_count FROM score_components
+    WHERE id = '00000000-0000-0000-0000-000000000935' AND score_id = '00000000-0000-0000-0000-000000000701';
+  SELECT count(*) INTO v_null_count FROM score_components
+    WHERE id = '00000000-0000-0000-0000-000000000937' AND score_id IS NULL AND verdict = 'cannot_assess';
+
+  IF v_linked_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: score_components row linked to a scores row did not round-trip, got %', v_linked_count;
+  END IF;
+  IF v_null_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: score_components insufficient_evidence row (score_id NULL) did not round-trip, got %', v_null_count;
+  END IF;
+END $$;
+
+-- Negative: duplicate (run_id, criterion_id) -> 23505.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO score_components (score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight)
+    VALUES (
+      '00000000-0000-0000-0000-000000000701', '00000000-0000-0000-0000-000000000401',
+      '00000000-0000-0000-0000-000000000936', 'execution-signals', 'E1', 'met', 0.10000
+    );
+    RAISE EXCEPTION 'smoke FAIL: duplicate (run_id, criterion_id) score_components row was accepted, expected 23505';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '23505' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 23505 (unique_violation) on score_components dup (run_id,criterion_id), got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Negative: plain UPDATE on score_components (append-only) -> P0001.
+DO $$
+BEGIN
+  BEGIN
+    UPDATE score_components SET verdict = 'not_met' WHERE id = '00000000-0000-0000-0000-000000000935';
+    RAISE EXCEPTION 'smoke FAIL: UPDATE on score_components (append-only) succeeded, expected P0001';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE P0001 (append-only guard) on score_components UPDATE, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Negative: a second active score_formulas row for an axis that already has
+-- one (uq_score_formulas_active_axis) -> 23505. founder_score's active row
+-- ships in db/seed.sql (version='formula_v1').
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO score_formulas (version, axis, config, active)
+    VALUES ('formula_v2_smoke', 'founder_score', '{}'::jsonb, true);
+    RAISE EXCEPTION 'smoke FAIL: a second active score_formulas row for axis=founder_score was accepted, expected 23505';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '23505' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 23505 (uq_score_formulas_active_axis), got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Positive: exactly one active score_formulas row for founder_score survives
+-- the rejected insert above -- proves the constraint actually blocked it.
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM score_formulas WHERE axis = 'founder_score' AND active;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: expected exactly 1 active score_formulas row for founder_score, got %', v_count;
+  END IF;
+END $$;
+
+-- purge_founder() extension (design.md SS4.2): a dedicated founder with a
+-- founder_score row, a score_components row linked to it via score_id, AND
+-- a score_id-IS-NULL score_components row from a separate run -- the
+-- founder_id-first sweep in purge_founder() must catch both.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name)
+    VALUES ('00000000-0000-0000-0000-000000000940', 'Purge Fixture Founder (score_components)');
+  INSERT INTO scores (id, founder_id, axis, value)
+    VALUES ('00000000-0000-0000-0000-000000000942', '00000000-0000-0000-0000-000000000940', 'founder_score', 65);
+  INSERT INTO score_components (id, score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight, credit, contribution)
+    VALUES ('00000000-0000-0000-0000-000000000943', '00000000-0000-0000-0000-000000000942',
+            '00000000-0000-0000-0000-000000000940', '00000000-0000-0000-0000-000000000945',
+            'execution-signals', 'E1', 'met', 0.10000, 1.00, 10.00000);
+  INSERT INTO score_components (id, score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight, what_would_close_it)
+    VALUES ('00000000-0000-0000-0000-000000000944', NULL,
+            '00000000-0000-0000-0000-000000000940', '00000000-0000-0000-0000-000000000946',
+            'execution-signals', 'E1', 'cannot_assess', 0.10000, 'no evidence attempted');
+END $$;
+
+DO $$
+BEGIN
+  PERFORM purge_founder('00000000-0000-0000-0000-000000000940');
+END $$;
+
+DO $$
+DECLARE
+  v_remaining int;
+BEGIN
+  SELECT
+    (SELECT count(*) FROM founders WHERE id = '00000000-0000-0000-0000-000000000940') +
+    (SELECT count(*) FROM scores WHERE id = '00000000-0000-0000-0000-000000000942') +
+    (SELECT count(*) FROM score_components WHERE id IN ('00000000-0000-0000-0000-000000000943', '00000000-0000-0000-0000-000000000944'))
+  INTO v_remaining;
+
+  IF v_remaining <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: purge_founder left % row(s) behind for the score_components purge-extension fixture (both score_id-linked and score_id-NULL rows), expected 0', v_remaining;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Feature 07 (thesis engine) -- theses additions + thesis_evaluations.
+-- docs/backlog/07-thesis-engine/design.md SS5. Id range 0970-0979.
+-- ============================================================================
+
+-- Fixture: a fresh thesis lineage, v1 active.
+DO $$
+BEGIN
+  INSERT INTO theses (id, name, version, config, active, is_default)
+  VALUES ('00000000-0000-0000-0000-000000000970', 'smoke-test-thesis', 1, '{}'::jsonb, true, false);
+END $$;
+
+-- Positive: empty config '{}' is accepted by validate_thesis_config() (the
+-- column's own default -- rejecting it would break any feature creating a
+-- bare thesis row).
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM theses
+    WHERE id = '00000000-0000-0000-0000-000000000970' AND config = '{}'::jsonb AND active;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: empty-config thesis fixture did not round-trip, got %', v_count;
+  END IF;
+END $$;
+
+-- Negative: a second ACTIVE version of the same thesis name (uq_theses_active_name) -> 23505.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO theses (name, version, config, active)
+    VALUES ('smoke-test-thesis', 2, '{}'::jsonb, true);
+    RAISE EXCEPTION 'smoke FAIL: a second active thesis version for the same name was accepted, expected 23505';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '23505' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 23505 (uq_theses_active_name), got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Positive: the documented activation pattern -- INSERT v2 with active=false
+-- explicitly, then call activate_thesis_version(). Proves the RPC flips both
+-- rows atomically.
+DO $$
+BEGIN
+  INSERT INTO theses (id, name, version, config, active)
+  VALUES ('00000000-0000-0000-0000-000000000971', 'smoke-test-thesis', 2, '{}'::jsonb, false);
+
+  PERFORM activate_thesis_version('00000000-0000-0000-0000-000000000971');
+END $$;
+
+DO $$
+DECLARE
+  v_v1_active boolean;
+  v_v2_active boolean;
+BEGIN
+  SELECT active INTO v_v1_active FROM theses WHERE id = '00000000-0000-0000-0000-000000000970';
+  SELECT active INTO v_v2_active FROM theses WHERE id = '00000000-0000-0000-0000-000000000971';
+  IF v_v1_active OR NOT v_v2_active THEN
+    RAISE EXCEPTION 'smoke FAIL: activate_thesis_version did not atomically flip active (v1=%, v2=%)', v_v1_active, v_v2_active;
+  END IF;
+END $$;
+
+-- Negative: a second is_default+active row anywhere in the table
+-- (uq_theses_single_default) -> 23505. Depends on db/seed.sql's 'default'
+-- thesis (active=true, is_default=true) already being present, same
+-- assumption Task 3's registry assertions above already make.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO theses (name, version, config, active, is_default)
+    VALUES ('smoke-test-thesis-2', 1, '{}'::jsonb, true, true);
+    RAISE EXCEPTION 'smoke FAIL: a second is_default+active thesis was accepted, expected 23505';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> '23505' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE 23505 (uq_theses_single_default), got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Negative: validate_thesis_config() -- hard rule with hard_justification
+-- ABSENT ENTIRELY (the NULL-trap case D-01 exists to catch: a naive
+-- `NOT IN (...)` against a missing key is NULL, not TRUE, and silently
+-- passes without the COALESCE guard) -> P0001.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO theses (name, version, config)
+    VALUES ('smoke-bad-thesis-1', 1,
+      '{"rules":[{"id":"H1","kind":"must_have","enforcement":"hard","weight":10,"expr":{"op":"eq","field":"x","value":"y"}}]}'::jsonb);
+    RAISE EXCEPTION 'smoke FAIL: a hard rule with hard_justification entirely absent was accepted, expected P0001';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE P0001 (validate_thesis_config) on missing hard_justification, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Negative: validate_thesis_config() -- focus + hard is illegal (D-04) -> P0001.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO theses (name, version, config)
+    VALUES ('smoke-bad-thesis-2', 1,
+      '{"rules":[{"id":"H2","kind":"focus","enforcement":"hard","hard_justification":"fraud","weight":10,"expr":{"op":"eq","field":"x","value":"y"}}]}'::jsonb);
+    RAISE EXCEPTION 'smoke FAIL: a focus+hard rule was accepted, expected P0001';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE P0001 (validate_thesis_config) on focus+hard, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Negative: validate_thesis_config() -- deal_breaker with non-zero weight (D-04) -> P0001.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO theses (name, version, config)
+    VALUES ('smoke-bad-thesis-3', 1,
+      '{"rules":[{"id":"H3","kind":"deal_breaker","enforcement":"soft","weight":5,"expr":{"op":"eq","field":"x","value":"y"}}]}'::jsonb);
+    RAISE EXCEPTION 'smoke FAIL: a deal_breaker rule with non-zero weight was accepted, expected P0001';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE P0001 (validate_thesis_config) on deal_breaker weight != 0, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Negative: validate_thesis_config() -- duplicate rule id -> P0001.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO theses (name, version, config)
+    VALUES ('smoke-bad-thesis-4', 1,
+      '{"rules":[{"id":"D1","kind":"focus","enforcement":"soft","weight":5,"expr":{"op":"eq","field":"x","value":"y"}},'
+      '{"id":"D1","kind":"focus","enforcement":"soft","weight":3,"expr":{"op":"eq","field":"x","value":"y"}}]}'::jsonb);
+    RAISE EXCEPTION 'smoke FAIL: a config with a duplicate rule id was accepted, expected P0001';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE P0001 (validate_thesis_config) on duplicate rule id, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- Fixture: a thesis_evaluations row against the existing minimal-intake
+-- application (...0501, Task 5 above) and the seeded default thesis.
+DO $$
+DECLARE
+  v_default_thesis_id uuid;
+BEGIN
+  SELECT id INTO v_default_thesis_id FROM theses WHERE name = 'default' AND active LIMIT 1;
+  IF v_default_thesis_id IS NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: no active default thesis found (db/seed.sql should have inserted one)';
+  END IF;
+
+  INSERT INTO thesis_evaluations (id, application_id, thesis_id, thesis_version, input_fingerprint, evaluation_mode, verdict, fired_rules, coverage)
+  VALUES (
+    '00000000-0000-0000-0000-000000000972', '00000000-0000-0000-0000-000000000501',
+    v_default_thesis_id, 1, 'smoke-fingerprint-0972', 'full', 'passed', '[]'::jsonb, 0.80
+  );
+END $$;
+
+-- Positive: round-trip readback.
+DO $$
+DECLARE
+  v_count int;
+BEGIN
+  SELECT count(*) INTO v_count FROM thesis_evaluations
+    WHERE id = '00000000-0000-0000-0000-000000000972'
+      AND application_id = '00000000-0000-0000-0000-000000000501'
+      AND verdict = 'passed';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: thesis_evaluations fixture did not round-trip, got %', v_count;
+  END IF;
+END $$;
+
+-- Negative: plain UPDATE on thesis_evaluations (append-only) -> P0001.
+DO $$
+BEGIN
+  BEGIN
+    UPDATE thesis_evaluations SET verdict = 'failed' WHERE id = '00000000-0000-0000-0000-000000000972';
+    RAISE EXCEPTION 'smoke FAIL: UPDATE on thesis_evaluations (append-only) succeeded, expected P0001';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001' THEN
+      RAISE EXCEPTION 'smoke FAIL: expected SQLSTATE P0001 (append-only guard) on thesis_evaluations UPDATE, got % (%)', SQLSTATE, SQLERRM;
+    END IF;
+  END;
+END $$;
+
+-- purge_founder() extension regression (design.md SS5.2): thesis_evaluations
+-- RESTRICTs against applications, scores AND ai_runs; scores is the
+-- earliest of the three deleted inside purge_founder(), so the sweep must
+-- land before all three or this reproduces a live 23503 (the DB reviewer's
+-- finding, same defect class as the ai_runs regression fixture above).
+-- Uncaught on purpose: pre-fix, this call itself raises 23503 and aborts
+-- the suite loudly -- that IS the regression signal.
+DO $$
+DECLARE
+  v_default_thesis_id uuid;
+BEGIN
+  SELECT id INTO v_default_thesis_id FROM theses WHERE name = 'default' AND active LIMIT 1;
+
+  INSERT INTO founders (id, full_name)
+    VALUES ('00000000-0000-0000-0000-000000000973', 'Purge Fixture Founder (thesis_evaluations regression)');
+  INSERT INTO companies (id, name, stage)
+    VALUES ('00000000-0000-0000-0000-000000000974', 'Purge Fixture Co (thesis_evaluations regression)', 'pre_seed');
+  INSERT INTO founder_company (founder_id, company_id, role)
+    VALUES ('00000000-0000-0000-0000-000000000973', '00000000-0000-0000-0000-000000000974', 'founder');
+  INSERT INTO applications (id, company_id, kind, deck_storage_path)
+    VALUES ('00000000-0000-0000-0000-000000000975', '00000000-0000-0000-0000-000000000974', 'inbound', 's3://decks/purge-fixture-thesis-eval.pdf');
+  INSERT INTO thesis_evaluations (id, application_id, thesis_id, thesis_version, input_fingerprint, evaluation_mode, verdict)
+    VALUES ('00000000-0000-0000-0000-000000000976', '00000000-0000-0000-0000-000000000975',
+            v_default_thesis_id, 1, 'smoke-fingerprint-0976', 'full', 'borderline');
+END $$;
+
+DO $$
+BEGIN
+  PERFORM purge_founder('00000000-0000-0000-0000-000000000973');
+END $$;
+
+DO $$
+DECLARE
+  v_remaining int;
+BEGIN
+  SELECT
+    (SELECT count(*) FROM founders WHERE id = '00000000-0000-0000-0000-000000000973') +
+    (SELECT count(*) FROM companies WHERE id = '00000000-0000-0000-0000-000000000974') +
+    (SELECT count(*) FROM applications WHERE id = '00000000-0000-0000-0000-000000000975') +
+    (SELECT count(*) FROM thesis_evaluations WHERE id = '00000000-0000-0000-0000-000000000976')
+  INTO v_remaining;
+
+  IF v_remaining <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: purge_founder left % row(s) behind for the thesis_evaluations regression fixture, expected 0', v_remaining;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Feature 02 (sourcing radar) -- radar_candidates view + idempotency.
+-- docs/backlog/02-sourcing-radar/design.md SS6. Id prefix 02f00001-...
+-- (non-overlapping with the 00000000-... range used above).
+-- ============================================================================
+
+-- Fixture + positive: a single-term obscurity case (gh_followers only).
+-- Exact expected value cross-checked against the live view during feature
+-- 02's own build (docs/backlog/02-sourcing-radar/tracker.md, "followers-only
+-- (9) -> 0.6667"): 1 - clamp(log10(1+9)/3, 0, 1) = 0.6667 (rounded, 4 dp).
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name) VALUES ('02f00001-0000-0000-0000-000000000001', 'Radar Smoke Founder A');
+  INSERT INTO cards (id, card_type, founder_id) VALUES ('02f00001-0000-0000-0000-000000000011', 'founder', '02f00001-0000-0000-0000-000000000001');
+  INSERT INTO metric_observations (metric, founder_id, value, observed_at)
+    VALUES ('gh_followers', '02f00001-0000-0000-0000-000000000001', 9, now());
+END $$;
+
+DO $$
+DECLARE
+  v_obscurity numeric;
+  v_basis     text[];
+BEGIN
+  SELECT obscurity, obscurity_basis INTO v_obscurity, v_basis
+  FROM radar_candidates WHERE founder_id = '02f00001-0000-0000-0000-000000000001';
+
+  IF v_obscurity IS DISTINCT FROM 0.6667 THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates single-term obscurity expected 0.6667, got %', v_obscurity;
+  END IF;
+  IF v_basis IS DISTINCT FROM ARRAY['gh_followers'] THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates single-term obscurity_basis expected {gh_followers}, got %', v_basis;
+  END IF;
+END $$;
+
+-- Fixture + positive: a two-term obscurity case (gh_followers + hn_karma).
+-- Cross-checked the same way: (0.6667 + 0.75) / 2 = 0.7083.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name) VALUES ('02f00001-0000-0000-0000-000000000002', 'Radar Smoke Founder B');
+  INSERT INTO cards (id, card_type, founder_id) VALUES ('02f00001-0000-0000-0000-000000000012', 'founder', '02f00001-0000-0000-0000-000000000002');
+  INSERT INTO metric_observations (metric, founder_id, value, observed_at)
+    VALUES ('gh_followers', '02f00001-0000-0000-0000-000000000002', 9, now());
+  INSERT INTO metric_observations (metric, founder_id, value, observed_at)
+    VALUES ('hn_karma', '02f00001-0000-0000-0000-000000000002', 9, now());
+END $$;
+
+DO $$
+DECLARE
+  v_obscurity numeric;
+  v_basis     text[];
+BEGIN
+  SELECT obscurity, obscurity_basis INTO v_obscurity, v_basis
+  FROM radar_candidates WHERE founder_id = '02f00001-0000-0000-0000-000000000002';
+
+  IF v_obscurity IS DISTINCT FROM 0.7083 THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates two-term obscurity expected 0.7083, got %', v_obscurity;
+  END IF;
+  IF v_basis IS DISTINCT FROM ARRAY['gh_followers', 'hn_karma'] THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates two-term obscurity_basis expected {gh_followers,hn_karma}, got %', v_basis;
+  END IF;
+END $$;
+
+-- Fixture + positive: REQ-003 tripwire -- a founder card with NO metric
+-- observations at all must show obscurity IS NULL and obscurity_basis IS
+-- NULL, never 0-substituted (0-substitution would compute obscurity ~= 1.0,
+-- "maximally undiscovered", and float the most data-less founder to the top
+-- of the feed -- REQ-003 running backwards). The row itself must still
+-- appear (LEFT JOIN), not vanish.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name) VALUES ('02f00001-0000-0000-0000-000000000003', 'Radar Smoke Founder C (no metrics)');
+  INSERT INTO cards (id, card_type, founder_id) VALUES ('02f00001-0000-0000-0000-000000000013', 'founder', '02f00001-0000-0000-0000-000000000003');
+END $$;
+
+DO $$
+DECLARE
+  v_row_count int;
+  v_obscurity numeric;
+  v_basis     text[];
+BEGIN
+  SELECT count(*) INTO v_row_count FROM radar_candidates WHERE founder_id = '02f00001-0000-0000-0000-000000000003';
+  IF v_row_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates should still surface a metric-less founder card (LEFT JOIN), got % rows', v_row_count;
+  END IF;
+
+  SELECT obscurity, obscurity_basis INTO v_obscurity, v_basis
+  FROM radar_candidates WHERE founder_id = '02f00001-0000-0000-0000-000000000003';
+
+  IF v_obscurity IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: REQ-003 violated -- metric-less founder obscurity was 0-substituted to %, expected NULL', v_obscurity;
+  END IF;
+  IF v_basis IS NOT NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: metric-less founder obscurity_basis expected NULL, got %', v_basis;
+  END IF;
+END $$;
+
+-- No-op: duplicate raw_signals.content_hash retry (composite-id hash shape,
+-- design SS6.1) with explicit ON CONFLICT DO NOTHING -> row count unchanged.
+DO $$
+DECLARE
+  v_before int;
+  v_after  int;
+BEGIN
+  INSERT INTO raw_signals (source, content_hash, founder_id, observed_at)
+  VALUES ('hn_algolia', 'hn_algolia::02f00001-radar-smoke', '02f00001-0000-0000-0000-000000000001', now())
+  ON CONFLICT (content_hash) DO NOTHING;
+
+  SELECT count(*) INTO v_before FROM raw_signals WHERE content_hash = 'hn_algolia::02f00001-radar-smoke';
+
+  INSERT INTO raw_signals (source, content_hash, founder_id, observed_at)
+  VALUES ('hn_algolia', 'hn_algolia::02f00001-radar-smoke', '02f00001-0000-0000-0000-000000000001', now())
+  ON CONFLICT (content_hash) DO NOTHING;
+
+  SELECT count(*) INTO v_after FROM raw_signals WHERE content_hash = 'hn_algolia::02f00001-radar-smoke';
+  IF v_after <> v_before THEN
+    RAISE EXCEPTION 'smoke FAIL: radar raw_signals content_hash retry was not a no-op (% -> %)', v_before, v_after;
+  END IF;
+END $$;
+
+-- No-op: metric_observations retry within the same hour-truncated
+-- observed_at (design SS6.1 -- observed_at truncated to the hour so a retry
+-- inside the scan window collapses) does not double-insert.
+DO $$
+DECLARE
+  v_before int;
+  v_after  int;
+  v_hour   timestamptz := date_trunc('hour', now());
+BEGIN
+  INSERT INTO metric_observations (metric, founder_id, value, observed_at)
+  VALUES ('gh_stars', '02f00001-0000-0000-0000-000000000001', 42, v_hour)
+  ON CONFLICT (metric, founder_id, company_id, observed_at) DO NOTHING;
+
+  SELECT count(*) INTO v_before FROM metric_observations
+    WHERE metric = 'gh_stars' AND founder_id = '02f00001-0000-0000-0000-000000000001' AND observed_at = v_hour;
+
+  INSERT INTO metric_observations (metric, founder_id, value, observed_at)
+  VALUES ('gh_stars', '02f00001-0000-0000-0000-000000000001', 42, v_hour)
+  ON CONFLICT (metric, founder_id, company_id, observed_at) DO NOTHING;
+
+  SELECT count(*) INTO v_after FROM metric_observations
+    WHERE metric = 'gh_stars' AND founder_id = '02f00001-0000-0000-0000-000000000001' AND observed_at = v_hour;
+
+  IF v_after <> v_before THEN
+    RAISE EXCEPTION 'smoke FAIL: radar metric_observations hour-truncated retry was not a no-op (% -> %)', v_before, v_after;
   END IF;
 END $$;
 

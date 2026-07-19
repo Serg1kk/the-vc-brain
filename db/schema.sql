@@ -175,6 +175,21 @@ CREATE TABLE IF NOT EXISTS theses (
   UNIQUE (name, version)
 );
 
+-- Feature 07 (docs/backlog/07-thesis-engine/design.md SS5.5): two additive
+-- objects on theses. Several versions of a thesis may be `active` at once
+-- (the multi-thesis property NL search needs -- others get evaluated on
+-- demand), but the gate judges by exactly one, so a second axis is needed to
+-- pick it out.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_theses_active_name ON theses (name) WHERE active;
+
+ALTER TABLE theses ADD COLUMN IF NOT EXISTS is_default boolean NOT NULL DEFAULT false;
+
+-- Tied to `active`: a default that is not active is useless to the gate --
+-- the partial predicate keeps a version bump on the default thesis from
+-- leaving zero rows satisfying (is_default AND active).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_theses_single_default
+  ON theses ((true)) WHERE is_default AND active;
+
 CREATE TABLE IF NOT EXISTS applications (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   -- Sole-founder company subtrees are only ever removed via purge_founder's
@@ -393,6 +408,123 @@ CREATE INDEX IF NOT EXISTS idx_ai_runs_application_id ON ai_runs (application_id
 CREATE INDEX IF NOT EXISTS idx_ai_runs_task_type ON ai_runs (task_type);
 
 -- ============================================================================
+-- Feature 03: score_formulas + score_components
+-- (docs/backlog/03-founder-score/design.md SS4.2 -- founder score, boolean
+-- rubric, deterministic aggregation.) Additive: two new tables, plus
+-- purge_founder() (Task 9 Step 3 below) edited in place -- it hardcodes its
+-- delete list and db/apply.sh runs only schema.sql + seed.sql, so a separate
+-- migration file would never execute.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS score_formulas (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  version     text NOT NULL,
+  axis        text NOT NULL REFERENCES score_axes(slug) ON DELETE RESTRICT,
+  -- Weights, credits, tier_factors, min_coverage, trend_epsilon, criteria
+  -- registry (incl. neg_src), red-flag contradicts/demote_to map, context-
+  -- pack caps -- every scoring constant lives here, none in code, so a judge
+  -- can audit the arithmetic against a single config row.
+  config      jsonb NOT NULL,
+  active      boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (version, axis)
+);
+-- Exactly one active formula per axis -- design.md SS5 "load active row",
+-- singular; a second concurrently-active version for the same axis is a
+-- config error, not a valid rollout state.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_score_formulas_active_axis
+  ON score_formulas (axis) WHERE active;
+
+CREATE TABLE IF NOT EXISTS score_components (   -- append-only
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- NULL on the insufficient_evidence branch (design.md SS2.4) -- coverage
+  -- fell under min_coverage and no scores row was ever written, but the
+  -- criterion-level breakdown that got that far is still worth keeping.
+  score_id             uuid REFERENCES scores(id) ON DELETE RESTRICT,
+  founder_id           uuid NOT NULL REFERENCES founders(id) ON DELETE RESTRICT,  -- purge anchor
+  run_id               uuid NOT NULL,   -- groups every criterion row from one workflow run
+  subscorer            text NOT NULL,
+  criterion_id         text NOT NULL,
+  verdict              text NOT NULL CHECK (verdict IN ('met', 'self_asserted', 'not_met', 'cannot_assess')),
+  -- 5 dp, not 4: 0.30 x 5/16 = 0.09375 needs the extra digit, or stored
+  -- weights stop summing to their sub-scorer weight and this table stops
+  -- reproducing scores.value on recomputation.
+  weight               numeric(6,5) NOT NULL,
+  credit               numeric(3,2),
+  -- Percentage points; 8 dp (not 7) because a single-criterion assessed set
+  -- can legitimately reach 100.00000 -- one digit more than numeric(7,5) holds.
+  contribution         numeric(8,5),
+  evidence_tier        text CHECK (evidence_tier IN ('documented', 'discovered', 'inferred', 'missing')),
+  claim_ids            uuid[] NOT NULL DEFAULT '{}',
+  quote_verbatim       text,   -- first-source quote, substring-verified
+  rationale            text,   -- LLM interpretation, kept separate from the verbatim quote (RSK-003)
+  what_would_close_it  text,   -- populated for cannot_assess
+  demoted_by           text,   -- red-flag id, if the verdict was demoted by one
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (run_id, criterion_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_score_components_score_id ON score_components (score_id);
+CREATE INDEX IF NOT EXISTS idx_score_components_founder  ON score_components (founder_id);
+CREATE INDEX IF NOT EXISTS idx_score_components_verdict  ON score_components (verdict);
+
+-- Mandatory hardening -- forbid_mutation() trigger + TRUNCATE revoke,
+-- attached in Task 9 Step 1 below alongside the original six append-only
+-- tables (forbid_mutation() is not defined until that point in the script,
+-- so the trigger cannot be created here).
+
+-- ============================================================================
+-- Feature 07: thesis_evaluations
+-- (docs/backlog/07-thesis-engine/design.md SS5.1 -- one row per (application,
+-- thesis-version, input fingerprint); carries the verdict, the rules that
+-- fired, the extracted-attribute snapshot and the thesis config snapshot.)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS thesis_evaluations (
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id          uuid NOT NULL REFERENCES applications(id) ON DELETE RESTRICT,
+  thesis_id               uuid NOT NULL REFERENCES theses(id) ON DELETE RESTRICT,
+  thesis_version          int  NOT NULL,
+  -- Retry-stable hash of the evaluated inputs. Distinguishes a retry (same
+  -- fingerprint -> dedup, UNIQUE below) from a legitimate re-evaluation after
+  -- claims changed (new fingerprint -> new row), without a version bump.
+  input_fingerprint       text NOT NULL,
+  -- Which mode produced this row -- makes a NULL coverage interpretable ("we
+  -- never extracted, by design") and marks the rows that deliberately carry
+  -- no scores row (mode='keyword', tier-1 cost control, never returns 'passed').
+  evaluation_mode         text NOT NULL DEFAULT 'full' CHECK (evaluation_mode IN ('full', 'keyword')),
+  verdict                 text NOT NULL CHECK (verdict IN ('passed', 'failed', 'borderline', 'insufficient_evidence')),
+  score_id                uuid REFERENCES scores(id) ON DELETE RESTRICT,
+  fired_rules             jsonb NOT NULL DEFAULT '[]'::jsonb,
+  extracted_snapshot      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  thesis_config_snapshot  jsonb NOT NULL DEFAULT '{}'::jsonb,
+  missing_fields          text[] NOT NULL DEFAULT '{}',
+  coverage                numeric(3,2) CHECK (coverage BETWEEN 0 AND 1),
+  extraction_ai_run_id    uuid REFERENCES ai_runs(id) ON DELETE RESTRICT,
+  formula_version         text,
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  -- Append-only: no updated_at. "Current thesis fit" is resolved through this
+  -- table (latest row per (application_id, thesis_id); insufficient_evidence
+  -- or score_id NULL means "not assessed"), never by reading scores directly
+  -- -- an append-only scores row can go stale (re-run degrades the verdict)
+  -- while remaining the latest row for its axis, and only this table knows
+  -- which one is current (db/README.md > Feature 07 additions).
+  UNIQUE (application_id, thesis_id, input_fingerprint)
+);
+
+-- No separate application_id index -- the UNIQUE above serves it as a
+-- leftmost prefix, which is the only shape purge_founder() queries.
+CREATE INDEX IF NOT EXISTS idx_thesis_evaluations_thesis_id
+  ON thesis_evaluations (thesis_id);
+CREATE INDEX IF NOT EXISTS idx_thesis_evaluations_score_id
+  ON thesis_evaluations (score_id) WHERE score_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_thesis_evaluations_extraction_ai_run_id
+  ON thesis_evaluations (extraction_ai_run_id) WHERE extraction_ai_run_id IS NOT NULL;
+
+-- forbid_mutation() trigger + TRUNCATE revoke attached in Task 9 Step 1
+-- below, same reasoning as score_components above.
+
+-- ============================================================================
 -- Task 8: Interview, experience & ops (design.md SS4.6-SS4.7)
 -- ============================================================================
 
@@ -599,6 +731,21 @@ CREATE OR REPLACE TRIGGER trg_memos_forbid_mutation
   BEFORE UPDATE OR DELETE ON memos
   FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
 
+-- Feature 03 (docs/backlog/03-founder-score/design.md SS4.2): score_components
+-- is append-only too -- attached here, not next to its own CREATE TABLE
+-- above, because forbid_mutation() does not exist yet at that point in the
+-- script. score_formulas is deliberately NOT guarded: flipping `active` to
+-- roll a new formula version forward is a normal mutation.
+CREATE OR REPLACE TRIGGER trg_score_components_forbid_mutation
+  BEFORE UPDATE OR DELETE ON score_components
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+-- Feature 07 (docs/backlog/07-thesis-engine/design.md SS5.1): thesis_evaluations
+-- is append-only -- same reasoning as score_components above.
+CREATE OR REPLACE TRIGGER trg_thesis_evaluations_forbid_mutation
+  BEFORE UPDATE OR DELETE ON thesis_evaluations
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
 -- TRUNCATE bypass fix (QA gate Task 12 finding, fed back into Task 9 per
 -- plan.md's acceptance criteria). BEFORE UPDATE OR DELETE triggers never fire
 -- on TRUNCATE -- a Postgres-level fact, not a gap in forbid_mutation()'s own
@@ -636,6 +783,17 @@ CREATE OR REPLACE TRIGGER trg_memos_forbid_mutation
 -- that table too. See db/README.md > "Append-only tables".
 REVOKE TRUNCATE ON scores, raw_signals, evidence, ai_runs, events, memos
   FROM anon, authenticated, service_role;
+
+-- Feature 03: new statement, not an edit to the line above -- that line is
+-- scoped to the original six for readability/attribution; each feature's
+-- added table gets its own REVOKE, marked by feature. score_formulas is
+-- included even though it is not forbid_mutation-guarded: the TRUNCATE
+-- grant is schema-wide at CREATE TABLE time regardless of whether a given
+-- table is append-only (db/README.md > "Append-only tables").
+REVOKE TRUNCATE ON score_components, score_formulas FROM anon, authenticated, service_role;
+
+-- Feature 07: same reasoning.
+REVOKE TRUNCATE ON thesis_evaluations FROM anon, authenticated, service_role;
 
 -- ---- Step 2: updated_at on the mutable set (design.md SS5.3) --------------
 
@@ -679,6 +837,74 @@ CREATE OR REPLACE TRIGGER trg_interviews_touch_updated_at
 CREATE OR REPLACE TRIGGER trg_theses_touch_updated_at
   BEFORE UPDATE ON theses
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- ---- Feature 07: validate_thesis_config() (design.md SS5.6) ---------------
+--
+-- Rejects: a `hard` rule without a valid `hard_justification` -- INCLUDING
+-- when the key is absent entirely. A naive `v_rule->>'hard_justification'
+-- NOT IN (...)` is SQL NULL, not TRUE, when the key is missing, so `IF NULL
+-- THEN` silently never fires -- the COALESCE below exists to close exactly
+-- that hole, which is the whole reason this validator exists (D-01). Also
+-- rejects `focus` + `hard`; a `deal_breaker` with non-zero weight; a
+-- `must_have`/`focus` weight that is absent, non-numeric or negative;
+-- duplicate rule ids; unsupported ops; wrong operand types for `gte`/`lte`/
+-- `in`. An empty config `'{}'` is accepted -- that is the column default,
+-- and rejecting it would break any feature creating a bare thesis row.
+CREATE OR REPLACE FUNCTION validate_thesis_config() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_rule jsonb; v_seen_ids text[] := '{}';
+  v_kind text; v_enf text; v_just text; v_op text; v_value jsonb;
+BEGIN
+  IF NEW.config IS NULL OR NEW.config = '{}'::jsonb THEN RETURN NEW; END IF;
+
+  FOR v_rule IN SELECT jsonb_array_elements(COALESCE(NEW.config->'rules', '[]'::jsonb)) LOOP
+    v_kind := v_rule->>'kind';  v_enf := v_rule->>'enforcement';
+    v_just := v_rule->>'hard_justification';
+    v_op   := v_rule->'expr'->>'op';  v_value := v_rule->'expr'->'value';
+
+    IF COALESCE(v_kind,'') NOT IN ('deal_breaker','must_have','focus') THEN
+      RAISE EXCEPTION 'thesis config: unknown rule kind % (id=%)', v_kind, v_rule->>'id'; END IF;
+    IF COALESCE(v_enf,'') NOT IN ('hard','soft') THEN
+      RAISE EXCEPTION 'thesis config: unknown enforcement % (id=%)', v_enf, v_rule->>'id'; END IF;
+    IF v_kind = 'focus' AND v_enf = 'hard' THEN
+      RAISE EXCEPTION 'thesis config: focus rule % may not be hard', v_rule->>'id'; END IF;
+    IF v_enf = 'hard' AND COALESCE(v_just,'') NOT IN ('mandate_fatal','fraud') THEN
+      RAISE EXCEPTION 'thesis config: hard rule % requires hard_justification, got %',
+        v_rule->>'id', v_just; END IF;
+    -- weight: present, numeric, and range-checked for EVERY kind (QA E1a
+    -- Major finding) -- a non-numeric or negative weight drives the SS3.1
+    -- earned/total arithmetic directly (NaN or a fit that goes negative),
+    -- exactly the kind of bad config a non-technical user could author
+    -- through feature 09's form. jsonb_typeof on an absent key is SQL NULL,
+    -- so it needs the same COALESCE NULL-trap as hard_justification above.
+    IF COALESCE(jsonb_typeof(v_rule->'weight'), '') <> 'number' THEN
+      RAISE EXCEPTION 'thesis config: rule % weight must be a number, got %',
+        v_rule->>'id', COALESCE(v_rule->>'weight', '<absent>'); END IF;
+    IF v_kind = 'deal_breaker' AND (v_rule->>'weight')::numeric <> 0 THEN
+      RAISE EXCEPTION 'thesis config: deal_breaker % must have weight 0, got %',
+        v_rule->>'id', v_rule->>'weight'; END IF;
+    IF v_kind IN ('must_have','focus') AND (v_rule->>'weight')::numeric < 0 THEN
+      RAISE EXCEPTION 'thesis config: rule % weight must be >= 0, got %',
+        v_rule->>'id', v_rule->>'weight'; END IF;
+    IF COALESCE(v_op,'') NOT IN ('eq','in','gte','lte','contains','exists') THEN
+      RAISE EXCEPTION 'thesis config: unsupported op % (id=%)', v_op, v_rule->>'id'; END IF;
+    IF v_op IN ('gte','lte') AND jsonb_typeof(v_value) <> 'number' THEN
+      RAISE EXCEPTION 'thesis config: op % requires a numeric value (id=%)', v_op, v_rule->>'id'; END IF;
+    IF v_op = 'in' AND jsonb_typeof(v_value) <> 'array' THEN
+      RAISE EXCEPTION 'thesis config: op "in" requires an array value (id=%)', v_rule->>'id'; END IF;
+    IF v_rule->>'id' = ANY (v_seen_ids) THEN
+      RAISE EXCEPTION 'thesis config: duplicate rule id %', v_rule->>'id'; END IF;
+    v_seen_ids := array_append(v_seen_ids, v_rule->>'id');
+  END LOOP;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_theses_validate_config
+  BEFORE INSERT OR UPDATE ON theses
+  FOR EACH ROW EXECUTE FUNCTION validate_thesis_config();
 
 -- ---- Step 3: purge_founder() -- the ONLY deletion door (design.md SS5.4) --
 
@@ -727,6 +953,22 @@ BEGIN
   FROM applications WHERE company_id = ANY (v_sole_company_ids);
   v_sole_app_ids := COALESCE(v_sole_app_ids, '{}');
 
+  -- Feature 03 (docs/backlog/03-founder-score/design.md SS4.2): score_components
+  -- has no parent-cascade path of its own, and both inputs it needs
+  -- (v_person_ids, v_sole_app_ids) are already populated at this point, so the
+  -- sweep runs here rather than waiting for the rest of this function's
+  -- variable computation. The founder_id sweep MUST run first: it catches
+  -- rows with score_id IS NULL, written by the insufficient_evidence branch
+  -- (design.md SS2.4), which have no parent scores row to reach them via the
+  -- second statement -- left behind, they would survive this erasure and then
+  -- block a LATER purge attempt with 23503 once score_id's ON DELETE RESTRICT
+  -- has a parent to enforce against. Children before parents, in both cases.
+  DELETE FROM score_components WHERE founder_id = ANY(v_person_ids);
+  DELETE FROM score_components WHERE score_id IN (
+    SELECT id FROM scores WHERE founder_id = ANY(v_person_ids)
+                             OR application_id = ANY(v_sole_app_ids)
+  );
+
   SELECT array_agg(id) INTO v_sole_interview_ids
   FROM interviews WHERE application_id = ANY (v_sole_app_ids);
   v_sole_interview_ids := COALESCE(v_sole_interview_ids, '{}');
@@ -764,6 +1006,14 @@ BEGIN
   -- covers the founder-direct (non-sole) companies this person is linked to
   -- elsewhere -- pulled forward from the tail of this function on purpose.
   DELETE FROM founder_company WHERE founder_id = ANY (v_person_ids);
+
+  -- Feature 07 (docs/backlog/07-thesis-engine/design.md SS5.2):
+  -- thesis_evaluations RESTRICTs against applications, scores AND ai_runs, so
+  -- it must be swept before all three -- scores (below) is the earliest of
+  -- them, so this must land here, not after either of the other two.
+  -- Sweeping any later reproduces the 23503 this file already fixed once for
+  -- ai_runs (see the regression fixture at db/tests/smoke.sql, Task 9).
+  DELETE FROM thesis_evaluations WHERE application_id = ANY (v_sole_app_ids);
 
   -- Sole-founder company subtree: voice_artifacts -> interviews -> memos ->
   -- applications, scores (via those applications), then the company-scoped
@@ -820,4 +1070,144 @@ $$;
 -- whichever role happened to run schema.sql.
 ALTER FUNCTION purge_founder(uuid) OWNER TO postgres;
 
+-- ---- Feature 07: activate_thesis_version() -- atomic thesis activation ----
+-- (design.md SS5.5.) With `active NOT NULL DEFAULT true`, inserting v2 while
+-- v1 is active violates uq_theses_active_name deterministically, and
+-- PostgREST cannot transact across statements -- splitting activation into
+-- two REST calls is worse than the race: a crash between them leaves ZERO
+-- active rows. SECURITY DEFINER + a pinned search_path match purge_founder()'s
+-- posture above -- without them any holder of the anon key could flip which
+-- thesis the fund judges by.
+--
+-- Insert side, explicitly: a caller publishing a new version must INSERT it
+-- with `active = false` (the column defaults to true, so omitting it is a
+-- deterministic 23505 against uq_theses_active_name), then call this RPC.
+-- Never raw-INSERT an active row and never flip active/is_default by hand --
+-- this function moves both together in one transaction, and splitting them
+-- can leave the gate with no thesis to load.
+CREATE OR REPLACE FUNCTION activate_thesis_version(p_thesis_id uuid) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_name        text;
+  v_was_default boolean;
+BEGIN
+  SELECT name INTO v_name FROM theses WHERE id = p_thesis_id;
+  IF v_name IS NULL THEN
+    RAISE EXCEPTION 'activate_thesis_version: no such thesis id %', p_thesis_id;
+  END IF;
+
+  -- is_default and active must move together for the same lineage, or a
+  -- version bump on the default thesis leaves it default-but-inactive and
+  -- zero rows satisfy (is_default AND active) -- the gate then has nothing
+  -- to load.
+  SELECT is_default INTO v_was_default
+  FROM theses WHERE name = v_name AND id <> p_thesis_id AND is_default;
+
+  UPDATE theses SET active = false WHERE name = v_name AND active AND id <> p_thesis_id;
+  UPDATE theses SET active = true  WHERE id = p_thesis_id;
+
+  IF COALESCE(v_was_default, false) THEN
+    UPDATE theses SET is_default = false WHERE name = v_name AND is_default AND id <> p_thesis_id;
+    UPDATE theses SET is_default = true  WHERE id = p_thesis_id;
+  END IF;
+END;
+$$;
+
 -- (Task 9 Step 4 smoke assertions appended in db/tests/smoke.sql)
+
+-- ============================================================================
+-- Feature 02: radar_candidates (docs/backlog/02-sourcing-radar/design.md
+-- SS6.4 -- obscurity is an observable fact derived from metric_observations,
+-- never a score. It is NOT written to `scores`: the TRACKER ruling is that
+-- exactly one feature may write a given axis, `scores` has no
+-- (subject, axis) uniqueness, and the radar computes no axis at all (SS1).
+-- A pure read-side view has no FK dependency of its own, only a data
+-- dependency on cards/metric_observations/raw_signals, all of which exist by
+-- Task 8 above -- appended last for that reason, not because it is optional.
+-- ============================================================================
+
+CREATE OR REPLACE VIEW radar_candidates AS
+WITH latest_metrics AS (
+  -- metric_observations accumulates one row per metric per scan by design
+  -- (re-observation of a known candidate is signal, not noise) -- take the
+  -- latest observation per (founder_id, metric) before pivoting, or a naive
+  -- join multiplies rows and feeds an arbitrary value into the formula.
+  SELECT DISTINCT ON (mo.founder_id, mo.metric)
+    mo.founder_id, mo.metric, mo.value
+  FROM metric_observations mo
+  WHERE mo.founder_id IS NOT NULL
+  ORDER BY mo.founder_id, mo.metric, mo.observed_at DESC
+),
+metrics_pivot AS (
+  SELECT
+    founder_id,
+    max(value) FILTER (WHERE metric = 'gh_followers')        AS gh_followers,
+    max(value) FILTER (WHERE metric = 'gh_notable_followers') AS gh_notable_followers,
+    max(value) FILTER (WHERE metric = 'hn_karma')             AS hn_karma,
+    max(value) FILTER (WHERE metric = 'hn_points')            AS hn_points,
+    max(value) FILTER (WHERE metric = 'hn_comments')          AS hn_comments
+  FROM latest_metrics
+  GROUP BY founder_id
+),
+obscurity_terms AS (
+  -- followers_term = 1 - clamp(log10(1+gh_followers)/3, 0, 1)  -- 1000+ followers -> 0
+  -- karma_term     = 1 - clamp(log10(1+hn_karma)/4,     0, 1)  -- 10000+ karma   -> 0
+  -- NULL, never 0, when the underlying metric was never observed -- this is
+  -- the load-bearing rule (REQ-003): a founder with no resolvable GitHub has
+  -- no gh_followers observation, and substituting 0 would compute
+  -- obscurity ~= 1.0 ("maximally undiscovered"), floating exactly the
+  -- founders with the least data to the top of the feed.
+  SELECT
+    founder_id, gh_followers, gh_notable_followers, hn_karma, hn_points, hn_comments,
+    CASE WHEN gh_followers IS NOT NULL
+      THEN 1 - LEAST(GREATEST(log(1 + gh_followers) / 3, 0), 1)
+      ELSE NULL END AS followers_term,
+    CASE WHEN hn_karma IS NOT NULL
+      THEN 1 - LEAST(GREATEST(log(1 + hn_karma) / 4, 0), 1)
+      ELSE NULL END AS karma_term
+  FROM metrics_pivot
+),
+earliest_signal AS (
+  -- freshness/channel scoped to the first-ever observation for this founder.
+  SELECT DISTINCT ON (founder_id) founder_id, source, observed_at
+  FROM raw_signals
+  WHERE founder_id IS NOT NULL
+  ORDER BY founder_id, observed_at
+)
+SELECT
+  c.founder_id,
+  c.company_id,
+  c.application_id,
+  ot.gh_followers,
+  ot.gh_notable_followers,
+  ot.hn_karma,
+  ot.hn_points,
+  ot.hn_comments,
+  -- Average over the observed terms only (never "any missing -> NULL" --
+  -- hn_karma resolves far more often than gh_followers, so that reading
+  -- would blank the column for the majority of candidates), NULL only when
+  -- NO term was observed at all.
+  CASE
+    WHEN ot.followers_term IS NOT NULL AND ot.karma_term IS NOT NULL
+      THEN round((ot.followers_term + ot.karma_term) / 2, 4)
+    WHEN ot.followers_term IS NOT NULL THEN round(ot.followers_term, 4)
+    WHEN ot.karma_term     IS NOT NULL THEN round(ot.karma_term, 4)
+    ELSE NULL
+  END AS obscurity,
+  now() - es.observed_at AS freshness,
+  es.source AS channel,
+  -- Exposes what obscurity was computed from, so feature 09 can render a
+  -- one-term value as visibly weaker than a two-term one.
+  CASE
+    WHEN ot.followers_term IS NOT NULL AND ot.karma_term IS NOT NULL THEN ARRAY['gh_followers', 'hn_karma']
+    WHEN ot.followers_term IS NOT NULL THEN ARRAY['gh_followers']
+    WHEN ot.karma_term     IS NOT NULL THEN ARRAY['hn_karma']
+    ELSE NULL
+  END AS obscurity_basis
+FROM cards c
+LEFT JOIN obscurity_terms ot ON ot.founder_id = c.founder_id
+LEFT JOIN earliest_signal es ON es.founder_id = c.founder_id
+WHERE c.card_type = 'founder' AND c.founder_id IS NOT NULL;
