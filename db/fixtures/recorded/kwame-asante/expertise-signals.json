@@ -1,0 +1,45 @@
+{
+  "subscorer": "expertise-signals",
+  "verdicts": [
+    {
+      "criterion_id": "X1",
+      "reasoning": "The context identifies a data infrastructure and observability startup focused on schema-drift monitoring, but contains no claims about the founder's prior work in this specific workflow or vertical.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "No founder-history claim is available to establish documented tenure in schema-drift monitoring, data pipelines, or a closely matching operational workflow.",
+      "what_would_close_it": "A documented claim showing substantial prior work directly operating, building, or managing schema-drift monitoring or data-pipeline observability workflows."
+    },
+    {
+      "criterion_id": "X2",
+      "reasoning": "There are no claims describing a concrete, non-obvious mechanism in data-pipeline schema drift or its operational consequences.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "The company description states the product area but provides no founder-specific industry insight that can be tested against the outsider standard.",
+      "what_would_close_it": "A founder claim explaining a specific failure mode, decision process, cost leak, or operational mechanism in schema-drift management that an unexposed generalist could not readily infer."
+    },
+    {
+      "criterion_id": "X5",
+      "reasoning": "The context contains no claims identifying competitors or describing how competing data-infrastructure products succeed or fail in production.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "No competitor names, deal-loss patterns, production limitations, integration failures, or sales dynamics are provided.",
+      "what_would_close_it": "A claim describing specific competitors together with insider-level operational detail such as production failure modes, integrations that do not ship, or where deals are actually won or lost."
+    },
+    {
+      "criterion_id": "X6",
+      "reasoning": "There are no claims about unpaid, unrequested work on schema-drift monitoring or data-pipeline observability before funding.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": "The pre-seed stage does not itself establish that the founder performed substantial unrequested work, and no evidence of such work is included.",
+      "what_would_close_it": "A documented claim showing sustained pre-funding effort on this problem, such as a prototype built independently, open-source maintenance, extended public writing, or long-term unpaid involvement in the relevant community."
+    }
+  ],
+  "pedigree": {
+    "prior_companies": [],
+    "notable_employers": []
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "subscorer": "leadership-sales-proxies",
+  "verdicts": [
+    {
+      "criterion_id": "L2",
+      "reasoning": "The pack contains no evidence of a paying customer, signed LOI, running pilot, measured waitlist conversion, or documented discovery interviews. The pricing statement describes an offer, not a customer commitment.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "Evidence of a real customer commitment, such as a paying customer, signed LOI, named organisation running a pilot with an outcome, measured waitlist conversion, or documented discovery interviews showing consistent demand."
+    },
+    {
+      "criterion_id": "L3",
+      "reasoning": "The pack describes the product category but does not provide a concrete ICP covering vertical, company size, buyer role, trigger, and current alternative. A stranger could not use the supplied claims to identify fifty matching companies.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A claim specifying the target vertical, company size, buyer role, triggering problem or event, and current alternative, narrowly enough for a stranger to identify fifty matching companies."
+    },
+    {
+      "criterion_id": "L5",
+      "reasoning": "The Show HN artifact is concise and states what the product does and why it matters: it flags schema drift before a pipeline breaks. The phrase 'your pipeline' identifies the relevant user context sufficiently for a stranger to understand the product within ten seconds, without relying on padding or polished language.",
+      "verdict": "met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000203"
+      ],
+      "quote_verbatim": "a tool that flags schema drift before it breaks your pipeline",
+      "rationale": "This is a short, concrete product description with a clear preventative benefit and an identifiable data-pipeline user context.",
+      "what_would_close_it": null
+    }
+  ]
+}

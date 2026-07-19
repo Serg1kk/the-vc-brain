@@ -1,0 +1,38 @@
+{
+  "subscorer": "leadership-sales-proxies",
+  "verdicts": [
+    {
+      "criterion_id": "L2",
+      "reasoning": "The pack contains a documented claim of a long-running paying customer base and recurring revenue, which is direct evidence of paying customers rather than unquantified interest or a future expectation.",
+      "verdict": "met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000307"
+      ],
+      "quote_verbatim": "revenue ranges from $20k-$40k/month or ~$300k/year with a thousands of paying members",
+      "rationale": "This is evidence of actual paid adoption, satisfying first-customer evidence even though it is for Nomad List rather than Photo AI.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "L3",
+      "reasoning": "The claim identifies a user type, remote workers or digital nomads, and a trigger, choosing a city to live and work from. It also names concrete attributes and contrasts the product with generic city-guide content. However, it does not specify a customer size segment or a distinct buyer role, and the audience remains too broad for a stranger to reliably find fifty tightly matching companies or accounts from the statement alone.",
+      "verdict": "not_met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000308"
+      ],
+      "quote_verbatim": "Nomad List's target user is explicitly a remote worker or digital nomad choosing a city to live and work from",
+      "rationale": "The statement has some useful user and trigger detail but does not provide the required vertical, size, buyer-role, and current-alternative specificity for a sufficiently actionable ICP.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "L5",
+      "reasoning": "The pack asserts that the founder produces concise, structured launch writing, but it does not include the text of a specific Show HN post, homepage, or launch comment. Without the constrained artifact itself, the stranger test cannot be independently applied.",
+      "verdict": "self_asserted",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000309"
+      ],
+      "quote_verbatim": "short, structured, high-signal public writing and product-launch posts",
+      "rationale": "This is a claim about communication quality rather than inspectable evidence of what a stranger could understand in ten seconds.",
+      "what_would_close_it": null
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "subscorer": "execution-signals",
+  "verdicts": [
+    {
+      "criterion_id": "E1",
+      "reasoning": "The context pack contains no claims about pull requests, authorship, merges, or repository ownership.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A verifiable record showing a pull request authored by the founder that was merged into a repository owned by someone else within the last 12 months."
+    },
+    {
+      "criterion_id": "E3",
+      "reasoning": "The context pack contains no claims about commit activity or activity spread across the last 12 weeks.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A repository activity record showing founder-authored activity in at least 8 of the last 12 weeks."
+    },
+    {
+      "criterion_id": "E4",
+      "reasoning": "The context pack contains no claims about a deployed product, live production URL, uptime, or a reachable service.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A reachable product URL or independent deployment evidence such as an uptime check, live-service record, or production deployment log."
+    },
+    {
+      "criterion_id": "E5",
+      "reasoning": "The context pack contains no claims about external users, downloads, forks, dependent packages, transactions, or other measured usage.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "Independent usage evidence such as download counts, dependent packages, transaction records, or named users with corroborating data."
+    },
+    {
+      "criterion_id": "E7",
+      "reasoning": "The context pack contains no provenance information about the founder's flagship work, including commit history, authorship records, account age, or evidence of copying or misattribution.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "Repository and account-history evidence establishing authorship provenance, including compatible first-commit dates and no earlier external source for the same content."
+    }
+  ]
+}

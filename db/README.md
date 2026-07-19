@@ -13,7 +13,7 @@ committed alongside the schema itself.
 | `schema.sql` | All DDL: tables, indexes, functions, triggers. Additive-only, re-appliable (`CREATE TABLE IF NOT EXISTS` / `CREATE OR REPLACE`). |
 | `seed.sql` | Registry rows only (`score_axes`, `signal_sources`, `card_types`, `metric_kinds`). Idempotent (`ON CONFLICT DO NOTHING`). |
 | `apply.sh` | `psql` wrapper: applies `schema.sql` then `seed.sql`, reloads PostgREST's schema cache. See CLAUDE.md > Commands for the exact connection string. |
-| `tests/smoke.sql` | 43 assertions proving every constraint, dedup gate, and the enforcement layer actually work. Runs inside one transaction, always rolls back. |
+| `tests/smoke.sql` | Assertions proving every constraint, dedup gate, and the enforcement layer actually work. Runs inside one transaction, always rolls back. |
 
 ## Connecting
 
@@ -87,10 +87,23 @@ PGDATA directory is a host bind-mount, not a named volume; CLAUDE.md has the cor
 
 ## Append-only tables
 
-`scores`, `raw_signals`, `evidence`, `ai_runs`, `events`, `memos` — `UPDATE`/`DELETE` are
-rejected at the trigger level (`forbid_mutation()`, SQLSTATE `P0001`) for **any** caller,
-including `service_role` over PostgREST. The only way data in these tables is ever removed is
-via `purge_founder()` (below). Do not build a write path that assumes these are ever editable.
+`scores`, `raw_signals`, `evidence`, `ai_runs`, `events`, `memos`, `score_components` —
+`UPDATE`/`DELETE` are rejected at the trigger level (`forbid_mutation()`, SQLSTATE `P0001`) for
+**any** caller, including `service_role` over PostgREST. The only way data in these tables is
+ever removed is via `purge_founder()` (below). Do not build a write path that assumes these are
+ever editable.
+
+`score_components` (feature 03, `docs/backlog/03-founder-score/design.md` SS4.2) is the
+per-criterion breakdown behind a `founder_score` row — and, on the `insufficient_evidence`
+branch, behind founders that get **no** `scores` row at all (`score_id` is nullable for exactly
+that case; `founder_id` + `run_id` carry the identity instead, which is also what
+`purge_founder()` uses to reach those rows — see below).
+
+`score_formulas` (same feature) is versioned scoring **config**, not a decision receipt — it
+deliberately does **not** get the `forbid_mutation` trigger and stays a normal mutable table
+(e.g. flipping `active` to roll a new formula version forward). It still gets the `TRUNCATE`
+revoke below, alongside every append-only table, since that grant is schema-wide regardless of
+whether a given table is append-only.
 
 **`TRUNCATE` is separately revoked** (`REVOKE TRUNCATE ... FROM anon, authenticated,
 service_role`), not just trigger-guarded: `BEFORE UPDATE OR DELETE` triggers never fire on
@@ -100,6 +113,8 @@ finding (Task 12), not something this project's DDL added on purpose. **Any new 
 table added in a later feature is born with `TRUNCATE` already granted the same way — copy the
 `REVOKE` for it too**; this is a per-table fix, deliberately not a change to the schema-wide
 default (which also governs `SELECT`/`INSERT`/`UPDATE` that these roles legitimately need).
+`score_components` and `score_formulas` already have this copy done (`schema.sql`, Task 9 Step 1
+section) — precedent for the next feature that adds a table.
 
 ## Idempotency keys (for n8n `ON CONFLICT` targets)
 
@@ -126,9 +141,9 @@ resolved via the `founder_identities` dedup gate before a new founder row is eve
 The **only** deletion path in this schema (SECURITY DEFINER, runs as the `postgres` owner
 regardless of caller). Given a founder id, it removes:
 
-- every row directly scoped to that founder (`scores`, `metric_observations`, `raw_signals`,
-  `ai_runs`, `watchlist`, `founder_company`, `founder_identities`, plus their cards → claims →
-  evidence chain);
+- every row directly scoped to that founder (`scores`, `score_components`,
+  `metric_observations`, `raw_signals`, `ai_runs`, `watchlist`, `founder_company`,
+  `founder_identities`, plus their cards → claims → evidence chain);
 - the **entire** subtree of any company where that founder is the sole linked founder
   (applications → interviews → voice_artifacts → memos, plus company-scoped cards/claims/
   evidence/raw_signals/metric_observations/watchlist, then the company row itself) — companies
@@ -136,6 +151,12 @@ regardless of caller). Given a founder id, it removes:
 - every prior `events` row about that founder;
 - any merged-duplicate ("tombstone") founder rows pointing at this one, folded into the same
   call (one erasure, not one per duplicate).
+
+`score_components` is swept in two passes, `founder_id` first: some rows have `score_id IS NULL`
+(written on the `insufficient_evidence` branch, `docs/backlog/03-founder-score/design.md` SS2.4
+— no `scores` row exists to reach them via `founder_id`/`application_id` on `scores`), so the
+`founder_id`-direct sweep must run before the `score_id`-via-`scores` sweep or those rows survive
+the erasure untouched.
 
 It leaves behind **exactly one** anonymized `events` row (`event_type='founder_purged'`, no
 PII in the payload) as the audit trail. Call it as `SELECT purge_founder('<uuid>');` — there is

@@ -1,0 +1,54 @@
+{
+  "subscorer": "execution-signals",
+  "verdicts": [
+    {
+      "criterion_id": "E1",
+      "reasoning": "Claims 03f00006-0000-0000-0000-000000000301 and 03f00006-0000-0000-0000-000000000302 concern Photo AI's production status and usage, but neither mentions a pull request authored by the founder and merged into a repository owned by someone else.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A verifiable pull request record showing the founder as author and the pull request merged into a repository owned by another person or organization."
+    },
+    {
+      "criterion_id": "E3",
+      "reasoning": "Claims 03f00006-0000-0000-0000-000000000301 and 03f00006-0000-0000-0000-000000000302 describe the product and its customers and revenue, but provide no activity distributed across at least 8 of the last 12 weeks.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "A dated commit or contribution record demonstrating activity in at least 8 of the most recent 12 weeks."
+    },
+    {
+      "criterion_id": "E4",
+      "reasoning": "Claim 03f00006-0000-0000-0000-000000000301 explicitly identifies Photo AI at photoai.com as live in production. This directly bears on the existence of a deployed product URL rather than merely a repository.",
+      "verdict": "met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000301"
+      ],
+      "quote_verbatim": "Photo AI (photoai.com), built and operated by Pieter Levels, is live in production.",
+      "rationale": "The claim supports that Photo AI was deployed and available at a production URL.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "E5",
+      "reasoning": "Claim 03f00006-0000-0000-0000-000000000302 reports paying customers and monthly revenue, which are relevant measures of external usage. However, the claim is based on the founder's own published writing, and no independent customer, payment, analytics, or transaction source is provided.",
+      "verdict": "self_asserted",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000302"
+      ],
+      "quote_verbatim": "It has 1,872 paying customers making $61,808 per month",
+      "rationale": "External usage is claimed at a quantified level, but the supplied support is only the founder's self-report.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "E7",
+      "reasoning": "Claims 03f00006-0000-0000-0000-000000000301 and 03f00006-0000-0000-0000-000000000302 establish that the founder publicly describes building and operating Photo AI, but they provide no first-commit timing, authorship history, or comparison against earlier external sources for the same work.",
+      "verdict": "cannot_assess",
+      "claim_ids": [],
+      "quote_verbatim": null,
+      "rationale": null,
+      "what_would_close_it": "Repository history and source-comparison evidence showing the flagship work's first-commit date, coherent authorship, and absence of copied, backdated, or misattributed content."
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "subscorer": "expertise-signals",
+  "verdicts": [
+    {
+      "criterion_id": "X1",
+      "reasoning": "The documented tenure claim concerns the remote-work, digital-nomad, and solo-SaaS tools vertical, while Photo AI targets consumer AI and creator tools. The pack does not establish substantial prior time specifically inside the AI photo-generation or creator-tools workflow.",
+      "verdict": "cannot_assess",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000303"
+      ],
+      "quote_verbatim": "Levels has operated continuously in the remote-work / digital-nomad and solo-SaaS tools vertical for over a decade.",
+      "rationale": "This documents adjacent SaaS-building experience, but not tenure in Photo AI's specific consumer AI or creator-tools vertical.",
+      "what_would_close_it": "Evidence of substantial prior work operating, building, or serving users in AI photo generation, avatar creation, or a closely matching creator-tools workflow."
+    },
+    {
+      "criterion_id": "X2",
+      "reasoning": "The insight claim says solo founders overbuild and should use small teams and minimal infrastructure, but gives no concrete industry mechanism, decision-maker, failure mode, or production-specific detail. A generalist could produce this advice after a web search.",
+      "verdict": "not_met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000304"
+      ],
+      "quote_verbatim": "most solo founders overbuild for scale they will never need",
+      "rationale": "This is broad startup operating advice rather than a non-obvious fact about consumer AI, photo generation, or creator workflows.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "X5",
+      "reasoning": "The competitor claim acknowledges comparisons with larger venture-backed competitors but explicitly provides no named rivals or technical, sales, integration, or production-level weaknesses. It therefore fails the insider-granularity test.",
+      "verdict": "not_met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000305"
+      ],
+      "quote_verbatim": "without naming specific competitor weaknesses in technical detail",
+      "rationale": "The claim describes a positioning contrast but not where particular competitors lose deals or fail in production.",
+      "what_would_close_it": null
+    },
+    {
+      "criterion_id": "X6",
+      "reasoning": "The pack documents unrequested projects built before funding, including Nomad List as part of a self-directed twelve-startup experiment, and separately states that the products were self-funded rather than venture-funded. This is sustained pre-funding effort on the founder's product-building work.",
+      "verdict": "met",
+      "claim_ids": [
+        "03f00006-0000-0000-0000-000000000306"
+      ],
+      "quote_verbatim": "I decided to build one project per month for 12 months to see if I could get traction with anything",
+      "rationale": "The quoted effort was initiated independently to test projects, before any funding or commercial incentive is described.",
+      "what_would_close_it": null
+    }
+  ],
+  "pedigree": {
+    "prior_companies": [
+      {
+        "name": "Nomad List",
+        "role": "founder/operator",
+        "outcome": "bootstrapped"
+      },
+      {
+        "name": "Remote OK",
+        "role": "founder/operator",
+        "outcome": "bootstrapped"
+      },
+      {
+        "name": "Photo AI",
+        "role": "founder/operator",
+        "outcome": "bootstrapped"
+      },
+      {
+        "name": "Interior AI",
+        "role": "founder/operator",
+        "outcome": "bootstrapped"
+      }
+    ],
+    "notable_employers": []
+  }
+}
