@@ -8,7 +8,7 @@ python3 n8n/build-f06-workflow.py --check   # check only, no write
 ```
 
 The deterministic core lives in `lib/f06/{context,decision,assemble}.js`, unit-tested outside n8n
-(`node --test lib/f06/*.test.js` — 109 tests: 35 context, 43 decision, 31 assemble). n8n's
+(`node --test lib/f06/*.test.js` — 118 tests: 35 context, 43 decision, 40 assemble). n8n's
 Code-node sandbox cannot `require()` a repo file, so this generator pastes each module's body
 **verbatim** into the Code node that needs it (`module.exports` and every `'use strict';` stripped
 — see the generator's own `_strip_use_strict()` docstring for why the latter is load-bearing, not
@@ -117,6 +117,25 @@ return `{error}`. `lib/f06/assemble.test.js` updated to match (28 -> 31 tests, a
 three old "-> rejection" cases became "-> back-filled with a structural line" assertions, plus a
 new `backfillRequiredSections` direct-call suite and an empty-pack-memo acceptance test
 (design.md §10's "no claims at all still writes a memo" edge case).
+
+## Task T6b — content gates flipped from whole-memo reject to DROP + LOG
+
+T6's live smoke measured ~40% of runs hitting a whole-memo 422 (zero bad writes, but a live-demo
+retry risk) from two content slips: a `$100K` check-size figure landing in a `structural`
+statement, or a rare hallucinated claim id. Both gates now **DROP the offending statement/item and
+LOG it** (`dropped_statements[]`) instead of rejecting the whole memo — design.md §9, revised. I3
+is preserved exactly (no uncited fact / smuggled figure ever renders); `assembleMemo()`'s only
+remaining `{error}` path is malformed input (`pack`/`decision` missing entirely), never a content
+slip. Required-section back-fill now runs *after* both drops, so a section a drop just emptied
+still ships one structural line. `dropped_count`/`dropped_statements` ride the `memo_generated`
+event payload (§9.7) — logged, not silent. `lib/f06/assemble.test.js` updated to match
+(31 -> 40 tests, all green): the citation-gate/typed-exception "-> rejection" tests became
+"-> dropped, back-filled" assertions, plus direct unit tests for the two new drop functions
+(`dropUncitedItems`, `dropTypedExceptionOffenders`) and a new malformed-input describe block.
+Re-smoked 10/10 generations across tracewire + Medows post-redeploy: 100% success, 0 dropped
+statements observed in this batch (drops are logged when they occur, not a failure signal), one
+memo's `sections` spot-checked in the DB — real per-claim content, correctly-caveated benchmark,
+no numeric figure in any `not_disclosed`/`structural` statement.
 
 ## Credentials
 

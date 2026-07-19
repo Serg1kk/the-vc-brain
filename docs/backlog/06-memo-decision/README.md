@@ -1,6 +1,13 @@
 # 06 · Investment Memo & $100K Decision
 
-Status: backlog · Depends on: 03, 04, 05
+Status: **done** (QA gate passed 2026-07-19) · Depends on: 03, 04, 05
+
+**Built:** n8n workflow `f06-generate-memo` (id `iLzZ0he48v4WowMS`, live) — context pack → 4
+section-writer agents (`gpt-5.6-luna`, cite claim_ids only) → deterministic decision cascade
+(`lib/f06/decision.js`, D1→D6, no LLM) → citation gate (drop+log, no uncited fact renders) →
+versioned `memos` row. 118 unit tests. Deterministic recommendation ∈ `proceed /
+proceed-with-conditions / pass / watchlist`. Design: `design.md` (rev 2.1) · plan: `plan.md` ·
+tracker: `tracker.md` · QA: `qa-report-06.md`.
 
 ## What it is
 

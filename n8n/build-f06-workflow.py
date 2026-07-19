@@ -655,6 +655,11 @@ def build():
         "  return [{ json: { error: assembled.error } }];\n"
         "}\n"
         "const row = assembled.row;\n"
+        "// task T6b (design SS9's DROP + LOG revision) -- a content slip (bad citation /\n"
+        "// numeric-in-typed-exception) no longer reaches `assembled.error` at all; it is\n"
+        "// dropped from `row` above and logged here instead, via the memo_generated event\n"
+        "// payload below (never silent -- design SS9.1's own \"the drop is logged, not silent\").\n"
+        "const dropped_statements = assembled.dropped_statements || [];\n"
         "\n"
         "// design.md SS9.4 -- next = COALESCE(MAX(version),0)+1. This read happens inside a Code\n"
         "// node (this.helpers.httpRequest via pg()), never a dedicated PostgREST-typed n8n node,\n"
@@ -708,6 +713,7 @@ def build():
         "  recommendation: row.recommendation,\n"
         "  rule_fired: (row.conditions && row.conditions.decision_inputs) ? row.conditions.decision_inputs.rule_fired : null,\n"
         "  run_id: pack.run_id || null, n8n_execution_id: $execution.id,\n"
+        "  dropped_statements: dropped_statements,\n"
         "});\n"
         "await pg('POST', 'events', {\n"
         "  event_type: event.event_type, entity_type: event.entity_type, entity_id: event.entity_id,\n"
@@ -760,10 +766,15 @@ def build():
         "lib/f06/assemble.js's checkRequiredSections() was replaced with\n"
         "backfillRequiredSections(): a missing/empty required section (or\n"
         "SWOT array) gets ONE deterministic structural line instead of\n"
-        "rejecting the memo. Only the citation gate and the\n"
-        "typed-exception guard can still return {error} -- an LLM\n"
-        "omission (including every [B] node's own try/catch fallback\n"
-        "above) can never hard-fail the whole memo.",
+        "rejecting the memo. As of task T6b, the citation gate and the\n"
+        "typed-exception guard ALSO no longer return {error} -- they\n"
+        "DROP + LOG the offending statement/item instead (dropped_count/\n"
+        "dropped_statements ride the memo_generated event payload), and\n"
+        "back-fill (this step) runs AFTER both drops so an emptied\n"
+        "required section still ships one line. assembleMemo()'s only\n"
+        "remaining {error} path is malformed input (pack/decision missing\n"
+        "entirely) -- an LLM omission or citation slip can never hard-fail\n"
+        "the whole memo any more.",
         1160, -820, 780, 260,
     ))
     nodes.append(sticky(
