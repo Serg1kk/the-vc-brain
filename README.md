@@ -40,6 +40,11 @@ A working prototype of that pipeline with a deliberate focus on the parts that m
 
 🚧 **Hackathon in progress** (July 18–19, 2026). Code, docs and demo are landing here as they are built.
 
+## Deployment
+
+Full deployment instructions: see [DEPLOYMENT.md](DEPLOYMENT.md) — local Docker Compose setup
+and a generalized VPS/production deployment behind a reverse proxy.
+
 ## License
 
 [MIT](LICENSE).

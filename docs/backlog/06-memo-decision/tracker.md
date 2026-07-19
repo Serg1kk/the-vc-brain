@@ -20,7 +20,7 @@
 | T6b | Content-robustness hardening (prompts + drop-not-reject gates) + re-smoke | @backend-developer | T6 | dispatched | — | prompts: no $-figure in prose; assemble gates DROP+log offending stmt not whole-memo reject (I3 preserved); measure new reject rate |
 | T7 | Optional sections live (B3) | @backend-developer | T6 | **done** (folded into T6) | verified in T6 smoke: memos rows show 7-8 section keys (8 = 5 required + risk_matrix/competition/financials_lite; 7 = one optional absent cleanly). Medows risk_matrix flagged missing market-size/cap-table/revenue as material risks | B3 works live; sentinel path clean |
 | T8 | QA gate — FAST positive-flow smoke (operator directive) | orchestrator (fast, per directive) | T6b | **✅ GATE PASSED** | `qa-report-06.md`; live: 118/118 tests, 5/5 required sections, UNCITED=0 (13/13 cited ids resolve), not_disclosed honesty present, deterministic rationale, 404 envelope, 10/10 post-hardening | adversarial matrix deferred per operator; covered by unit tests + T6/T6b live evidence |
-| T9 | Close: README(EN+RU), tracker, commit+push | @devops + orch | T8 | dispatched | README EN+RU updated to done; qa-report written; @devops committing+pushing (explicit f06 paths only, remote the-vc-brain) | operator asked to commit+push |
+| T9 | Close: README(EN+RU), tracker, commit+push | @devops + orch | T8 | **done** (verified) | commit `697c002` pushed to origin/main (`Serg1kk/the-vc-brain`); verified: 0 commits ahead of origin, all f06 paths tracked, only f06 files in the commit (no foreign paths). README.ru.md is gitignored (*.ru.md not published — by design) | feature 06 CLOSED |
 
 ## Event log
 

@@ -1078,3 +1078,47 @@ this TRACKER edit. NOT feature 11's and to be handled by their owners / a separa
 06/orchestrator), `docs/backlog/08-founder-intake-interview/qa-report-08.md` (feature 08),
 `lib/f03/recorded/` (optional, untracked replay data). @devops must stage explicit paths, never
 `git add -A`.
+
+## 2026-07-19 ~14:40 · 06 memo-decision — **DONE, QA gate passed, pushed** (append by terminal 06)
+
+Feature 06 is CLOSED and pushed (`697c002` on origin/main). The `f06-generate-memo` workflow
+(n8n id `iLzZ0he48v4WowMS`, active) writes versioned `memos` rows live: context pack → 4
+section-writer agents (cite claim_ids only) → deterministic decision cascade D1→D6 (no LLM,
+`lib/f06/decision.js`) → citation gate (drop+log — no uncited fact renders) → `memos`. 118 unit
+tests. Recommendation ∈ `proceed / proceed-with-conditions / pass / watchlist`.
+
+**For feature 09 (memo screen `/app/f/:id/memo`):** the frozen `memos` jsonb contract (announced
+~12:55 + ~13:15 above) is now LIVE and populated — `sections`/`gaps`/`conditions`/
+`deep_dive_questions` shapes are exactly as specified, `api_applications.memo_available`/`memo_version`
+flip on write. Two live demo apps have memos: **tracewire** `11f00002-…-006` and **Medows**
+`08f360ee-…` (both currently `watchlist` — honest cold-start outcomes). Nothing 09 reads changed;
+the fields that were NULL now light up.
+
+Status-board note (row for 06 above still reads "backlog" — it is now **done**; leaving the table
+alone per the append-only rule, this line is the authoritative status).
+
+## 2026-07-19 ~14:55 · 06 → CROSS-CUTTING (db/schema.sql), affects 09 + 12 — memos anon-read grant
+
+**Symptom:** the investor memo screen (09, `/app/f/:id/memo`) on the REMOTE deploy
+(`dashboard.prodsignal.me`) showed `permission denied for table memos` + a Retry button — anon
+lacked SELECT on `memos`. Local dev was fine.
+
+**Root cause (portability defect, bites feature 12's deploys):** `db/schema.sql` never EXPLICITLY
+grants read to anon/authenticated on any table — it relies entirely on Supabase self-hosted
+provisioning's schema-wide `ALTER DEFAULT PRIVILEGES` (which grants CRUD to anon/authenticated/
+service_role at CREATE TABLE time). On a Postgres/deploy target lacking that provisioning, a
+later-created table like `memos` is born with NO anon grant → the read fails, while earlier tables
+(created when the provisioning was active) work — which is why only the memo screen broke.
+
+**Fix (db/schema.sql, marked `-- Feature 06:`, right after the Feature-07 REVOKE TRUNCATE):**
+`GRANT SELECT, INSERT, UPDATE, DELETE ON memos TO anon, authenticated, service_role;` — explicit,
+idempotent, no-op on a provisioned instance, portable everywhere. Append-only is still enforced by
+`trg_memos_forbid_mutation` + the TRUNCATE revoke; writes come from n8n as service_role, the
+frontend only SELECTs. Applied to local live DB + `NOTIFY pgrst 'reload schema'`; verified anon read
+works. **@devops must include this schema.sql hunk in the next commit.**
+
+**For feature 12 (remote deploy):** re-apply `db/apply.sh` (or just run the GRANT above) on the
+remote after the schema update. Consider auditing whether OTHER frontend-read tables need the same
+explicit grant on the remote — if the remote lacks Supabase's default-privileges provisioning, any
+table created outside that window is exposed to the same gap. `memos` is the one that surfaced
+because it is the newest table.

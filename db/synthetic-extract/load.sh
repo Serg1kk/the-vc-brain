@@ -58,6 +58,41 @@ TRUNCATE TABLE
 
 \copy theses (id, name, config, version, active, created_at, updated_at, is_default) FROM '$IN_DIR/01_theses.csv' WITH (FORMAT csv, HEADER true)
 
+-- theses invariant (db/seed.sql's own comment: "the gate cannot run without a
+-- thesis... without a row satisfying both [is_default AND active], the gate
+-- has nothing to load and every call fails"). extract.sh deliberately carries
+-- theses rows in WHATEVER active/inactive state they had locally -- that's
+-- the row thesis_evaluations.thesis_config_snapshot etc. actually reference --
+-- which can leave the loaded set with NO active+is_default row (verified in
+-- testing: the referenced 'default' v1 row had already been superseded
+-- locally by a v2 activation before extraction). Confirmed independently by
+-- db/tests/smoke.sql's own uq_theses_single_default assertion, which is
+-- exactly the check that caught this. Promote the best candidate so the
+-- target is never left without a working default thesis; if the extract
+-- carried zero theses rows at all (nothing referenced one yet), fall back to
+-- db/seed.sql's own literal 'default' v1 config (kept in sync with that file
+-- by hand -- same stance as the claim_trust view's documented duplicate).
+DO \$\$
+DECLARE
+  v_promoted uuid;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM theses WHERE active AND is_default) THEN
+    SELECT id INTO v_promoted FROM theses
+    ORDER BY is_default DESC, version DESC, created_at DESC
+    LIMIT 1;
+
+    IF v_promoted IS NOT NULL THEN
+      UPDATE theses SET active = true, is_default = true WHERE id = v_promoted;
+    ELSE
+      INSERT INTO theses (name, version, config, active, is_default) VALUES (
+        'default', 1,
+        '{"fit": {"base": 50, "min_coverage": 0.5, "mandate_weight": 20, "strong_threshold": 70, "soft_deal_breaker_penalty": 30}, "geos": ["DE", "FR", "NL", "US"], "rules": [{"id": "R1", "expr": {"op": "in", "field": "sector", "value": ["gambling", "adtech"]}, "kind": "deal_breaker", "label": "Excluded sector: gambling", "weight": 0, "enabled": true, "enforcement": "hard", "hard_justification": "mandate_fatal"}, {"id": "R2", "expr": {"op": "eq", "field": "business_model", "value": "b2b"}, "kind": "focus", "label": "B2B focus", "weight": 25, "enabled": true, "enforcement": "soft"}], "mandate": {"stages": ["pre_seed", "seed"], "sectors": ["b2b-software", "ai-infra", "devtools"], "geographies": ["EU", "US"], "risk_appetite": "high", "check_size_usd": {"max": 150000, "min": 50000}, "ownership_target_pct": null}, "schema_version": 1, "exceptional_lane": {"axis": "founder_score", "aggregate": "max", "min_value": 75}, "negative_keywords": ["casino", "betting"], "positive_keywords": ["developer tools", "infrastructure"]}'::jsonb,
+        true, true
+      );
+    END IF;
+  END IF;
+END \$\$;
+
 \copy founders (id, full_name, headline, location_city, location_country, profile, is_synthetic, merged_into_founder_id, opt_out_at, created_at, updated_at) FROM '$IN_DIR/02_founders.csv' WITH (FORMAT csv, HEADER true)
 
 \copy companies (id, name, domain, one_liner, category, stage, hq_city, hq_country, aliases, profile, is_synthetic, created_at, updated_at) FROM '$IN_DIR/03_companies.csv' WITH (FORMAT csv, HEADER true)

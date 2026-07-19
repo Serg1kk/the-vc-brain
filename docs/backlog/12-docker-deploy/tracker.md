@@ -66,6 +66,57 @@ Data-loading confirmed as feature-12's own responsibility (operator).
 |----|------|----------|---------|--------|----------------|
 | FIX-3 | activate f08-intake-submit + remap sub-workflow ids + CORS + e2e | @devops | S1 | 🔄 dispatched | make live submit work |
 
+## STRATEGY SHIFT (operator, ~14:xx) — ANONYMIZE instead of reduce-to-synthetic
+
+Operator's better idea: instead of wiping down to feature-11's sparse synthetic set, **anonymize the
+whole rich corpus** — de-identify all real people (reuse the already-computed scores/claims, no
+re-run) so the dashboard stays rich AND safe. This SUPERSEDES the SWAP-to-synthetic-only plan
+(SWAP-1/SWAP-2 no longer needed; synth-extract stood down). FIX-2 password: handled by feature 09
+(dotenv), Caddy basic-auth dropped.
+
+Also: live intake submit now WORKS (FIX-3, @devops) — activated f08 chain, remapped 6 workflows'
+stale sub-workflow ids, verified e2e (200 + scoring), purged its test row back to baseline.
+
+New deliverables:
+- **Anonymize remote `vcbrain-db`**: consistent real→fake mapping across ALL text/jsonb fields +
+  revoke anon on base tables (expose only api_* views) + zero-real-identifier verification.
+- **Shippable mock data**: export the anonymized data → committed `db/fixtures/demo-seed.sql` +
+  `db/load-demo.sh` loader (anyone can seed local/VPS).
+- **`DEPLOYMENT.md`** (repo root) + README pointer: full local + VPS deploy, public-repo-safe.
+
+| ID | Task | Executor | Depends | Status | Result / notes |
+|----|------|----------|---------|--------|----------------|
+| FIX-3 | live intake submit (activate + remap + CORS + e2e) | @devops | — | ✅ done | 200 e2e, scoring ran, test row purged to baseline |
+| ANON-1 | anonymize remote DB (all vectors) + revoke anon→views + verify | @database-engineer (anonymizer) | — | 🔄 running | ethics-critical; I re-verify via public API after |
+| SEED-1 | export anonymized → db/fixtures/demo-seed.sql + db/load-demo.sh | anonymizer | ANON-1 | 🔄 queued | public-safe mock data + loader |
+| DOC-1 | DEPLOYMENT.md (local + VPS) + README pointer | @devops | — | 🔄 running | references demo-seed + load-demo |
+| SWAP-1/2 | reduce-to-synthetic-only | — | — | ❌ superseded | replaced by ANON-1 |
+| DOC-1 | DEPLOYMENT.md + README/README.ru pointer | @devops | — | ✅ done | 694 lines, both paths, secret-scan clean (verified by orchestrator); demo-seed subsection pending SEED-1 |
+| REDEPLOY-1 | (see final row below) | | | | superseded by the ✅ done row at the bottom of this table |
+| DEDUP-1 | collapse duplicate applications in demo data | anonymizer | ANON-1 | ✅ operator-approved, queued | both shapes: same-company_id apps AND same-name company merge w/ FK repoint; synthetic rows untouched; runs after anon-verify, before seed export |
+| REDEPLOY-1 | rebuild+redeploy latest web (09 password gate) | @devops | — | ✅ done | gate creds verified in live bundle (investor/maschmeyer); all hosts green; npm install workaround for live-edited tree |
+| QA-1 | independent QA gate | @qa-engineer | — | ✅ infra PASSED / 🔴 public-release BLOCKED (F1 data, F2 password) | full Playwright walkthrough clean; invariants confirmed live. F2 closed by REDEPLOY (password live). F1 closes on ANON commit+verify. **Final re-verify: OPERATOR himself (ruling ~15:0x) — no further QA agent pass.** |
+
+## synth-extract findings (stood down, but delivered valuable intel)
+
+- **Feature 11 generation is only PARTIAL** (measured on the 10 `11f0%` curated apps): market/idea_vs_market 10/10, trust 9/10, thesis_fit 4/10, founder-axis 2/10, thesis_evals 5/10, memos 1/10, interviews 0/10, founder_score 5/14. → confirms **anonymization > synthetic-only reduction** (synthetic set is too thin for a full demo).
+- **Backup path exists** if anonymization ever fails: `db/synthetic-extract/{extract,load}.sh` + `synthetic-swap.md` — validated synthetic-only swap, zero leakage (tested on a throwaway PG container).
+- **Load gotchas (forwarded to anonymizer for SEED-1):** `theses.id` is a random UUID → `apply.sh` regenerates it → FK dangling on fresh load; solved in `synthetic-swap.md` §4 (ship theses row with its id + promote active default). smoke.sql A1e assertion hardcodes a real founder id — harmless for anonymization (ids/metrics preserved), fatal for synthetic-only.
+
+## 06 CLOSED → remote sync (operator, ~14:4x)
+
+06 QA PASSED; `f06-generate-memo.json` exported (no executeWorkflow nodes → no remap needed);
+local memos=16 (post-dump → NOT on remote). Dispatched to @devops (REDEPLOY-2): rebuild web from
+current tree + import f06 + activate the frontend-called webhooks (`f06-generate-memo`,
+`f09-suggest-followup`, `f10-nl-search`, `f11-purge`) with registration-only verification (no
+DB-writing test executions while anonymizer owns the DB). f11-purge = unauthenticated deletion
+webhook — accepted for demo, recorded in creds/known-gaps.
+
+**Memo data note:** remote memos=0, but once f06 is active the demo can GENERATE memos live on
+remote data — cleaner demo beat than migrating the 16 local test memos. If operator wants the
+local memos too, that folds into a FINAL-SYNC (fresh dump → restore → re-run deterministic
+anonymize+dedup scripts → re-export seed) — scripts are being built re-runnable for exactly this.
+
 ## Event log
 - 2026-07-19 ~13:05 · Recon complete (server + local + web target). design.md + plan.md written.
 - 2026-07-19 ~13:xx · Dispatching S0-A (@database-engineer) ∥ S0-B (@devops).

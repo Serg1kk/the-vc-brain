@@ -837,6 +837,19 @@ REVOKE TRUNCATE ON score_components, score_formulas FROM anon, authenticated, se
 -- Feature 07: same reasoning.
 REVOKE TRUNCATE ON thesis_evaluations FROM anon, authenticated, service_role;
 
+-- Feature 06: EXPLICIT read/CRUD grant on `memos` — do NOT rely on the schema-wide
+-- default-privileges alone. On a fully Supabase-provisioned instance (local dev) the
+-- default privileges already grant anon/authenticated everything at CREATE TABLE time, so
+-- this is a no-op there. But a deploy target whose Postgres lacks that provisioning (the
+-- remote dashboard.prodsignal.me deploy hit exactly this: the investor memo screen reads
+-- `memos` as `anon` over PostgREST and got `permission denied for table memos`) will have
+-- NO grant on a later-created table. This explicit, idempotent GRANT makes the memo read
+-- path portable to any Postgres / cold-start / remote deploy. append-only is still enforced
+-- by trg_memos_forbid_mutation (UPDATE/DELETE raise P0001) and TRUNCATE is revoked above —
+-- so granting the full CRUD set matches the project's uniform no-RLS model without weakening
+-- the immutability guarantee. Writes come from n8n as service_role; the frontend only SELECTs.
+GRANT SELECT, INSERT, UPDATE, DELETE ON memos TO anon, authenticated, service_role;
+
 -- ---- Step 2: updated_at on the mutable set (design.md SS5.3) --------------
 
 CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger

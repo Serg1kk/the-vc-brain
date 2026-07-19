@@ -3,15 +3,18 @@
 // padding is scored against us, so a section with nothing to say says so in one
 // line rather than being filled.
 //
-// The dominant state today (brief owner's brief, verified live): `memos` has 0 rows
-// anywhere in the corpus — feature 06 (the memo writer) has not shipped. The honest
-// empty state below is therefore what this screen actually shows in the demo; the
-// "has a memo" render path is built against `db/schema.sql`'s column contract and
-// brief §10's requirements, but the internal shape of `sections` / `deep_dive_questions`
-// / `conditions` is NOT frozen anywhere (feature 06 unbuilt) — `investor-api.ts` reads
-// them as `unknown` on purpose, and the tolerant normalizers below are this screen's
-// best-effort reading of that shape, not a guessed contract baked into the shared
-// client. Fix the normalizers here, not investor-api.ts, once 06 ships a real payload.
+// Feature 06 has shipped. The frozen `memos` jsonb contract (design.md §4.1) is:
+//   sections.<key> = { statements: [ { text, claim_ids: string[], kind } ] }
+//     kind ∈ "fact" | "not_disclosed" | "benchmark" | "structural"
+//   sections.swot = { strengths, weaknesses, opportunities, threats }  (each a statements[])
+//   sections.risk_matrix    = { risks: [ { text, severity, likelihood, claim_ids } ] }
+//   sections.competition    = { statements: [...], competitors: [ { name, named_by_founder, claim_ids } ] }
+//   sections.financials_lite = { statements: [...] }   (benchmark + not_disclosed only)
+//   conditions = { check_size_usd, rationale, items: [ { text, closes, claim_ids } ], decision_inputs, ... }
+//   deep_dive_questions = [ { question, closes_gap, gap_kind, claim_ids } ]
+// The normalizers below read exactly this, and stay tolerant of the older
+// string / {text, claim_id} shapes so nothing regresses. `investor-api.ts` still
+// types these values as `unknown` on purpose — the reading lives here.
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -41,45 +44,61 @@ export const Route = createFileRoute("/app/f/$applicationId_/memo")({
 });
 
 // ---------------------------------------------------------------------------
-// Tolerant section normalizers — see file header. `sections.<key>` is EITHER a
-// plain string (rendered as one paragraph; citations traced via the memo-level
-// `cited_claim_ids` list at the foot of the document instead of inline) OR an
-// array of `{text, claim_id}` blocks (rendered as sentences, each with its own
-// inline verdict badge, matching the design export). Anything else renders as
-// honestly as JSON.stringify allows rather than crashing or showing nothing.
+// Statement normalizer — the atomic renderable unit (design §4.1). Every prose
+// section is normalized to a ProseBlock[]. Handles the frozen shape
+// `{ statements: [ { text, claim_ids, kind } ] }`, plus the legacy string /
+// array-of-{text, claim_id} shapes, without ever dumping raw JSON to screen.
 // ---------------------------------------------------------------------------
+
+type StatementKind = "fact" | "not_disclosed" | "benchmark" | "structural";
 
 interface ProseBlock {
   text: string;
-  claimId: string | null;
+  claimIds: string[];
+  kind: StatementKind;
 }
-type ProseSection = string | ProseBlock[];
+type ProseSection = ProseBlock[];
 
 function normalizeSection(raw: unknown): ProseSection {
-  if (typeof raw === "string") return raw;
-  if (Array.isArray(raw)) {
-    return raw.map((item): ProseBlock => {
+  if (typeof raw === "string") {
+    return raw.trim() ? [{ text: raw, claimIds: [], kind: "structural" }] : [];
+  }
+  // Unwrap the `{ statements: [...] }` envelope (the frozen shape).
+  let arr: unknown = raw;
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && "statements" in raw) {
+    arr = (raw as { statements: unknown }).statements;
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((item): ProseBlock | null => {
+      if (typeof item === "string") return { text: item, claimIds: [], kind: "structural" };
       if (item && typeof item === "object" && "text" in item) {
-        const it = item as { text: unknown; claim_id?: unknown };
+        const it = item as { text: unknown; claim_ids?: unknown; claim_id?: unknown; kind?: unknown };
+        const claimIds = Array.isArray(it.claim_ids)
+          ? it.claim_ids.filter((x): x is string => typeof x === "string")
+          : typeof it.claim_id === "string"
+            ? [it.claim_id]
+            : [];
+        const kind: StatementKind =
+          it.kind === "not_disclosed" || it.kind === "benchmark" || it.kind === "structural"
+            ? it.kind
+            : "fact";
         return {
-          text: typeof it.text === "string" ? it.text : String(it.text),
-          claimId: typeof it.claim_id === "string" ? it.claim_id : null,
+          text: typeof it.text === "string" ? it.text : String(it.text ?? ""),
+          claimIds,
+          kind,
         };
       }
-      return { text: String(item), claimId: null };
-    });
-  }
-  if (raw == null) return "";
-  return typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+      return null;
+    })
+    .filter((b): b is ProseBlock => b !== null && b.text.trim().length > 0);
 }
 
 function sectionHasContent(section: ProseSection): boolean {
-  if (typeof section === "string") return section.trim().length > 0;
-  return section.length > 0 && section.some((b) => b.text.trim().length > 0);
+  return section.some((b) => b.text.trim().length > 0);
 }
 
 function sectionToPlainText(section: ProseSection): string {
-  if (typeof section === "string") return section;
   return section.map((b) => b.text).join(" ");
 }
 
@@ -100,14 +119,70 @@ function normalizeSwot(raw: unknown): SwotShape {
   };
 }
 
+interface RiskRow {
+  text: string;
+  severity: string;
+  likelihood: string;
+  claimIds: string[];
+}
+
+function normalizeRiskMatrix(raw: unknown): RiskRow[] {
+  const risks =
+    raw && typeof raw === "object" && Array.isArray((raw as { risks?: unknown }).risks)
+      ? ((raw as { risks: unknown[] }).risks)
+      : [];
+  return risks
+    .map((r): RiskRow | null => {
+      if (!r || typeof r !== "object") return null;
+      const it = r as Record<string, unknown>;
+      const text = typeof it.text === "string" ? it.text : String(it.text ?? "");
+      if (!text.trim()) return null;
+      return {
+        text,
+        severity: typeof it.severity === "string" ? it.severity : "",
+        likelihood: typeof it.likelihood === "string" ? it.likelihood : "",
+        claimIds: Array.isArray(it.claim_ids)
+          ? it.claim_ids.filter((x): x is string => typeof x === "string")
+          : [],
+      };
+    })
+    .filter((r): r is RiskRow => r !== null);
+}
+
+interface CompetitorRow {
+  name: string;
+  namedByFounder: boolean;
+  claimIds: string[];
+}
+
+function normalizeCompetition(raw: unknown): { statements: ProseSection; competitors: CompetitorRow[] } {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const statements = normalizeSection(obj);
+  const competitors = Array.isArray(obj.competitors)
+    ? obj.competitors
+        .map((c): CompetitorRow | null => {
+          if (!c || typeof c !== "object") return null;
+          const it = c as Record<string, unknown>;
+          const name = typeof it.name === "string" ? it.name : String(it.name ?? "");
+          if (!name.trim()) return null;
+          return {
+            name,
+            namedByFounder: it.named_by_founder === true,
+            claimIds: Array.isArray(it.claim_ids)
+              ? it.claim_ids.filter((x): x is string => typeof x === "string")
+              : [],
+          };
+        })
+        .filter((c): c is CompetitorRow => c !== null)
+    : [];
+  return { statements, competitors };
+}
+
 interface DeepDiveQuestion {
   question: string;
   closesGap: string;
 }
 
-/** `deep_dive_questions`'s shape is not frozen (see file header) — this accepts
- * either `closes_gap`/`gap`/`closes` for the "what this closes" string, so a
- * reasonable future payload from feature 06 needs no code change here. */
 function normalizeDeepDiveQuestions(raw: unknown): DeepDiveQuestion[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -122,17 +197,40 @@ function normalizeDeepDiveQuestions(raw: unknown): DeepDiveQuestion[] {
     .filter((q): q is DeepDiveQuestion => q !== null);
 }
 
-function normalizeConditions(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => {
-    if (typeof item === "string") return item;
-    if (item && typeof item === "object") {
-      const it = item as Record<string, unknown>;
-      const text = it.condition ?? it.text;
-      if (typeof text === "string") return text;
-    }
-    return String(item);
-  });
+interface MemoConditions {
+  rationale: string | null;
+  items: Array<{ text: string; closes: string | null }>;
+}
+
+// `conditions` is the decision node's object (design §4.4): { rationale, items, ... }.
+// Stays tolerant of the older array-of-strings shape.
+function normalizeConditions(raw: unknown): MemoConditions {
+  if (Array.isArray(raw)) {
+    return {
+      rationale: null,
+      items: raw
+        .map((x): { text: string; closes: string | null } | null =>
+          typeof x === "string" ? { text: x, closes: null } : null,
+        )
+        .filter((x): x is { text: string; closes: string | null } => x !== null),
+    };
+  }
+  if (!raw || typeof raw !== "object") return { rationale: null, items: [] };
+  const it = raw as Record<string, unknown>;
+  const rationale = typeof it.rationale === "string" ? it.rationale : null;
+  const rawItems = Array.isArray(it.items) ? it.items : [];
+  const items = rawItems
+    .map((x): { text: string; closes: string | null } | null => {
+      if (typeof x === "string") return { text: x, closes: null };
+      if (x && typeof x === "object") {
+        const o = x as Record<string, unknown>;
+        const text = o.text ?? o.condition;
+        if (typeof text === "string") return { text, closes: typeof o.closes === "string" ? o.closes : null };
+      }
+      return null;
+    })
+    .filter((x): x is { text: string; closes: string | null } => x !== null);
+  return { rationale, items };
 }
 
 const RECOMMENDATION_LABEL: Record<MemoRecommendation, string> = {
@@ -142,9 +240,8 @@ const RECOMMENDATION_LABEL: Record<MemoRecommendation, string> = {
   watchlist: "Watchlist",
 };
 
-// SWOT is rendered separately (4 named quadrants, not one prose block) between
-// "Investment hypotheses" and "Problem & product" — the required order from
-// brief §10 — so the required sections split around it rather than listing it.
+// SWOT is rendered separately (4 named quadrants) between "Investment hypotheses"
+// and "Problem & product" — the required order from brief §10.
 const SECTIONS_BEFORE_SWOT: Array<{ key: keyof MemoRow["sections"] & string; heading: string }> = [
   { key: "snapshot", heading: "Company snapshot" },
   { key: "hypotheses", heading: "Investment hypotheses" },
@@ -154,12 +251,6 @@ const SECTIONS_AFTER_SWOT: Array<{ key: keyof MemoRow["sections"] & string; head
   { key: "traction", heading: "Traction & KPIs" },
 ];
 
-const OPTIONAL_SECTION_HEADINGS: Record<string, string> = {
-  risk_matrix: "Risk matrix",
-  competition: "Competition",
-  financials_lite: "Financials",
-};
-
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -168,9 +259,7 @@ function formatDate(iso: string): string {
 
 // ---------------------------------------------------------------------------
 // Citation resolution — a targeted two-read join (api_claims + claim_trust) over
-// exactly `cited_claim_ids`, not the whole application's claim set. Same join
-// `getEvidenceLedger` performs, keyed differently — kept local rather than added
-// to investor-api.ts, since it isn't a general-purpose primitive other screens need.
+// exactly `cited_claim_ids`.
 // ---------------------------------------------------------------------------
 
 async function fetchCitedClaims(claimIds: string[]): Promise<Result<ClaimWithTrust[]>> {
@@ -201,9 +290,6 @@ function claimExplainData(entry: ClaimWithTrust): ExplainPanelData {
   return {
     title: entry.topic,
     what: entry.text_verbatim,
-    // Per brief §4.1: claim verdicts are a model's judgement of what a source
-    // says — the arithmetic of how much that's worth (trust, pips) is `▦◇`, but
-    // the verdict itself is `◇`.
     chip: "model",
     model: {
       modelName: entry.trust?.router_class ?? "claim-verification",
@@ -222,32 +308,9 @@ function claimExplainData(entry: ClaimWithTrust): ExplainPanelData {
   };
 }
 
-/** Renders one cited sentence with its inline verdict badge — Family A/B per
- * scoring-ux §3.6(b): qualitative/unverifiable claims never get a verdict
- * ("Judgement — not verifiable"), forecast claims never get a verdict either
- * ("Forecast"), everything else renders its `derived_status`. */
-function CitedSentence({
-  text,
-  claim,
-}: {
-  text: string;
-  claim: ClaimWithTrust | undefined | null;
-}) {
+/** Inline verdict badge for one resolved claim — Family A/B per scoring-ux §3.6(b). */
+function VerdictBadgeButton({ claim }: { claim: ClaimWithTrust }) {
   const { open } = useExplainPanel();
-
-  if (!claim) {
-    // The claim id on this block didn't resolve against `cited_claim_ids` —
-    // surface that as a visible gap, not a silently dropped citation. A memo
-    // sentence with no traceable claim behind it is a bug (brief §10), and
-    // hiding this would hide the bug along with it.
-    return (
-      <>
-        {text}{" "}
-        <span className="font-mono text-[10px] text-[color:var(--color-text-muted)]">(uncited)</span>{" "}
-      </>
-    );
-  }
-
   const badge =
     claim.trust?.router_class === "forecast" ? (
       <ForecastBadge className="cursor-pointer" />
@@ -256,18 +319,53 @@ function CitedSentence({
     ) : (
       <VerdictBadge status={claim.trust?.derived_status ?? "unverified"} />
     );
-
   return (
-    <>
-      {text}{" "}
-      <button
-        type="button"
-        onClick={() => open(claimExplainData(claim))}
-        className="cursor-pointer border-none bg-transparent p-0 align-baseline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]"
-      >
-        {badge}
-      </button>{" "}
-    </>
+    <button
+      type="button"
+      onClick={() => open(claimExplainData(claim))}
+      className="cursor-pointer border-none bg-transparent p-0 align-baseline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]"
+    >
+      {badge}
+    </button>
+  );
+}
+
+/** One statement, rendered as its own paragraph. `fact` statements carry a verdict
+ * badge per cited claim (and an honest "(uncited)" only for a fact whose claim did
+ * not resolve). not_disclosed/benchmark/structural carry no badge — they are honest
+ * absences / comparables / connective prose, never a "bug". */
+function Statement({
+  block,
+  citedByClaimId,
+}: {
+  block: ProseBlock;
+  citedByClaimId: Map<string, ClaimWithTrust>;
+}) {
+  const muted = block.kind === "not_disclosed";
+  const isFact = block.kind === "fact";
+  const resolved = block.claimIds.map((id) => ({ id, claim: citedByClaimId.get(id) ?? null }));
+  return (
+    <p
+      className={`m-0 mt-2 text-wrap-pretty first:mt-0 ${muted ? "text-[color:var(--color-text-muted)]" : ""}`}
+    >
+      {block.text}{" "}
+      {isFact && resolved.length === 0 ? (
+        <span className="font-mono text-[10px] text-[color:var(--color-text-muted)]">(uncited)</span>
+      ) : null}
+      {isFact
+        ? resolved.map(({ id, claim }) =>
+            claim ? (
+              <span key={id}>
+                <VerdictBadgeButton claim={claim} />{" "}
+              </span>
+            ) : (
+              <span key={id} className="font-mono text-[10px] text-[color:var(--color-text-muted)]">
+                (uncited){" "}
+              </span>
+            ),
+          )
+        : null}
+    </p>
   );
 }
 
@@ -278,22 +376,15 @@ function ProseBlockText({
   section: ProseSection;
   citedByClaimId: Map<string, ClaimWithTrust>;
 }) {
-  if (typeof section === "string") {
-    return <p className="m-0 text-wrap-pretty">{section}</p>;
-  }
   if (section.length === 0) {
     return <p className="m-0 text-[13px] text-[color:var(--color-text-muted)] italic">Nothing to say here.</p>;
   }
   return (
-    <p className="m-0 text-wrap-pretty">
+    <div>
       {section.map((block, i) => (
-        <CitedSentence
-          key={i}
-          text={block.text}
-          claim={block.claimId ? citedByClaimId.get(block.claimId) : null}
-        />
+        <Statement key={i} block={block} citedByClaimId={citedByClaimId} />
       ))}
-    </p>
+    </div>
   );
 }
 
@@ -324,9 +415,7 @@ function SwotQuadrant({
         {sectionHasContent(section) ? (
           <ProseBlockText section={section} citedByClaimId={citedByClaimId} />
         ) : (
-          <p className="m-0 text-[13px] text-[color:var(--color-text-muted)] italic">
-            Nothing to say here.
-          </p>
+          <p className="m-0 text-[13px] text-[color:var(--color-text-muted)] italic">Nothing to say here.</p>
         )}
       </div>
     </div>
@@ -347,23 +436,106 @@ function Swot({
       <div className="grid grid-cols-2 gap-x-[22px] gap-y-3.5 text-[14px]">
         <SwotQuadrant label="Strengths" section={swot.strengths} citedByClaimId={citedByClaimId} />
         <SwotQuadrant label="Weaknesses" section={swot.weaknesses} citedByClaimId={citedByClaimId} />
-        <SwotQuadrant
-          label="Opportunities"
-          section={swot.opportunities}
-          citedByClaimId={citedByClaimId}
-        />
+        <SwotQuadrant label="Opportunities" section={swot.opportunities} citedByClaimId={citedByClaimId} />
         <SwotQuadrant label="Threats" section={swot.threats} citedByClaimId={citedByClaimId} />
       </div>
     </div>
   );
 }
 
+function severityClass(severity: string): string {
+  return severity === "material"
+    ? "text-[color:var(--color-text)] border-[color:var(--color-text)]"
+    : "text-[color:var(--color-text-muted)] border-[color:var(--color-border)]";
+}
+
+function RiskMatrix({
+  raw,
+  citedByClaimId,
+}: {
+  raw: unknown;
+  citedByClaimId: Map<string, ClaimWithTrust>;
+}) {
+  const risks = normalizeRiskMatrix(raw);
+  if (risks.length === 0) return null;
+  return (
+    <div>
+      <SectionHeading>Risk matrix</SectionHeading>
+      <div className="flex flex-col gap-2.5">
+        {risks.map((r, i) => (
+          <div key={i} className="border-b border-[color:var(--color-border)] pb-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${severityClass(r.severity)}`}
+              >
+                {r.severity || "severity ?"}
+              </span>
+              <span className="rounded-full border border-[color:var(--color-border)] px-2 py-0.5 font-mono text-[10px] text-[color:var(--color-text-muted)]">
+                likelihood: {r.likelihood || "?"}
+              </span>
+              {r.claimIds.map((id) => {
+                const claim = citedByClaimId.get(id);
+                return claim ? <VerdictBadgeButton key={id} claim={claim} /> : null;
+              })}
+            </div>
+            <p className="m-0 mt-1 text-[14px] text-wrap-pretty">{r.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Competition({
+  raw,
+  citedByClaimId,
+}: {
+  raw: unknown;
+  citedByClaimId: Map<string, ClaimWithTrust>;
+}) {
+  const { statements, competitors } = normalizeCompetition(raw);
+  if (!sectionHasContent(statements) && competitors.length === 0) return null;
+  return (
+    <div>
+      <SectionHeading>Competition</SectionHeading>
+      {sectionHasContent(statements) ? (
+        <ProseBlockText section={statements} citedByClaimId={citedByClaimId} />
+      ) : null}
+      {competitors.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {competitors.map((c, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2 text-[14px]">
+              <span className="font-medium">{c.name}</span>
+              {!c.namedByFounder ? (
+                <span className="rounded-full border border-[color:var(--color-text)] px-2 py-0.5 font-mono text-[10px]">
+                  not named by founder
+                </span>
+              ) : (
+                <span className="font-mono text-[10px] text-[color:var(--color-text-muted)]">
+                  named by founder
+                </span>
+              )}
+              {c.claimIds.map((id) => {
+                const claim = citedByClaimId.get(id);
+                return claim ? <VerdictBadgeButton key={id} claim={claim} /> : null;
+              })}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Markdown export — client-only, no backend call. Ignores inline citation ids
-// (a plain-text export has nowhere to put a clickable badge) but keeps the
-// prose, the recommendation and the where-to-dig block, which is what a reader
-// pastes into an email before a founder call.
+// Markdown export — client-only, no backend call. Keeps section + bullet
+// structure; inline citation ids are dropped (plain text has nowhere to put a
+// clickable badge) but not_disclosed / benchmark statements survive as prose.
 // ---------------------------------------------------------------------------
+
+function blocksToMarkdown(section: ProseSection): string {
+  return section.map((b) => b.text).join("\n\n");
+}
 
 function memoToMarkdown(memo: MemoRow, companyName: string, thesisName: string | null): string {
   const lines: string[] = [];
@@ -372,13 +544,15 @@ function memoToMarkdown(memo: MemoRow, companyName: string, thesisName: string |
   lines.push("");
   if (memo.recommendation) {
     lines.push(`**Recommendation: ${RECOMMENDATION_LABEL[memo.recommendation]}**`);
+    const cond = normalizeConditions(memo.conditions);
+    if (cond.rationale) lines.push("", cond.rationale);
     lines.push("");
   }
 
   const push = (heading: string, raw: unknown) => {
     const section = normalizeSection(raw);
     if (!sectionHasContent(section)) return;
-    lines.push(`## ${heading}`, sectionToPlainText(section), "");
+    lines.push(`## ${heading}`, blocksToMarkdown(section), "");
   };
 
   push("Company snapshot", memo.sections.snapshot);
@@ -386,21 +560,43 @@ function memoToMarkdown(memo: MemoRow, companyName: string, thesisName: string |
 
   const swot = normalizeSwot(memo.sections.swot);
   lines.push("## SWOT");
-  lines.push(`**Strengths.** ${sectionToPlainText(swot.strengths) || "Nothing to say here."}`);
-  lines.push(`**Weaknesses.** ${sectionToPlainText(swot.weaknesses) || "Nothing to say here."}`);
-  lines.push(`**Opportunities.** ${sectionToPlainText(swot.opportunities) || "Nothing to say here."}`);
-  lines.push(`**Threats.** ${sectionToPlainText(swot.threats) || "Nothing to say here."}`, "");
+  const swotBlock = (label: string, section: ProseSection) => {
+    lines.push(`**${label}**`);
+    if (sectionHasContent(section)) section.forEach((b) => lines.push(`- ${b.text}`));
+    else lines.push("- Nothing to say here.");
+    lines.push("");
+  };
+  swotBlock("Strengths", swot.strengths);
+  swotBlock("Weaknesses", swot.weaknesses);
+  swotBlock("Opportunities", swot.opportunities);
+  swotBlock("Threats", swot.threats);
 
   push("Problem & product", memo.sections.problem_product);
   push("Traction & KPIs", memo.sections.traction);
-  for (const [key, heading] of Object.entries(OPTIONAL_SECTION_HEADINGS)) {
-    if (key in memo.sections) push(heading, memo.sections[key]);
+
+  const risks = normalizeRiskMatrix((memo.sections as Record<string, unknown>).risk_matrix);
+  if (risks.length > 0) {
+    lines.push("## Risk matrix");
+    risks.forEach((r) => lines.push(`- **[${r.severity || "?"} · ${r.likelihood || "?"}]** ${r.text}`));
+    lines.push("");
   }
 
-  const conditions = normalizeConditions(memo.conditions);
-  if (conditions.length > 0) {
+  const comp = normalizeCompetition((memo.sections as Record<string, unknown>).competition);
+  if (sectionHasContent(comp.statements) || comp.competitors.length > 0) {
+    lines.push("## Competition");
+    if (sectionHasContent(comp.statements)) lines.push(blocksToMarkdown(comp.statements), "");
+    comp.competitors.forEach((c) =>
+      lines.push(`- ${c.name}${c.namedByFounder ? "" : " _(not named by founder)_"}`),
+    );
+    lines.push("");
+  }
+
+  push("Financials", (memo.sections as Record<string, unknown>).financials_lite);
+
+  const cond = normalizeConditions(memo.conditions);
+  if (cond.items.length > 0) {
     lines.push("## Conditions");
-    conditions.forEach((c) => lines.push(`- ${c}`));
+    cond.items.forEach((c) => lines.push(`- ${c.text}${c.closes ? ` — closes: ${c.closes}` : ""}`));
     lines.push("");
   }
 
@@ -438,8 +634,7 @@ function Memo() {
 
   const appQ = useQuery({
     queryKey: ["investor", "application", applicationId],
-    queryFn: () =>
-      getApplications({ filters: { application_id: `eq.${applicationId}` }, limit: 1 }),
+    queryFn: () => getApplications({ filters: { application_id: `eq.${applicationId}` }, limit: 1 }),
   });
   const founderQ = useQuery({
     queryKey: ["investor", "founder-by-application", applicationId],
@@ -465,10 +660,6 @@ function Memo() {
   }, [citedQ.data]);
 
   const loading = appQ.isLoading || memoQ.isLoading;
-  // `isError` covers a hard transport failure (queryFn itself threw, which none of
-  // this file's calls ever do — belt and suspenders); `!result.ok` covers the normal
-  // failure path, where `getApplications`/`getCurrentMemo` resolve to a typed error
-  // instead of throwing (investor-api.ts's `Result<T>` contract).
   const failureMessage = appQ.isError
     ? "Something went wrong on our side. Try again."
     : memoQ.isError
@@ -526,11 +717,6 @@ function Memo() {
   const isSynthetic = application.is_synthetic || founder?.is_synthetic === true;
   const companyName = application.company_name ?? "This company";
 
-  // §6 of data-contracts.md: `thesis_coverage` is NULL in keyword mode and in
-  // full mode alike whenever nothing was assessed — but keyword mode is the
-  // only case where `thesis_fit` can be non-null while `thesis_coverage` stays
-  // null (full mode always populates coverage alongside a non-null fit). No
-  // `evaluation_mode` column exists on `api_applications` to read directly.
   const keywordModeOnly = application.thesis_fit != null && application.thesis_coverage == null;
   const insufficientReason =
     application.thesis_fit == null
@@ -538,6 +724,8 @@ function Memo() {
         ? `Not assessable against this thesis — missing ${application.thesis_missing_fields.join(", ")}.`
         : "Not assessable against this thesis."
       : null;
+
+  const conditions = memo ? normalizeConditions(memo.conditions) : { rationale: null, items: [] };
 
   return (
     <div className="px-9 py-7 pb-20">
@@ -596,6 +784,12 @@ function Memo() {
                   deterministic rule over the thesis — not a model's call
                 </span>
               </div>
+              {conditions.rationale ? (
+                <div className="mt-2.5 border-t border-[color:var(--color-border)] pt-2.5 text-[13px]">
+                  <span className="font-medium">Why: </span>
+                  {conditions.rationale}
+                </div>
+              ) : null}
               {application.thesis_id ? (
                 <div className="mt-2.5 border-t border-[color:var(--color-border)] pt-2.5">
                   <ThesisFitLedger
@@ -611,16 +805,20 @@ function Memo() {
                   No thesis was active when this application was evaluated.
                 </p>
               )}
-              {memo.recommendation === "proceed-with-conditions" ? (
-                (() => {
-                  const conditions = normalizeConditions(memo.conditions);
-                  return conditions.length > 0 ? (
-                    <div className="mt-2.5 border-t border-[color:var(--color-border)] pt-2.5 text-[13px]">
-                      <span className="font-medium">Conditions: </span>
-                      {conditions.join(" · ")}
-                    </div>
-                  ) : null;
-                })()
+              {conditions.items.length > 0 ? (
+                <div className="mt-2.5 border-t border-[color:var(--color-border)] pt-2.5 text-[13px]">
+                  <span className="font-medium">Conditions</span>
+                  <ul className="mt-1 mb-0 flex list-disc flex-col gap-1 ps-5">
+                    {conditions.items.map((c, i) => (
+                      <li key={i}>
+                        {c.text}
+                        {c.closes ? (
+                          <span className="text-[color:var(--color-text-muted)]"> — closes {c.closes}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
 
@@ -640,17 +838,25 @@ function Memo() {
               </div>
             ))}
 
-            {Object.entries(OPTIONAL_SECTION_HEADINGS).map(([key, heading]) => {
-              if (!(key in memo.sections)) return null;
-              const section = normalizeSection(memo.sections[key]);
-              if (!sectionHasContent(section)) return null;
-              return (
-                <div key={key}>
-                  <SectionHeading>{heading}</SectionHeading>
-                  <ProseBlockText section={section} citedByClaimId={citedByClaimId} />
-                </div>
-              );
-            })}
+            {/* Optional sections — each has a dedicated renderer; an absent key renders nothing. */}
+            {"risk_matrix" in memo.sections ? (
+              <RiskMatrix raw={(memo.sections as Record<string, unknown>).risk_matrix} citedByClaimId={citedByClaimId} />
+            ) : null}
+            {"competition" in memo.sections ? (
+              <Competition raw={(memo.sections as Record<string, unknown>).competition} citedByClaimId={citedByClaimId} />
+            ) : null}
+            {"financials_lite" in memo.sections ? (
+              (() => {
+                const section = normalizeSection((memo.sections as Record<string, unknown>).financials_lite);
+                if (!sectionHasContent(section)) return null;
+                return (
+                  <div>
+                    <SectionHeading>Financials</SectionHeading>
+                    <ProseBlockText section={section} citedByClaimId={citedByClaimId} />
+                  </div>
+                );
+              })()
+            ) : null}
 
             {(() => {
               const questions = normalizeDeepDiveQuestions(memo.deep_dive_questions);
@@ -668,9 +874,7 @@ function Memo() {
                         key={i}
                         className="grid grid-cols-[34px_1fr] gap-3 border-b border-[color:var(--color-border)] py-3"
                       >
-                        <span className="font-mono text-[13px] text-[color:var(--color-text-muted)]">
-                          {i + 1}
-                        </span>
+                        <span className="font-mono text-[13px] text-[color:var(--color-text-muted)]">{i + 1}</span>
                         <div>
                           <div className="text-[15px] leading-[1.45] font-medium">{q.question}</div>
                           {q.closesGap ? (
@@ -690,20 +894,9 @@ function Memo() {
           <div className="mt-10 border border-[color:var(--color-border)] p-8 text-center">
             <p className="text-[15px] font-medium">No memo generated yet</p>
             <p className="mx-auto mt-2 max-w-[440px] text-[13px] text-[color:var(--color-text-muted)]">
-              Memo generation reads this application's evidence, trust and thesis fit and writes a
-              new versioned memo row. That workflow hasn't shipped yet — this is the honest state,
-              not a loading spinner.
-            </p>
-            <button
-              type="button"
-              disabled
-              title="Not wired yet — feature 06's memo-writer workflow has not shipped."
-              className="mt-5 cursor-not-allowed border border-[color:var(--color-border)] px-4 py-2 text-[13px] font-medium text-[color:var(--color-text-muted)] disabled:opacity-70"
-            >
-              Generate memo
-            </button>
-            <p className="mt-2 text-[11px] text-[color:var(--color-text-muted)]">
-              Not available in this build — integration point for feature 06.
+              Memo generation reads this application's evidence, trust and thesis fit and writes a new
+              versioned memo row via the <span className="font-mono">f06-generate-memo</span> workflow.
+              Trigger it from the backend for this application, then reload.
             </p>
           </div>
         )}

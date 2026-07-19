@@ -12,6 +12,8 @@ services:
         VITE_SUPABASE_REST_URL: ${VITE_SUPABASE_REST_URL}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
         VITE_N8N_BASE_URL: ${VITE_N8N_BASE_URL}
+        VITE_DASHBOARD_USER: ${VITE_DASHBOARD_USER}
+        VITE_DASHBOARD_PASSWORD: ${VITE_DASHBOARD_PASSWORD}
     container_name: vcbrain-web
     restart: unless-stopped
     networks:

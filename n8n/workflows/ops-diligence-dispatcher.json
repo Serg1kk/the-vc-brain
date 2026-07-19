@@ -1,0 +1,807 @@
+{
+  "name": "ops-diligence-dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "6e345e12-7549-4ce2-ad3e-004b117bc6ee",
+      "name": "Schedule: every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + \"/applications?status=eq.screening&created_at=gt.\" + encodeURIComponent(\"2026-07-19T12:12:55Z\") + \"&select=id,created_at&order=created_at.asc&limit=25\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "1a4d1ad7-9a7b-438d-acff-b585a721ed73",
+      "name": "GET pending applications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all().flatMap(i => { try { const p = JSON.parse((i.json && i.json.data) || 'null'); return Array.isArray(p) ? p : (p ? [p] : []); } catch (e) { return []; } }) // postgrestNode() returns raw text (see f04-market-intel.json convention) -- parsed here, never relying on n8n's own array-unwrapping (verified live there: it is inconsistent for empty-array responses -- sometimes 0 items, sometimes 1 item with json={} -- either of which silently corrupts this check);\nreturn [{ json: { pending_applications: rows } }];"
+      },
+      "id": "f3175ee0-27a5-4452-ac7b-6d702f66c892",
+      "name": "Extract pending applications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + \"/scores?axis=eq.market&application_id=not.is.null&select=application_id&limit=1000\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "e243a2d4-937d-4804-8ab8-7084dbd58b07",
+      "name": "GET market scores",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Extract pending applications').first().json;\nconst rows = $input.all().flatMap(i => { try { const p = JSON.parse((i.json && i.json.data) || 'null'); return Array.isArray(p) ? p : (p ? [p] : []); } catch (e) { return []; } }) // postgrestNode() returns raw text (see f04-market-intel.json convention) -- parsed here, never relying on n8n's own array-unwrapping (verified live there: it is inconsistent for empty-array responses -- sometimes 0 items, sometimes 1 item with json={} -- either of which silently corrupts this check);\nconst scoredIds = rows.map(r => r.application_id).filter(Boolean);\nreturn [{ json: { ...ctx, scored_application_ids: scoredIds } }];"
+      },
+      "id": "6c5711a7-eb98-42c0-9ef5-65799eed336a",
+      "name": "Extract market scores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + \"/events?event_type=eq.diligence_dispatched&entity_type=eq.application&select=entity_id&limit=1000\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "d5ad0910-a1ba-42b2-af9b-37e396effaea",
+      "name": "GET dispatch guard events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('Extract market scores').first().json;\nconst rows = $input.all().flatMap(i => { try { const p = JSON.parse((i.json && i.json.data) || 'null'); return Array.isArray(p) ? p : (p ? [p] : []); } catch (e) { return []; } }) // postgrestNode() returns raw text (see f04-market-intel.json convention) -- parsed here, never relying on n8n's own array-unwrapping (verified live there: it is inconsistent for empty-array responses -- sometimes 0 items, sometimes 1 item with json={} -- either of which silently corrupts this check);\nconst dispatchedIds = rows.map(r => r.entity_id).filter(Boolean);\nreturn [{ json: { ...ctx, dispatched_application_ids: dispatchedIds } }];"
+      },
+      "id": "16342b03-df73-4b7d-b5ba-104754698aca",
+      "name": "Extract dispatch guard events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $input.first().json;\nconst scoredSet = new Set(ctx.scored_application_ids || []);\nconst dispatchedSet = new Set(ctx.dispatched_application_ids || []);\nconst candidates = (ctx.pending_applications || [])\n  .filter(a => a && a.id && !scoredSet.has(a.id) && !dispatchedSet.has(a.id))\n  .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));\n// Exactly ONE application per tick (cost bound, design note in README-ops-dispatcher.md):\n// every-minute ticks drain a queue anyway, and this keeps the diligence-chain cost per\n// tick predictable regardless of how many applications are momentarily pending.\nconst chosen = candidates.length ? candidates[0] : null;\nreturn [{ json: {\n  candidate_found: !!chosen,\n  application_id: chosen ? chosen.id : null,\n  application_created_at: chosen ? chosen.created_at : null,\n  candidate_pool_size: candidates.length,\n} }];"
+      },
+      "id": "399c6778-1f8d-4dee-a959-e8d20ca73abd",
+      "name": "Pick next candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "f08e71d3-ac65-4351-a700-9f5e1be0eb1b",
+              "leftValue": "={{ $json.candidate_found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d3bd1591-1206-49fa-8f58-5ae0152be570",
+      "name": "Candidate found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "25031d89-765c-4fe6-b47c-d9b6c78d2b69",
+      "name": "STOP: no candidates",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + \"/events\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  event_type: \"diligence_dispatched\", entity_type: \"application\", entity_id: $json.application_id,\n  actor: \"ops-diligence-dispatcher\", payload: { source: \"ops-diligence-dispatcher\" },\n}) }}"
+      },
+      "id": "39ba9509-71fd-4116-92e2-9f55cd1e9bbc",
+      "name": "POST guard event (diligence_dispatched)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2340,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Guard-event write happens BEFORE the diligence chain so an overlapping next tick\n// (ticks fire every minute; f04 alone can run 1-4 min) can never double-pick this\n// application. Response shape from here on is irrelevant -- application_id always\n// comes from 'Pick next candidate', never from the previous HTTP node's body.\nconst app = $('Pick next candidate').first().json;\nreturn [{ json: { application_id: app.application_id } }];"
+      },
+      "id": "a4543e05-7866-47a6-a8a3-ac1e2943d65b",
+      "name": "Carry application_id (post-guard)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/f04-market-intel",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ application_id: $json.application_id }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "a2ceecb7-1c7e-4292-bfe0-06be001e4776",
+      "name": "POST /webhook/f04-market-intel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2860,
+        -100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Guard-event write happens BEFORE the diligence chain so an overlapping next tick\n// (ticks fire every minute; f04 alone can run 1-4 min) can never double-pick this\n// application. Response shape from here on is irrelevant -- application_id always\n// comes from 'Pick next candidate', never from the previous HTTP node's body.\nconst app = $('Pick next candidate').first().json;\nreturn [{ json: { application_id: app.application_id } }];"
+      },
+      "id": "ca61be5c-d65c-414d-8696-a9206c8dcf99",
+      "name": "Carry application_id (post-f04-market-intel)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/f05-verify-claims",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ application_id: $json.application_id }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "daac9fb4-78dc-429b-a4b7-deba0ce61104",
+      "name": "POST /webhook/f05-verify-claims",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        3380,
+        -100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Guard-event write happens BEFORE the diligence chain so an overlapping next tick\n// (ticks fire every minute; f04 alone can run 1-4 min) can never double-pick this\n// application. Response shape from here on is irrelevant -- application_id always\n// comes from 'Pick next candidate', never from the previous HTTP node's body.\nconst app = $('Pick next candidate').first().json;\nreturn [{ json: { application_id: app.application_id } }];"
+      },
+      "id": "cf34eb56-0e27-465e-9922-5a30f0577d59",
+      "name": "Carry application_id (post-f05-verify-claims)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3640,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/f05-contradiction-scan",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ application_id: $json.application_id }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "6d70891a-ea26-4179-9977-8957e342c58e",
+      "name": "POST /webhook/f05-contradiction-scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        3900,
+        -100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Guard-event write happens BEFORE the diligence chain so an overlapping next tick\n// (ticks fire every minute; f04 alone can run 1-4 min) can never double-pick this\n// application. Response shape from here on is irrelevant -- application_id always\n// comes from 'Pick next candidate', never from the previous HTTP node's body.\nconst app = $('Pick next candidate').first().json;\nreturn [{ json: { application_id: app.application_id } }];"
+      },
+      "id": "4098ce3c-cce7-4681-b305-6fe7bef925d9",
+      "name": "Carry application_id (post-f05-contradiction-scan)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/f05-trust-rollup",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ application_id: $json.application_id }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "fe88cddd-fb5b-4646-b630-4226174daf15",
+      "name": "POST /webhook/f05-trust-rollup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        4420,
+        -100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Guard-event write happens BEFORE the diligence chain so an overlapping next tick\n// (ticks fire every minute; f04 alone can run 1-4 min) can never double-pick this\n// application. Response shape from here on is irrelevant -- application_id always\n// comes from 'Pick next candidate', never from the previous HTTP node's body.\nconst app = $('Pick next candidate').first().json;\nreturn [{ json: { application_id: app.application_id } }];"
+      },
+      "id": "a3e79caf-d5ac-4213-afd9-016e95131721",
+      "name": "Carry application_id (post-f05-trust-rollup)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4680,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/f06-generate-memo",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ application_id: $json.application_id }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "119549aa-8f61-472f-9c97-4be2ef3e7d5c",
+      "name": "POST /webhook/f06-generate-memo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        4940,
+        -100
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Guard-event write happens BEFORE the diligence chain so an overlapping next tick\n// (ticks fire every minute; f04 alone can run 1-4 min) can never double-pick this\n// application. Response shape from here on is irrelevant -- application_id always\n// comes from 'Pick next candidate', never from the previous HTTP node's body.\nconst app = $('Pick next candidate').first().json;\nreturn [{ json: { application_id: app.application_id } }];"
+      },
+      "id": "6fe7f5fc-3500-47d8-93bd-7574114c4785",
+      "name": "Carry application_id (post-f06-generate-memo)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5200,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + \"/events\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  event_type: \"diligence_completed\", entity_type: \"application\", entity_id: $json.application_id,\n  actor: \"ops-diligence-dispatcher\", payload: {},\n}) }}"
+      },
+      "id": "54d2478d-dbdd-4868-ba63-d4ca6a6c370a",
+      "name": "POST completion event (diligence_completed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        5460,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule: every minute": {
+      "main": [
+        [
+          {
+            "node": "GET pending applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET pending applications": {
+      "main": [
+        [
+          {
+            "node": "Extract pending applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract pending applications": {
+      "main": [
+        [
+          {
+            "node": "GET market scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET market scores": {
+      "main": [
+        [
+          {
+            "node": "Extract market scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract market scores": {
+      "main": [
+        [
+          {
+            "node": "GET dispatch guard events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET dispatch guard events": {
+      "main": [
+        [
+          {
+            "node": "Extract dispatch guard events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract dispatch guard events": {
+      "main": [
+        [
+          {
+            "node": "Pick next candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick next candidate": {
+      "main": [
+        [
+          {
+            "node": "Candidate found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate found?": {
+      "main": [
+        [
+          {
+            "node": "POST guard event (diligence_dispatched)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "STOP: no candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST guard event (diligence_dispatched)": {
+      "main": [
+        [
+          {
+            "node": "Carry application_id (post-guard)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry application_id (post-guard)": {
+      "main": [
+        [
+          {
+            "node": "POST /webhook/f04-market-intel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /webhook/f04-market-intel": {
+      "main": [
+        [
+          {
+            "node": "Carry application_id (post-f04-market-intel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry application_id (post-f04-market-intel)": {
+      "main": [
+        [
+          {
+            "node": "POST /webhook/f05-verify-claims",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /webhook/f05-verify-claims": {
+      "main": [
+        [
+          {
+            "node": "Carry application_id (post-f05-verify-claims)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry application_id (post-f05-verify-claims)": {
+      "main": [
+        [
+          {
+            "node": "POST /webhook/f05-contradiction-scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /webhook/f05-contradiction-scan": {
+      "main": [
+        [
+          {
+            "node": "Carry application_id (post-f05-contradiction-scan)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry application_id (post-f05-contradiction-scan)": {
+      "main": [
+        [
+          {
+            "node": "POST /webhook/f05-trust-rollup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /webhook/f05-trust-rollup": {
+      "main": [
+        [
+          {
+            "node": "Carry application_id (post-f05-trust-rollup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry application_id (post-f05-trust-rollup)": {
+      "main": [
+        [
+          {
+            "node": "POST /webhook/f06-generate-memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /webhook/f06-generate-memo": {
+      "main": [
+        [
+          {
+            "node": "Carry application_id (post-f06-generate-memo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry application_id (post-f06-generate-memo)": {
+      "main": [
+        [
+          {
+            "node": "POST completion event (diligence_completed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  }
+}

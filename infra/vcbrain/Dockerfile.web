@@ -7,16 +7,26 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# npm install (not npm ci): 06/09/11 are live-editing web/ in parallel with this
+# redeploy, so the lockfile can drift between rsync and build -- npm install
+# tolerates/reconciles that, npm ci hard-fails on any mismatch. One-off demo
+# redeploy, non-reproducible-build tradeoff accepted (operator/team-lead call,
+# 2026-07-19). This install runs entirely inside the build container -- does
+# not touch the host's own node_modules.
+RUN npm install
 
 COPY . .
 
 ARG VITE_SUPABASE_REST_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_N8N_BASE_URL
+ARG VITE_DASHBOARD_USER
+ARG VITE_DASHBOARD_PASSWORD
 ENV VITE_SUPABASE_REST_URL=$VITE_SUPABASE_REST_URL \
     VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
     VITE_N8N_BASE_URL=$VITE_N8N_BASE_URL \
+    VITE_DASHBOARD_USER=$VITE_DASHBOARD_USER \
+    VITE_DASHBOARD_PASSWORD=$VITE_DASHBOARD_PASSWORD \
     NITRO_PRESET=node_server
 
 RUN npm run build
