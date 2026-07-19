@@ -584,12 +584,23 @@ stated rather than guessed — it determines both `coverage` and `input_claim_id
 -- claims in scope for application :app
 claims c JOIN cards k ON k.id = c.card_id
 WHERE k.application_id = :app
-   OR k.company_id     = (SELECT company_id FROM applications WHERE id = :app)
+   OR (k.company_id = (SELECT company_id FROM applications WHERE id = :app)
+       AND (k.application_id IS NULL OR k.application_id = :app))
    OR (k.founder_id IN (SELECT fc.founder_id FROM founder_company fc
                         WHERE fc.company_id = (SELECT company_id FROM applications WHERE id = :app))
        AND (k.company_id IS NULL
             OR k.company_id = (SELECT company_id FROM applications WHERE id = :app)))
 ```
+
+⚠️ The `application_id` restriction on route 2 is load-bearing too (added post-QA pass 1, finding 1,
+qa-report-05.md — not applied at first draft). This section originally assumed "company cards ... are
+not attached to any specific application row"; that is false in the live corpus. Feature 02's
+`radar_activated` flow creates several `applications` rows per company, only one of which is ever
+promoted to carry real `cards`, and a promoted card DOES carry a concrete `application_id` alongside
+its `company_id`. Without the `(application_id IS NULL OR application_id = :app)` restriction, an
+unrestricted company match pulls that one company's cards — and their entire claim set — into every
+sibling application's rollup, each reporting a fully "scored" Trust row despite having done none of
+this feature's actual work. Measured live: 104 of 308 applications (34%) would leak this way.
 
 ⚠️ The `company_id` restriction on route 3 is load-bearing. Feature 03's entire premise is that a
 founder **persists across startups**, so an unrestricted founder join would pull cards belonging to

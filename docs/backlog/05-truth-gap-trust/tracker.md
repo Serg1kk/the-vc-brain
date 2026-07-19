@@ -27,15 +27,18 @@ parallelism and a headless runner instead.
 | — | **commit checkpoint 1** | @devops | A1 | ✅ **done** | `f0c2b90` | schema+seed+smoke+lib/f05 core; nothing pushed, `.env` not staged |
 | **T1 — runner** |
 | B3 | `lib/f05/run.js` | @backend-developer | A1,A2,B1,B2 | ✅ **done** | `run.js` + `run.test.js`; full f05 suite **147/147** | All 8 acceptances re-verified by orchestrator on live DB: trust rows written & idempotent (19.50 across runs), GDPR anti-join **0**, personal-data leak **0**, `ai_runs.confidence` all NULL, duplicate `content_hash` **0**. **Caught 2 real bugs pre-ship:** (1) the application-fallback event branch leaked `entity_match.quote` — the acceptance SELECT alone would have stayed 0 while shipping the bug; only its own unit test caught it; (2) the quote_guard candidate query matched `contradicts` rows instead of the claim's own `supports` citations, manufacturing 2 spurious mismatches. Honest: **74/74 live `gh_provenance` checks return `insufficient_data`**, no verdict fabricated |
-| B4 | commit-level GitHub ingestion (added mid-build) | @backend-developer | — | **in progress** | | Operator supplied a PAT (5000/hr verified live). Closes the provenance data gap on the 34 founders holding both GitHub and Show HN signals |
+| B4 | commit-level GitHub ingestion (added mid-build) | @backend-developer | — | ✅ **done** | `lib/f05/ingest_commits.js`; **31 commit-level signals** written | Operator supplied a PAT (5000/hr, verified live). Orphan-FK count unchanged at 9; idempotent re-run inserts 0. ⭐ **Honest result: 32 real founders checked, 31 clean, 1 insufficient_data, ZERO flagged.** The agent ran all 32 rather than sampling, and explicitly declined to hunt for a flaggable case to force into the demo. This is the better outcome — the check is live on real people and produces **no false accusations**, which was the feature's primary risk. Also surfaced a 4th instance of feature 02's known founder/company dedup gap (two founders resolving to one repo); our `content_hash` collapsed it correctly |
 | — | **commit checkpoint 2** | @devops | B3 | ✅ **done** | `8895ae9` | runner, entity gate, verifiers, fixture, agent specs. Verified: `.env` absent from the commit, nothing pushed |
 | **T2 — n8n + paid branch** |
-| C1a | generator + `f05-trust-rollup` | @n8n-workflow-builder | B3 | **in progress** | | the only workflow 06 is blocked on; acceptance is a SELECT, never n8n's success status |
+| C1a | generator + `f05-trust-rollup` | @n8n-workflow-builder | B3 | ✅ **done** | n8n id `Wtd887vYwv5x3FvH`, 17 nodes, **active** | Verified by orchestrator: live row `558883f6…` = **19.50 / 0.43 / 12**, identical to `lib/f05/run.js` — the Code-node inlining has not drifted from the tested module, which is the whole point of the generator. Executions API confirms every node on the taken branch ran and the insufficient-evidence branch correctly did **not**. Exported JSON carries secrets only as `$env.*`, zero literals. ⚠️ **Cross-feature find → recorded in the shared tooling changelog: `globalThis.crypto` is UNDEFINED in the n8n task-runner sandbox**, contradicting the project's own standing guidance; `docker exec` prints `object` on the same container because it is a different global scope. Use `require('crypto')` |
+| — | **commit checkpoint 3** | @devops | B4, C1a | ✅ **done** | `875f4ae` | Triggered early and deliberately, right after the project's **second** data-loss event (~11:00, feature 08 lost an hour to a stray `git reset` from another terminal). Dispatched with an explicit ban on pull/rebase/stash/reset/checkout/clean. Verified: nothing pushed, `.env` unstaged, other terminals' files untouched |
 | C3 | `factual_dynamic` Tavily branch | @backend-developer | B3 | **in progress** | | ∥ with C1a |
 | C1b | `f05-verify-claims` + `f05-contradiction-scan` | @n8n-workflow-builder | C1a, C3 | pending | | also owns entity-gate step 3 (the LLM matcher hook) |
 | **T3 — calibration, QA, close** |
 | D2 | `min_coverage` calibration | @database-engineer | A1,B1 | pending | | acceptance is a number with the count behind it, not a note |
-| D3 | QA gate pass 1 — deterministic core | @qa-engineer | B3 | **in progress** | | started early, ∥ with T2 (recovers ~90 min; 04's gate measured 130 min) |
+| D3 | QA gate pass 1 — deterministic core | @qa-engineer | B3 | ⛔ **GATE BLOCKED** → 2 findings, both in fix | `qa-report-05.md` | Started early ∥ with T2. **F1 CRITICAL, confirmed by orchestrator on live data:** scope route 2 matched on company alone without excluding cards owned by a *sibling* application (route 3 had the guard, route 2 did not). **104/308 applications (34%)** own no cards while their company has cards elsewhere → each would silently inherit a sibling's evidence. Demonstrated with a real write: an application owning **zero** cards produced a confident `value=62.71, coverage=1.0`. **F2 MAJOR, dormant:** `quote_guard` false-positives on numeric ranges (`$1-2 million` — only the second number extracted) and on ordinary true negations ("does not currently generate revenue") → −0.30 penalty on a TRUE claim, the exact harmful-flip mode §12 exists to catch; the entity gate cannot catch it because the check reuses the claim's own `raw_signal_id`. Helpful fixes 2/2, harmful flips 0/4 on the fixture — but that 0% does not cover F2's class |
+| FIX1 | scope-leak fix (`trust.js` route 2 + design §8.1) | @backend-developer | D3 | ✅ **done** | `trust.js` 23/23 green | Route 2 now requires `card_application_id IS NULL OR = ctx.applicationId`. Verified: the leaking application went `scoped 28 → 0` and now writes **no** `scores` row, only `trust_rollup_insufficient_evidence`. Medows regression clean — still exactly 19.50 / 0.43 / 12, so the fix narrows without over-narrowing. `run.js` needed no change: it over-fetches deliberately and delegates all scoping to `trust.js` |
+| FIX2 | `quote_guard` range + negation fix | @backend-developer | D3 | **in progress** | | instructed to bias toward false negatives: a missed fabrication costs one finding, an invented one costs the invariant |
 | D3b | QA gate pass 2 — LLM/Tavily paths + feature-07 regression | @qa-engineer | C1b, C3 | pending | | `qa-report-05.md`, loop until PASSED |
 | D4 | close: commit, `NOTICE`, `done.md`, TRACKER rows | @devops | D3b | pending | | NOTICE names both Apache-2.0 sources (`due-diligence-agents`, `reporting`) |
 
@@ -71,6 +74,25 @@ contradiction_penalty, trust, derived_status`
 |---|---|---|
 | `class` | `router_class` | alias `router_class AS class` |
 | `card_application_id`, `card_company_id`, `card_founder_id` | only `card_id` | join `cards` and supply the three fields — B1's §8.1 scope predicate needs them |
+
+## 🔴 KNOWN-OPEN: one stale pre-fix score row, deliberately NOT deleted
+
+`scores.id = 7e0c43c0-6e61-486c-b1ba-642211ace2fb` — `value=62.71, confidence=0.70` on application
+`9f0268d3-…`, which owns **zero cards**. It was written by QA's own live demonstration of finding 1,
+six minutes before the fix landed. It is the only such row (verified across the whole table).
+
+**Decision: leave it.** We could delete it — the session connects as `postgres` and the append-only
+trigger has a bypass — but that bypass exists for GDPR erasure, and quietly using it to tidy a demo
+is precisely the behaviour this feature is built to prevent. We claim an append-only guarantee to
+the judges; we do not break it for cosmetics.
+
+**Design gap this exposed, worth stating honestly:** a wrongly-computed score **cannot be retracted**.
+`scores` is append-only, and "absence ≠ zero" (§8.2) forbids writing a corrective placeholder over
+it. Post-MVP this needs either a `superseded_by` column or a retraction event type.
+
+**Defensive rule for 06 and 09 — carry into `done.md`:** do not render a `scores(axis='trust')` row
+whose application has no claims in scope per §8.1. A trust row is only meaningful alongside the
+`input_claim_ids` that produced it; an empty or stale one must not be displayed.
 
 ## Open risks carried into build
 
