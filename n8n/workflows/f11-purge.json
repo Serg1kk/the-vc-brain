@@ -1,0 +1,410 @@
+{
+  "name": "f11-purge",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "f11-purge",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-f11-purge",
+      "name": "Webhook: f11-purge",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\n// SOURCE OF TRUTH: n8n/build-f11-workflow.py (VALIDATE_INPUT_JS)\n//\n// f11-purge (docs/backlog/11-demo-data-ethics/README.md \u00a73, GDPR delete-on-request):\n// this is a destructive, irreversible endpoint, so the only acceptable input is an explicit,\n// unambiguous person id. No wildcards, no \"purge all\", no default-to-delete on a missing field\n// -- reject anything that is not a single well-formed UUID string.\n\nconst item = $input.first().json;\nconst body = item.body || {};\n\nfunction fail(code, message) {\n  return { __valid: false, error: { code, message } };\n}\n\nconst raw = body.founder_id;\nif (typeof raw !== 'string' || raw.trim().length === 0) {\n  return [{ json: fail(\n    'invalid_input',\n    'founder_id is required and must be a non-empty string. This endpoint erases exactly one person; there is no bulk or wildcard form.'\n  ) }];\n}\nconst founderId = raw.trim();\nconst UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;\nif (!UUID_RE.test(founderId)) {\n  return [{ json: fail('invalid_input', 'founder_id must be a well-formed UUID.') }];\n}\nreturn [{ json: { __valid: true, founder_id: founderId } }];\n"
+      },
+      "id": "validate-input",
+      "name": "Validate input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "65aa6d0d-ebdd-4d32-b322-81207af70e02",
+              "leftValue": "={{ $json.__valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-valid",
+      "name": "IF: valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst err = $json.error || { code: 'internal_error', message: 'Something went wrong on our side.' };\nreturn [{ json: { error: { code: err.code, message: err.message } } }];\n"
+      },
+      "id": "build-validation-error-response",
+      "name": "Build validation error response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-bad-request-400",
+      "name": "Respond: bad request (400)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\n// SOURCE OF TRUTH: n8n/build-f11-workflow.py (RESOLVE_SCOPE_JS)\n//\n// Read-only pass: resolves exactly the scope db/schema.sql's purge_founder() will act on --\n// this founder plus any duplicate tombstones merged into it (design.md R3), and every\n// sole-founder company/application reachable from that person set (a multi-founder company's\n// shared data is never touched by one co-founder's erasure request, same rule purge_founder()\n// itself applies) -- and captures the PRIMARY KEY id of every row currently in scope, table by\n// table. This is the \"before\" half of the verifiable receipt: the next node re-checks these\n// EXACT ids after calling purge_founder(), rather than re-deriving scope through founder_id\n// filters that would trivially (and misleadingly) return empty once the founder row is gone.\n//\n// Also captures events(entity_type='application') for this person's own applications -- NOT\n// part of purge_founder()'s current delete scope (docs/backlog/TRACKER.md, ~11:40 and ~12:45\n// entries: it only clears entity_type='founder'). Captured here regardless of whether a schema\n// fix has landed by the time this runs -- the after-check in the next node reports the outcome\n// honestly either way, rather than assuming success.\n\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\n\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  const opts = { method, url: SB + '/rest/v1/' + path, headers, json: true };\n  if (body !== undefined) opts.body = body;\n  return await this.helpers.httpRequest(opts);\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nfunction chunkArr(arr, size) {\n  const out = [];\n  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));\n  return out;\n}\n\n// Rows for `column IN (values)`, chunked to keep query strings bounded.\nasync function selectWhereIn(table, column, values, select) {\n  if (!values || values.length === 0) return [];\n  const sel = select || 'id';\n  let out = [];\n  for (const part of chunkArr(values, 150)) {\n    const rows = await pgGet.call(this, table + '?select=' + sel + '&' + column + '=in.(' + part.join(',') + ')');\n    out = out.concat(rows);\n  }\n  return out;\n}\n\n// Rows matching ANY of several `col IN (values)` fragments (skips empty fragments),\n// de-duplicated by id -- a row can legitimately match more than one fragment (e.g. a card\n// carrying both founder_id AND application_id inside scope).\nasync function selectWhereAnyIn(table, colValuePairs, select) {\n  const sel = select || 'id';\n  const seen = new Map();\n  for (const [col, values] of colValuePairs) {\n    if (!values || values.length === 0) continue;\n    for (const part of chunkArr(values, 150)) {\n      const rows = await pgGet.call(this, table + '?select=' + sel + '&' + col + '=in.(' + part.join(',') + ')');\n      for (const r of rows) seen.set(r.id, r);\n    }\n  }\n  return Array.from(seen.values());\n}\n\nasync function eventsWhere(entityType, ids) {\n  if (!ids || ids.length === 0) return [];\n  let out = [];\n  for (const part of chunkArr(ids, 150)) {\n    const rows = await pgGet.call(this, 'events?select=id&entity_type=eq.' + entityType + '&entity_id=in.(' + part.join(',') + ')');\n    out = out.concat(rows);\n  }\n  return out;\n}\n\nconst founderId = $json.founder_id;\n\n// ---- Load the founder itself ----\nconst founderRows = await pgGet.call(this, 'founders?select=id,full_name,is_synthetic,merged_into_founder_id&id=eq.' + founderId);\nif (!founderRows || founderRows.length === 0) {\n  return [{ json: { ok: false, error: { code: 'not_found', message: 'No founder found for the given id.' } } }];\n}\nconst founder = founderRows[0];\n\n// ---- Person set: this founder + any duplicate tombstones merged into it ----\nconst tombstones = await pgGet.call(this, 'founders?select=id&merged_into_founder_id=eq.' + founderId);\nconst personIds = [founderId, ...tombstones.map((r) => r.id)];\n\n// ---- Sole-founder companies ----\nconst fcForPerson = await selectWhereIn.call(this, 'founder_company', 'founder_id', personIds, 'id,founder_id,company_id');\nconst candidateCompanyIds = Array.from(new Set(fcForPerson.map((r) => r.company_id)));\nconst fcForCompanies = await selectWhereIn.call(this, 'founder_company', 'company_id', candidateCompanyIds, 'founder_id,company_id');\nconst foundersByCompany = new Map();\nfor (const r of fcForCompanies) {\n  if (!foundersByCompany.has(r.company_id)) foundersByCompany.set(r.company_id, []);\n  foundersByCompany.get(r.company_id).push(r.founder_id);\n}\nconst personSet = new Set(personIds);\nconst soleCompanyIds = candidateCompanyIds.filter((cid) =>\n  (foundersByCompany.get(cid) || []).every((fid) => personSet.has(fid))\n);\n\n// ---- Applications under those sole-founder companies ----\nconst soleApps = await selectWhereIn.call(this, 'applications', 'company_id', soleCompanyIds, 'id,deck_storage_path,kind');\nconst soleAppIds = soleApps.map((a) => a.id);\nconst deckPaths = soleApps.filter((a) => a.deck_storage_path).map((a) => a.deck_storage_path);\n\n// ---- Cards in scope: founder-direct OR sole-company OR sole-application ----\nconst cards = await selectWhereAnyIn.call(this, 'cards', [\n  ['founder_id', personIds],\n  ['company_id', soleCompanyIds],\n  ['application_id', soleAppIds],\n]);\nconst cardIds = cards.map((c) => c.id);\n\nconst claims = await selectWhereIn.call(this, 'claims', 'card_id', cardIds);\nconst claimIds = claims.map((c) => c.id);\nconst evidence = await selectWhereIn.call(this, 'evidence', 'claim_id', claimIds);\n\nconst scores = await selectWhereAnyIn.call(this, 'scores', [\n  ['founder_id', personIds],\n  ['application_id', soleAppIds],\n]);\nconst scoreIds = scores.map((s) => s.id);\nconst scoreComponents = await selectWhereAnyIn.call(this, 'score_components', [\n  ['founder_id', personIds],\n  ['score_id', scoreIds],\n]);\n\nconst aiRuns = await selectWhereAnyIn.call(this, 'ai_runs', [\n  ['founder_id', personIds],\n  ['application_id', soleAppIds],\n  ['company_id', soleCompanyIds],\n]);\nconst rawSignals = await selectWhereAnyIn.call(this, 'raw_signals', [\n  ['founder_id', personIds],\n  ['company_id', soleCompanyIds],\n]);\nconst metricObservations = await selectWhereAnyIn.call(this, 'metric_observations', [\n  ['founder_id', personIds],\n  ['company_id', soleCompanyIds],\n]);\nconst watchlist = await selectWhereAnyIn.call(this, 'watchlist', [\n  ['founder_id', personIds],\n  ['company_id', soleCompanyIds],\n]);\n\nconst interviews = await selectWhereAnyIn.call(this, 'interviews', [\n  ['application_id', soleAppIds],\n  ['card_id', cardIds],\n]);\nconst interviewIds = interviews.map((i) => i.id);\nconst voiceArtifacts = await selectWhereIn.call(this, 'voice_artifacts', 'interview_id', interviewIds);\n\nconst memos = await selectWhereIn.call(this, 'memos', 'application_id', soleAppIds);\nconst thesisEvaluations = await selectWhereIn.call(this, 'thesis_evaluations', 'application_id', soleAppIds);\n\nconst founderRowsAll = await selectWhereIn.call(this, 'founders', 'id', personIds);\nconst founderIdentities = await selectWhereIn.call(this, 'founder_identities', 'founder_id', personIds);\nconst companiesRows = await selectWhereIn.call(this, 'companies', 'id', soleCompanyIds);\n\nconst eventsFounder = await eventsWhere.call(this, 'founder', personIds);\nconst eventsApplication = await eventsWhere.call(this, 'application', soleAppIds);\n\nconst before = {\n  founders: founderRowsAll.map((r) => r.id),\n  founder_identities: founderIdentities.map((r) => r.id),\n  founder_company: fcForPerson.map((r) => r.id),\n  companies: companiesRows.map((r) => r.id),\n  applications: soleAppIds,\n  cards: cardIds,\n  claims: claimIds,\n  evidence: evidence.map((r) => r.id),\n  scores: scoreIds,\n  score_components: scoreComponents.map((r) => r.id),\n  ai_runs: aiRuns.map((r) => r.id),\n  raw_signals: rawSignals.map((r) => r.id),\n  metric_observations: metricObservations.map((r) => r.id),\n  watchlist: watchlist.map((r) => r.id),\n  interviews: interviewIds,\n  voice_artifacts: voiceArtifacts.map((r) => r.id),\n  memos: memos.map((r) => r.id),\n  thesis_evaluations: thesisEvaluations.map((r) => r.id),\n  events_founder: eventsFounder.map((r) => r.id),\n  events_application: eventsApplication.map((r) => r.id),\n};\n\nreturn [{\n  json: {\n    ok: true,\n    founder_id: founderId,\n    founder_full_name: founder.full_name,\n    founder_is_synthetic: founder.is_synthetic,\n    deck_storage_paths: deckPaths,\n    before,\n  },\n}];\n"
+      },
+      "id": "resolve-founder-capture-pre-purge-state",
+      "name": "Resolve founder + capture pre-purge state",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "edf7dddd-2862-43ae-b5c7-038df18f1b51",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-found",
+      "name": "IF: found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst err = $json.error || { code: 'internal_error', message: 'Something went wrong on our side.' };\nreturn [{ json: { error: { code: err.code, message: err.message } } }];\n"
+      },
+      "id": "build-not-found-error-response",
+      "name": "Build not-found error response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "respond-not-found-404",
+      "name": "Respond: not found (404)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -160,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\n// SOURCE OF TRUTH: n8n/build-f11-workflow.py (EXECUTE_PURGE_JS)\n//\n// Calls the ONLY deletion door (db/schema.sql, purge_founder()) -- never reimplements erasure\n// here -- then a best-effort Storage cleanup for any deck file this person's own applications\n// carried, then re-checks EVERY id the previous node captured before the call to build a\n// verifiable receipt: what was actually deleted, what survived, and why. A response is never\n// built from the RPC's own \"success\" status alone (that lesson is recorded twice in\n// docs/backlog/TRACKER.md -- a green n8n execution has been shown to hide a branch that never\n// ran) -- every count below is a real re-read of the database taken after the call.\n\nconst SB = String($env.SUPABASE_URL || '').replace(/\\/rest\\/v1\\/?$/, '');\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\n\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  const opts = { method, url: SB + '/rest/v1/' + path, headers, json: true };\n  if (body !== undefined) opts.body = body;\n  return await this.helpers.httpRequest(opts);\n}\nasync function pgGet(path) { return await pg.call(this, 'GET', path); }\n\nfunction chunkArr(arr, size) {\n  const out = [];\n  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));\n  return out;\n}\n\nasync function survivors(table, ids) {\n  if (!ids || ids.length === 0) return [];\n  let out = [];\n  for (const part of chunkArr(ids, 150)) {\n    const rows = await pgGet.call(this, table + '?select=id&id=in.(' + part.join(',') + ')');\n    out = out.concat(rows.map((r) => r.id));\n  }\n  return out;\n}\n\nconst founderId = $json.founder_id;\nconst before = $json.before;\nconst deckPaths = $json.deck_storage_paths || [];\n\n// ---- Call the ONLY deletion door ----\ntry {\n  await pg.call(this, 'POST', 'rpc/purge_founder', { p_founder_id: founderId });\n} catch (e) {\n  console.log('purge_founder RPC failed: ' + (e && e.message ? e.message : String(e)));\n  return [{\n    json: {\n      ok: false,\n      error: {\n        code: 'purge_failed',\n        message: 'The erasure could not be completed. purge_founder() raised an error and the transaction was rolled back, so no data for this founder was deleted.',\n      },\n    },\n  }];\n}\n\n// ---- Best-effort Storage cleanup ----\n// Known gap (docs/backlog/TRACKER.md, 08's ~12:45 entry): purge_founder() clears database rows\n// only, never Storage objects, so an uploaded deck otherwise survives its own applications row.\n// Best-effort and non-blocking -- a missing bucket/object is reported honestly, never swallowed.\nconst storageAttempts = [];\nfor (const path of deckPaths) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'DELETE',\n      url: SB + '/storage/v1/object/decks/' + path.split('/').map(encodeURIComponent).join('/'),\n      headers: { apikey: KEY, Authorization: 'Bearer ' + KEY },\n    });\n    storageAttempts.push({ path, deleted: true });\n  } catch (e) {\n    storageAttempts.push({ path, deleted: false, reason: 'delete_failed' });\n  }\n}\n\n// ---- Verify: re-check every id captured before the purge ----\nconst TABLE_FOR = {\n  founders: 'founders', founder_identities: 'founder_identities', founder_company: 'founder_company',\n  companies: 'companies', applications: 'applications', cards: 'cards', claims: 'claims',\n  evidence: 'evidence', scores: 'scores', score_components: 'score_components', ai_runs: 'ai_runs',\n  raw_signals: 'raw_signals', metric_observations: 'metric_observations', watchlist: 'watchlist',\n  interviews: 'interviews', voice_artifacts: 'voice_artifacts', memos: 'memos',\n  thesis_evaluations: 'thesis_evaluations', events_founder: 'events', events_application: 'events',\n};\n\nconst RETENTION_REASONS = {\n  events_application:\n    \"purge_founder() currently clears audit events only where entity_type='founder'. These rows \" +\n    \"were written with entity_type='application' by feature 05's claim-verification and \" +\n    \"contradiction-scan pipeline (company-only cards, or application-scoped contradictions) and \" +\n    \"are not yet reachable by erasure. Extending purge_founder() to also clear \" +\n    \"entity_type='application' events for this founder's own applications has been proposed to \" +\n    \"the schema owner; this receipt reports the gap honestly rather than claiming a complete erasure.\",\n};\n\nconst tables = {};\nconst retained = [];\nlet allClear = true;\nfor (const key of Object.keys(TABLE_FOR)) {\n  const beforeIds = before[key] || [];\n  const afterIds = await survivors.call(this, TABLE_FOR[key], beforeIds);\n  const entry = { before: beforeIds.length, deleted: beforeIds.length - afterIds.length, retained: afterIds.length };\n  if (afterIds.length > 0) {\n    allClear = false;\n    entry.reason = RETENTION_REASONS[key] ||\n      'These rows unexpectedly survived erasure. Reported honestly rather than hidden -- this indicates a gap in purge_founder() not yet accounted for by this workflow.';\n    retained.push({ table: key, count: afterIds.length, reason: entry.reason });\n  }\n  tables[key] = entry;\n}\n\n// The one anonymized audit row purge_founder() itself writes.\nlet auditEvent = null;\ntry {\n  const rows = await pgGet.call(this,\n    'events?select=id,event_type,created_at&event_type=eq.founder_purged&entity_type=eq.founder&entity_id=eq.' + founderId +\n    '&order=created_at.desc&limit=1');\n  if (rows && rows[0]) auditEvent = rows[0];\n} catch (e) { /* non-fatal -- the receipt stands on the table counts, not on this lookup */ }\n\nconst storageComplete = storageAttempts.every((s) => s.deleted);\n\nreturn [{\n  json: {\n    ok: true,\n    founder_id: founderId,\n    purged_at: new Date().toISOString(),\n    complete: allClear && storageComplete,\n    audit_event: auditEvent,\n    tables,\n    storage: {\n      attempted: deckPaths.length,\n      deleted: storageAttempts.filter((s) => s.deleted).length,\n      failed: storageAttempts.filter((s) => !s.deleted),\n    },\n    retained,\n  },\n}];\n"
+      },
+      "id": "execute-purge-build-receipt",
+      "name": "Execute purge + build receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "f252c924-3e24-4a22-92d4-58cd9f33945a",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-purge-ok",
+      "name": "IF: purge ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst err = $json.error || { code: 'internal_error', message: 'Something went wrong on our side.' };\nreturn [{ json: { error: { code: err.code, message: err.message } } }];\n"
+      },
+      "id": "build-purge-failed-error-response",
+      "name": "Build purge-failed error response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-internal-error-500",
+      "name": "Respond: internal error (500)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond: success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        80,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook: f11-purge": {
+      "main": [
+        [
+          {
+            "node": "Validate input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate input": {
+      "main": [
+        [
+          {
+            "node": "IF: valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: valid?": {
+      "main": [
+        [
+          {
+            "node": "Resolve founder + capture pre-purge state",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build validation error response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build validation error response": {
+      "main": [
+        [
+          {
+            "node": "Respond: bad request (400)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve founder + capture pre-purge state": {
+      "main": [
+        [
+          {
+            "node": "IF: found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: found?": {
+      "main": [
+        [
+          {
+            "node": "Execute purge + build receipt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build not-found error response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build not-found error response": {
+      "main": [
+        [
+          {
+            "node": "Respond: not found (404)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute purge + build receipt": {
+      "main": [
+        [
+          {
+            "node": "IF: purge ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: purge ok?": {
+      "main": [
+        [
+          {
+            "node": "Respond: success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build purge-failed error response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build purge-failed error response": {
+      "main": [
+        [
+          {
+            "node": "Respond: internal error (500)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "pinData": {},
+  "tags": [],
+  "versionId": "fb6aa3bc-9101-4ff1-94f3-c24da1c948e2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
