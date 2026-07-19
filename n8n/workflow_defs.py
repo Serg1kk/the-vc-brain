@@ -13,7 +13,9 @@ const KEY = $env.SUPABASE_SERVICE_ROLE_KEY;
 async function pg(method, path, body, prefer) {
   const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
   if (prefer) headers.Prefer = prefer;
-  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });
+  // CONVENTION: $env.SUPABASE_URL already ENDS WITH /rest/v1 (see infra/n8n/.env). Appending
+  // it again yields /rest/v1/rest/v1/... which Kong answers 404. Verified the hard way.
+  return await this.helpers.httpRequest({ method, url: SB + '/' + path, headers, body, json: true });
 }
 """
 
@@ -404,6 +406,18 @@ return [{json:{application_id:inp.application_id,thesis_id:inp.thesis_id,
 
 
 def build_all(inline_lib, agent_sys, agent_schema, blocklist, code_node, chain, db_write_id):
+    """Generates `f04-db-write` ONLY.
+
+    `f04-market-intel` (103 nodes) and `f04-competition-intel` (59 nodes) are NOT generated
+    here. They are hand-built in n8n as proper visual graphs — HTTP Request nodes, IF branches,
+    a webhook trigger — because CLAUDE.md requires product workflows to be inspectable in the
+    n8n canvas rather than hidden inside a handful of large Code nodes. An earlier 8-node
+    generated market-intel was retired in their favour for exactly that reason.
+
+    Their embedded copies of lib/f04 are kept current by `n8n/refresh-lib.py`, not by this
+    file. Do not re-add them here: this generator would overwrite the visual graphs with a
+    Code-node-heavy version and silently undo that decision.
+    """
     lib = inline_lib('config', 'scoring', 'provenance')
 
     db_nodes = [
@@ -419,27 +433,4 @@ def build_all(inline_lib, agent_sys, agent_schema, blocklist, code_node, chain, 
     db_wf = {"name": "f04-db-write", "nodes": db_nodes, "connections": chain(db_nodes),
              "settings": {"executionOrder": "v1"}}
 
-    mi_nodes = [
-        {"parameters": {}, "id": "trigger", "name": "Manual Trigger",
-         "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 0]},
-        code_node("Preflight: load application", MI_PREFLIGHT, 200, 0),
-        code_node("Categorize market",
-                  MI_CATEGORIZE.replace('__SYS__', __import__('json').dumps(agent_sys('market-categorizer')))
-                               .replace('__SCHEMA__', __import__('json').dumps(agent_schema('market-categorizer'))),
-                  400, 0),
-        code_node("Tavily search x5",
-                  MI_SEARCH.replace('__BLOCK__', __import__('json').dumps(blocklist())), 600, 0),
-        code_node("Curate + momentum", MI_CURATE.replace('__LIB__', lib), 800, 0),
-        code_node("Size market (bottom-up)",
-                  MI_SIZE.replace('__SYS__', __import__('json').dumps(agent_sys('market-sizer')))
-                         .replace('__SCHEMA__', __import__('json').dumps(agent_schema('market-sizer'))),
-                  1000, 0),
-        code_node("Validate + score", MI_VALIDATE.replace('__LIB__', lib), 1200, 0),
-        {"parameters": {"workflowId": {"__rl": True, "value": db_write_id, "mode": "id"}},
-         "id": "persist", "name": "Persist via f04-db-write",
-         "type": "n8n-nodes-base.executeWorkflow", "typeVersion": 1.2, "position": [1400, 0]},
-    ]
-    mi_wf = {"name": "f04-market-intel", "nodes": mi_nodes, "connections": chain(mi_nodes),
-             "settings": {"executionOrder": "v1"}}
-
-    return [db_wf, mi_wf]
+    return [db_wf]

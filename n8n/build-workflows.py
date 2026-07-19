@@ -36,8 +36,15 @@ def inline_lib(*names):
     Strips the CommonJS seams: `require('./config')`, the `const {...} = config`
     destructuring (config's own top-level consts are already in scope once inlined, so
     re-declaring them is a SyntaxError), and `module.exports`.
+
+    Also prepends a `URL` shim. lib/f04/provenance.js uses `new URL(...)` in the plain-Node
+    global style, but n8n's Code-node sandbox does not expose a global `URL` — and
+    NODE_FUNCTION_ALLOW_BUILTIN=url only permits `require('url')`, it does not inject the
+    global. Without this the node throws ReferenceError at runtime while passing every
+    syntax check, i.e. it would have failed first during a live demo.
     """
-    out = []
+    out = ["// --- sandbox shim: n8n's Code node exposes no global URL (see infra/n8n/docker-compose.yml)\n"
+           "const { URL } = require('url');\n"]
     for n in names:
         src = open(os.path.join(LIBDIR, n + '.js'), encoding='utf-8').read()
         src = re.sub(r"const config = require\('\./config'\);", "", src)
