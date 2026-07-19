@@ -26,9 +26,19 @@ set -euo pipefail
 SOURCE_CONTAINER="${SOURCE_CONTAINER:-supabase-db}"
 OUT_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/out}"
 
+# \copy is a psql CLIENT-side command: since psql runs INSIDE the container
+# (docker exec), its files land in the container's filesystem, not the host's.
+# Write to a container-local scratch dir, then `docker cp` the results out to
+# $OUT_DIR on the host and remove the scratch dir. This is filesystem scratch
+# space in the container's own /tmp, not a database mutation -- still
+# SELECT-only against the database itself.
+CONTAINER_TMP="/tmp/synthetic-extract-$$"
+
 mkdir -p "$OUT_DIR"
-echo "==> Writing CSVs to: $OUT_DIR"
+docker exec "$SOURCE_CONTAINER" mkdir -p "$CONTAINER_TMP"
+echo "==> Writing CSVs to container:$CONTAINER_TMP, then copying to host:$OUT_DIR"
 echo "==> Reading from container: $SOURCE_CONTAINER (read-only: SELECT + \\copy TO only)"
+trap 'docker exec "$SOURCE_CONTAINER" rm -rf "$CONTAINER_TMP"' EXIT
 
 # Single psql session: temp tables materializing the keep-sets live only for this
 # session, so every \copy below reads the SAME snapshot (no TOCTOU drift between
@@ -160,49 +170,49 @@ CREATE TEMP TABLE keep_theses AS
 -- if the schema grows a column later.
 -- ============================================================================
 
-\copy (SELECT id, name, config, version, active, created_at, updated_at, is_default FROM theses WHERE id IN (SELECT id FROM keep_theses)) TO '$OUT_DIR/01_theses.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, name, config, version, active, created_at, updated_at, is_default FROM theses WHERE id IN (SELECT id FROM keep_theses)) TO '$CONTAINER_TMP/01_theses.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, full_name, headline, location_city, location_country, profile, is_synthetic, merged_into_founder_id, opt_out_at, created_at, updated_at FROM founders WHERE id IN (SELECT id FROM keep_founders)) TO '$OUT_DIR/02_founders.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, full_name, headline, location_city, location_country, profile, is_synthetic, merged_into_founder_id, opt_out_at, created_at, updated_at FROM founders WHERE id IN (SELECT id FROM keep_founders)) TO '$CONTAINER_TMP/02_founders.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, name, domain, one_liner, category, stage, hq_city, hq_country, aliases, profile, is_synthetic, created_at, updated_at FROM companies WHERE id IN (SELECT id FROM keep_companies)) TO '$OUT_DIR/03_companies.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, name, domain, one_liner, category, stage, hq_city, hq_country, aliases, profile, is_synthetic, created_at, updated_at FROM companies WHERE id IN (SELECT id FROM keep_companies)) TO '$CONTAINER_TMP/03_companies.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, company_id, kind, status, thesis_id, thesis_gate, deck_storage_path, artifact_links, submitted_by, created_at, updated_at FROM applications WHERE id IN (SELECT id FROM keep_applications)) TO '$OUT_DIR/04_applications.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, company_id, kind, status, thesis_id, thesis_gate, deck_storage_path, artifact_links, submitted_by, created_at, updated_at FROM applications WHERE id IN (SELECT id FROM keep_applications)) TO '$CONTAINER_TMP/04_applications.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, founder_id, company_id, role, is_current, confidence, source, created_at FROM founder_company WHERE founder_id IN (SELECT id FROM keep_founders) AND company_id IN (SELECT id FROM keep_companies)) TO '$OUT_DIR/05_founder_company.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, founder_id, company_id, role, is_current, confidence, source, created_at FROM founder_company WHERE founder_id IN (SELECT id FROM keep_founders) AND company_id IN (SELECT id FROM keep_companies)) TO '$CONTAINER_TMP/05_founder_company.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, founder_id, kind, value, url, confidence, discovered_via, verified_at, created_at FROM founder_identities WHERE founder_id IN (SELECT id FROM keep_founders)) TO '$OUT_DIR/06_founder_identities.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, founder_id, kind, value, url, confidence, discovered_via, verified_at, created_at FROM founder_identities WHERE founder_id IN (SELECT id FROM keep_founders)) TO '$CONTAINER_TMP/06_founder_identities.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, card_type, founder_id, company_id, application_id, status, completeness, created_at, updated_at FROM cards WHERE id IN (SELECT id FROM keep_cards)) TO '$OUT_DIR/07_cards.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, card_type, founder_id, company_id, application_id, status, completeness, created_at, updated_at FROM cards WHERE id IN (SELECT id FROM keep_cards)) TO '$CONTAINER_TMP/07_cards.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, source, source_url, payload, content_hash, founder_id, company_id, observed_at, created_at FROM raw_signals WHERE id IN (SELECT id FROM keep_raw_signals)) TO '$OUT_DIR/08_raw_signals.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, source, source_url, payload, content_hash, founder_id, company_id, observed_at, created_at FROM raw_signals WHERE id IN (SELECT id FROM keep_raw_signals)) TO '$CONTAINER_TMP/08_raw_signals.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, card_id, topic, text_verbatim, value, axis, source_kind, base_confidence, verification_status, content_hash, supersedes_claim_id, created_at, updated_at FROM claims WHERE id IN (SELECT id FROM keep_claims)) TO '$OUT_DIR/09_claims.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, card_id, topic, text_verbatim, value, axis, source_kind, base_confidence, verification_status, content_hash, supersedes_claim_id, created_at, updated_at FROM claims WHERE id IN (SELECT id FROM keep_claims)) TO '$CONTAINER_TMP/09_claims.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, claim_id, relation, strength, tier, quote_verbatim, source_url, raw_signal_id, captured_at, content_hash, created_at FROM evidence WHERE id IN (SELECT id FROM keep_evidence)) TO '$OUT_DIR/10_evidence.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, claim_id, relation, strength, tier, quote_verbatim, source_url, raw_signal_id, captured_at, content_hash, created_at FROM evidence WHERE id IN (SELECT id FROM keep_evidence)) TO '$CONTAINER_TMP/10_evidence.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, founder_id, application_id, axis, value, trend, confidence, missing_flags, input_claim_ids, formula_version, prompt_version, model, thesis_id, computed_at, created_at FROM scores WHERE id IN (SELECT id FROM keep_scores)) TO '$OUT_DIR/11_scores.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, founder_id, application_id, axis, value, trend, confidence, missing_flags, input_claim_ids, formula_version, prompt_version, model, thesis_id, computed_at, created_at FROM scores WHERE id IN (SELECT id FROM keep_scores)) TO '$CONTAINER_TMP/11_scores.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight, credit, contribution, evidence_tier, claim_ids, quote_verbatim, rationale, what_would_close_it, demoted_by, created_at FROM score_components WHERE id IN (SELECT id FROM keep_score_components)) TO '$OUT_DIR/12_score_components.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, score_id, founder_id, run_id, subscorer, criterion_id, verdict, weight, credit, contribution, evidence_tier, claim_ids, quote_verbatim, rationale, what_would_close_it, demoted_by, created_at FROM score_components WHERE id IN (SELECT id FROM keep_score_components)) TO '$CONTAINER_TMP/12_score_components.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, task_type, founder_id, company_id, application_id, model, prompt_version, input_hash, output_json, confidence, disagreement, n8n_execution_id, created_at FROM ai_runs WHERE id IN (SELECT id FROM keep_ai_runs)) TO '$OUT_DIR/13_ai_runs.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, task_type, founder_id, company_id, application_id, model, prompt_version, input_hash, output_json, confidence, disagreement, n8n_execution_id, created_at FROM ai_runs WHERE id IN (SELECT id FROM keep_ai_runs)) TO '$CONTAINER_TMP/13_ai_runs.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, application_id, thesis_id, thesis_version, input_fingerprint, evaluation_mode, verdict, score_id, fired_rules, extracted_snapshot, thesis_config_snapshot, missing_fields, coverage, extraction_ai_run_id, formula_version, created_at FROM thesis_evaluations WHERE id IN (SELECT id FROM keep_thesis_evaluations)) TO '$OUT_DIR/14_thesis_evaluations.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, application_id, thesis_id, thesis_version, input_fingerprint, evaluation_mode, verdict, score_id, fired_rules, extracted_snapshot, thesis_config_snapshot, missing_fields, coverage, extraction_ai_run_id, formula_version, created_at FROM thesis_evaluations WHERE id IN (SELECT id FROM keep_thesis_evaluations)) TO '$CONTAINER_TMP/14_thesis_evaluations.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, application_id, version, sections, gaps, cited_claim_ids, recommendation, conditions, deep_dive_questions, created_at FROM memos WHERE id IN (SELECT id FROM keep_memos)) TO '$OUT_DIR/15_memos.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, application_id, version, sections, gaps, cited_claim_ids, recommendation, conditions, deep_dive_questions, created_at FROM memos WHERE id IN (SELECT id FROM keep_memos)) TO '$CONTAINER_TMP/15_memos.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, application_id, card_id, kind, share_token, status, disclosed_at, transcript, started_at, completed_at, created_at, updated_at FROM interviews WHERE id IN (SELECT id FROM keep_interviews)) TO '$OUT_DIR/16_interviews.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, application_id, card_id, kind, share_token, status, disclosed_at, transcript, started_at, completed_at, created_at, updated_at FROM interviews WHERE id IN (SELECT id FROM keep_interviews)) TO '$CONTAINER_TMP/16_interviews.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, interview_id, question_ref, storage_path, duration_sec, transcript_text, created_at FROM voice_artifacts WHERE id IN (SELECT id FROM keep_voice_artifacts)) TO '$OUT_DIR/17_voice_artifacts.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, interview_id, question_ref, storage_path, duration_sec, transcript_text, created_at FROM voice_artifacts WHERE id IN (SELECT id FROM keep_voice_artifacts)) TO '$CONTAINER_TMP/17_voice_artifacts.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, founder_id, company_id, metric, value, observed_at, created_at FROM metric_observations WHERE id IN (SELECT id FROM keep_metric_observations)) TO '$OUT_DIR/18_metric_observations.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, founder_id, company_id, metric, value, observed_at, created_at FROM metric_observations WHERE id IN (SELECT id FROM keep_metric_observations)) TO '$CONTAINER_TMP/18_metric_observations.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, founder_id, company_id, reason, condition, added_from_application_id, last_scored_at, next_check_at, active, created_at, updated_at FROM watchlist WHERE id IN (SELECT id FROM keep_watchlist)) TO '$OUT_DIR/19_watchlist.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, founder_id, company_id, reason, condition, added_from_application_id, last_scored_at, next_check_at, active, created_at, updated_at FROM watchlist WHERE id IN (SELECT id FROM keep_watchlist)) TO '$CONTAINER_TMP/19_watchlist.csv' WITH (FORMAT csv, HEADER true)
 
-\copy (SELECT id, event_type, entity_type, entity_id, payload, actor, created_at FROM events WHERE id IN (SELECT id FROM keep_events)) TO '$OUT_DIR/20_events.csv' WITH (FORMAT csv, HEADER true)
+\copy (SELECT id, event_type, entity_type, entity_id, payload, actor, created_at FROM events WHERE id IN (SELECT id FROM keep_events)) TO '$CONTAINER_TMP/20_events.csv' WITH (FORMAT csv, HEADER true)
 
 -- Manifest: row counts per file, so load.sh (and a human) can sanity-check the
 -- CSVs landed without opening each one.
-\o '$OUT_DIR/manifest.txt'
+\o '$CONTAINER_TMP/manifest.txt'
 SELECT 'theses' t, count(*) FROM keep_theses
 UNION ALL SELECT 'founders', count(*) FROM keep_founders
 UNION ALL SELECT 'companies', count(*) FROM keep_companies
@@ -226,6 +236,9 @@ UNION ALL SELECT 'events', count(*) FROM keep_events
 ORDER BY 1;
 \o
 SQL
+
+echo "==> Copying CSVs from container:$CONTAINER_TMP to host:$OUT_DIR"
+docker cp "$SOURCE_CONTAINER:$CONTAINER_TMP/." "$OUT_DIR/"
 
 echo "==> Done. Manifest:"
 cat "$OUT_DIR/manifest.txt"

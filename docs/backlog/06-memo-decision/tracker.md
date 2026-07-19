@@ -18,8 +18,8 @@
 | T5 | `build-f06-workflow.py` → workflow JSON | @backend-developer | T1,T2,T3,T4,PR | **done** (verified) | `n8n/build-f06-workflow.py` + `n8n/workflows/f06-generate-memo.json` (19 nodes) + `README-f06.md`; assemble.js patched (back-fill, 31/31); `--check` 0 fail on disk | flags: (i) deep-dive schema file was missing → orchestrator wrote it; (ii) 23505-race retry UNVERIFIED LIVE → T6/T8; (iii) B-nodes degrade to sentinel on LLM fail |
 | T6 | Deploy + single-app smoke | @backend-developer | T5 | **done** (verified) | workflow `iLzZ0he48v4WowMS` active; 6 memos rows verified in DB (Medows v1-4 D2·watchlist, tracewire v1-2 D3·watchlist), cited 14-20, q 5-7, 6 memo_generated events; app-not-found→404; v2 append-only | finding: ~40% runs hit a content gate→clean 422 (0 bad writes). Cause: $-figure in structural stmt + rare claim_id hallucination. → T6b hardening |
 | T6b | Content-robustness hardening (prompts + drop-not-reject gates) + re-smoke | @backend-developer | T6 | dispatched | — | prompts: no $-figure in prose; assemble gates DROP+log offending stmt not whole-memo reject (I3 preserved); measure new reject rate |
-| T7 | Optional sections live (B3) | @backend-developer | T6 | pending | — | Stage 2, drop-first |
-| T8 | Independent QA gate | @qa-engineer | T6 | pending | — | adversarial → `qa-report-06.md` |
+| T7 | Optional sections live (B3) | @backend-developer | T6 | **done** (folded into T6) | verified in T6 smoke: memos rows show 7-8 section keys (8 = 5 required + risk_matrix/competition/financials_lite; 7 = one optional absent cleanly). Medows risk_matrix flagged missing market-size/cap-table/revenue as material risks | B3 works live; sentinel path clean |
+| T8 | QA gate — FAST positive-flow smoke (operator directive: quick, not 40-min adversarial) | @qa-engineer | T6b | pending | — | one clean generation → verify 5 required sections + deterministic recommendation + honest gaps + no uncited fact + event/memo_available. Short. |
 | T9 | Close: README(EN+RU), tracker, commit | @devops + orch | T8 | pending | — | explicit paths only |
 
 ## Event log
@@ -46,3 +46,15 @@
   to T5 to give sticky notes unique names + regenerate; T6 standing by. Demo apps chosen live:
   **tracewire** `11f00002-…-006` (all 3 axes + trust 63, rich beat) + **Medows** `08f360ee-…` (trust
   19.5 + contradictions, honest-watchlist contrast).
+
+- 2026-07-19 ~14:15 — **T6 DONE — pipeline works end-to-end.** Deployed `iLzZ0he48v4WowMS` (active);
+  6 memos rows verified in DB (Medows D2·watchlist ×4, tracewire D3·watchlist ×2), real LLM content,
+  cited 14-20, q 5-7, memo_available flips, v2 append-only, app-not-found→404. T7 (optional sections)
+  folded in — B3 renders live (7-8 keys). 23505 race unverifiable-in-practice (guards decouple
+  branches) — accepted low-risk. Finding: ~40% runs hit a content gate→clean 422 (0 bad writes).
+- 2026-07-19 ~14:15 — **T6b hardening dispatched.** Orchestrator tightened memo-descriptive +
+  memo-analytical prompts (no $-figure in prose — check size lives in conditions; citation re-check).
+  Design §9 rev: both content gates DROP+LOG the offending statement instead of whole-memo reject
+  (I3 preserved — no uncited fact renders; drops logged in memo_generated event). Agent: assemble.js
+  change + tests + regen + redeploy + re-smoke to measure the new (near-zero expected) reject rate.
+  Then T8 QA against the hardened build.
