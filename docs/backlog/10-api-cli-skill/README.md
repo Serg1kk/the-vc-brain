@@ -1,6 +1,13 @@
 # 10 · API, CLI & Claude Skill (agent-first access)
 
-Status: backlog · Depends on: 01-07 · Operator's hard requirement + P3 persona
+Status: **done** · QA gate PASSED (3 rounds) · Depends on: 01-07 · Operator's hard requirement + P3 persona
+
+> **Shipped scope (option A):** NL-search deep; CLI and skill thin but real. Feature 10 is
+> **read-only** — it writes no data. Delivered: 3 PostgREST views · `f10-nl-search` n8n workflow ·
+> `lib/f10` scorer (99 tests) · `bin/vcbrain` (4 commands) · `docs/api.md` · `skills/vcbrain-cli/SKILL.md`.
+> **Downstream consumers — read [`done.md`](done.md) first**, especially feature 09.
+> Cut from the original plan: `submit` (writes belong to 08), the list/enumeration commands,
+> `score`/`gate` wrappers, `memo`/`watch`, and the `velocity`/`text` attribute kinds.
 
 ## What it is
 

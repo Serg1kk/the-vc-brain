@@ -1671,29 +1671,43 @@ END $$;
 -- fixtures) and feature 02, which wrote the entire real corpus, never
 -- writes it. A green test on that dead path is exactly how the underlying
 -- api_applications bug (opting out every founder removed 0 of 308
--- applications) survived to a QA pass. Also fixtures a SECOND, untouched
--- founder+application at the SAME company (10f00001-...-0002), to prove the
--- exclusion is application-scoped, not company-scoped: opting out founder
--- 0001 must not touch founder 0007's application 0008 next door.
+-- applications) survived to a QA pass.
+--
+-- Also fixtures a SECOND, untouched founder+application at a SEPARATE,
+-- UNRELATED company (10f00001-...-0010) to prove precision: opting out
+-- founder 0001 must not touch founder 0007's application 0008, which shares
+-- no company with 0001 at all. (Task A1f note: this sibling deliberately
+-- does NOT share company 0002 with founder 0001 -- exclusion is now
+-- company-scoped by design SS4, so a genuine CO-founder of the same company
+-- who is not opted out correctly KEEPS that company's applications visible;
+-- that is not a leak, it is the "retained when at least one founder of the
+-- company is not opted out" rule working as intended. The TWO-FOUNDER
+-- co-founder case itself -- distinct from this untouched-sibling case, and
+-- NOT the same as the two-applications-one-card fixture below, which has
+-- only one founder total -- is its own dedicated fixture further down
+-- (task A1f gap 2, TRACKER.md): a company with two co-founders, asserting
+-- 1->1 on opting out one and 1->0 on opting out both.)
 DO $$
 BEGIN
   INSERT INTO founders (id, full_name, opt_out_at)
     VALUES ('10f00001-0000-0000-0000-000000000001', 'Smoke Opt-Out Founder', now());
   INSERT INTO founders (id, full_name)
-    VALUES ('10f00001-0000-0000-0000-000000000007', 'Smoke Opt-Out Co-Tenant Founder (untouched)');
+    VALUES ('10f00001-0000-0000-0000-000000000007', 'Smoke Untouched Founder (unrelated company)');
   INSERT INTO companies (id, name, stage)
     VALUES ('10f00001-0000-0000-0000-000000000002', 'Smoke Opt-Out Co', 'pre_seed');
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000010', 'Smoke Untouched Co (unrelated)', 'pre_seed');
   INSERT INTO applications (id, company_id, kind)
     VALUES ('10f00001-0000-0000-0000-000000000004', '10f00001-0000-0000-0000-000000000002', 'radar_activated');
   INSERT INTO applications (id, company_id, kind)
-    VALUES ('10f00001-0000-0000-0000-000000000008', '10f00001-0000-0000-0000-000000000002', 'radar_activated');
+    VALUES ('10f00001-0000-0000-0000-000000000008', '10f00001-0000-0000-0000-000000000010', 'radar_activated');
   -- Founder-card linkage, NOT founder_company -- this is the real path.
   INSERT INTO cards (id, card_type, founder_id, company_id, application_id)
     VALUES ('10f00001-0000-0000-0000-000000000005', 'founder',
             '10f00001-0000-0000-0000-000000000001', '10f00001-0000-0000-0000-000000000002', '10f00001-0000-0000-0000-000000000004');
   INSERT INTO cards (id, card_type, founder_id, company_id, application_id)
     VALUES ('10f00001-0000-0000-0000-000000000009', 'founder',
-            '10f00001-0000-0000-0000-000000000007', '10f00001-0000-0000-0000-000000000002', '10f00001-0000-0000-0000-000000000008');
+            '10f00001-0000-0000-0000-000000000007', '10f00001-0000-0000-0000-000000000010', '10f00001-0000-0000-0000-000000000008');
   INSERT INTO claims (id, card_id, topic, text_verbatim, source_kind)
     VALUES ('10f00001-0000-0000-0000-000000000006', '10f00001-0000-0000-0000-000000000005',
             'founder.expertise.vertical_tenure', 'Smoke fixture claim for an opted-out founder.', 'public');
@@ -1701,7 +1715,7 @@ END $$;
 
 -- Negative 1/3: opt_out_at excludes the founder, its card-linked
 -- application, AND its founder-scoped claim from all three views --
--- WITHOUT touching the sibling application at the same company.
+-- WITHOUT touching the unrelated founder/application/company next door.
 DO $$
 DECLARE
   v_founder_present         int;
@@ -1731,10 +1745,10 @@ BEGIN
     RAISE EXCEPTION 'smoke FAIL: founder-scoped claim of an opted-out founder is present in api_claims, expected excluded';
   END IF;
   IF v_sibling_founder_present <> 1 THEN
-    RAISE EXCEPTION 'smoke FAIL: untouched co-tenant founder expected present in api_founders, got % rows', v_sibling_founder_present;
+    RAISE EXCEPTION 'smoke FAIL: untouched founder at an unrelated company expected present in api_founders, got % rows', v_sibling_founder_present;
   END IF;
   IF v_sibling_app_present <> 1 THEN
-    RAISE EXCEPTION 'smoke FAIL: sibling application at the SAME company, linked to a DIFFERENT (non-opted-out) founder, was excluded -- exclusion leaked across applications at one company, expected application-scoped';
+    RAISE EXCEPTION 'smoke FAIL: application at an UNRELATED company, linked to a DIFFERENT (non-opted-out) founder who shares no company with the opted-out one, was excluded -- exclusion leaked across companies, expected company-scoped precision (task A1f)';
   END IF;
 END $$;
 
@@ -1821,6 +1835,119 @@ BEGIN
     WHERE application_id = '10f00001-0000-0000-0000-000000000043';
   IF v_application_present <> 0 THEN
     RAISE EXCEPTION 'smoke FAIL: application whose only founder_company.is_current founder opted out is present in api_applications, expected excluded (founder_company-preferred path)';
+  END IF;
+END $$;
+
+-- Fixture + Negative 4/4: task A1f -- a company with TWO applications where
+-- only ONE carries the founder card. QA-reproduced live 2026-07-19 at scale
+-- ("safehttp": 12 applications, 1 founder card; opting out that founder left
+-- 11 of 12 visible -- 104 of 308 real applications share this shape). The
+-- A1d fixtures above all gave the fixture founder their OWN dedicated
+-- application, which cannot exercise this: this one is the case that would
+-- have caught A1d's scope bug (application-scoped instead of company-scoped)
+-- before QA did. Both applications must vanish -- the card-linked one AND
+-- the cardless sibling, because the company's founder set is company-wide,
+-- not per-application.
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name, opt_out_at)
+    VALUES ('10f00001-0000-0000-0000-000000000051', 'Smoke Opt-Out Founder (company-scope, one card of two apps)', now());
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000052', 'Smoke Opt-Out Co (two apps, one card)', 'pre_seed');
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000053', '10f00001-0000-0000-0000-000000000052', 'radar_activated');
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000054', '10f00001-0000-0000-0000-000000000052', 'radar_activated');
+  -- Founder card exists ONLY for application 0053, not 0054 -- the exact
+  -- "safehttp" shape (1 card, N applications at the same company).
+  INSERT INTO cards (id, card_type, founder_id, company_id, application_id)
+    VALUES ('10f00001-0000-0000-0000-000000000055', 'founder',
+            '10f00001-0000-0000-0000-000000000051', '10f00001-0000-0000-0000-000000000052', '10f00001-0000-0000-0000-000000000053');
+END $$;
+
+DO $$
+DECLARE
+  v_carded_app_present   int;
+  v_cardless_app_present int;
+BEGIN
+  SELECT count(*) INTO v_carded_app_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000053';
+  SELECT count(*) INTO v_cardless_app_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000054';
+
+  IF v_carded_app_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: the card-linked application of an opted-out founder is present in api_applications, expected excluded';
+  END IF;
+  IF v_cardless_app_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: task A1f regression -- the CARDLESS sibling application at the same company survived the founder opt-out (application-scoped instead of company-scoped exclusion), got 1 row present, expected excluded';
+  END IF;
+END $$;
+
+-- Fixture + Negative 5/5: task A1f gap 2 (TRACKER.md, qa-report-10.md SS A4)
+-- -- a GENUINE two-founder co-founder case, which existed nowhere in this
+-- suite before now (the comment on the Negative 1/3 fixture above used to
+-- claim it was "exercised separately below by the two-applications-one-card
+-- fixture" -- false, that fixture has only one founder total; QA had to
+-- construct this case itself). Two founders on ONE card each, both cards
+-- reaching the SAME company (one via card.company_id + card.application_id
+-- together, the other via card.company_id alone, with no application_id --
+-- covering both of company_founders' card-reachability paths), one shared
+-- application. Two-step assertion: opting out ONE co-founder retains the
+-- application (1 -> 1, the other co-founder is still active); opting out
+-- the SECOND co-founder too then excludes it (1 -> 0, no active founder of
+-- the company remains). This is exactly the shape where a company-scoped
+-- exclusion could go wrong in either direction -- too narrow (excludes on
+-- the first opt-out, as if founders were unioned as a hard requirement
+-- instead of "all must fail") or too broad (never excludes because at
+-- least one row always satisfies some unrelated condition).
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name)
+    VALUES ('10f00001-0000-0000-0000-000000000071', 'Smoke Co-Founder A');
+  INSERT INTO founders (id, full_name)
+    VALUES ('10f00001-0000-0000-0000-000000000072', 'Smoke Co-Founder B');
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000073', 'Smoke Co-Founder Co', 'pre_seed');
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000074', '10f00001-0000-0000-0000-000000000073', 'radar_activated');
+  -- Co-founder A's card carries both company_id and application_id.
+  INSERT INTO cards (id, card_type, founder_id, company_id, application_id)
+    VALUES ('10f00001-0000-0000-0000-000000000075', 'founder',
+            '10f00001-0000-0000-0000-000000000071', '10f00001-0000-0000-0000-000000000073', '10f00001-0000-0000-0000-000000000074');
+  -- Co-founder B's card carries only company_id, no application_id --
+  -- the card.company_id-direct reachability path, not the via-application one.
+  INSERT INTO cards (id, card_type, founder_id, company_id)
+    VALUES ('10f00001-0000-0000-0000-000000000076', 'founder',
+            '10f00001-0000-0000-0000-000000000072', '10f00001-0000-0000-0000-000000000073');
+END $$;
+
+-- Step 1 (1 -> 1): opt out co-founder A only. Co-founder B is still active,
+-- so the shared application must remain visible.
+DO $$
+DECLARE
+  v_present int;
+BEGIN
+  UPDATE founders SET opt_out_at = now() WHERE id = '10f00001-0000-0000-0000-000000000071';
+
+  SELECT count(*) INTO v_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000074';
+  IF v_present <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: co-founder case step 1 (1->1) -- application with one opted-out and one active co-founder expected present, got % rows', v_present;
+  END IF;
+END $$;
+
+-- Step 2 (1 -> 0): opt out co-founder B too. Now every founder of the
+-- company is opted out, so the application must be excluded.
+DO $$
+DECLARE
+  v_present int;
+BEGIN
+  UPDATE founders SET opt_out_at = now() WHERE id = '10f00001-0000-0000-0000-000000000072';
+
+  SELECT count(*) INTO v_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000074';
+  IF v_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: co-founder case step 2 (1->0) -- application with BOTH co-founders opted out expected excluded, got % rows', v_present;
   END IF;
 END $$;
 
@@ -1981,46 +2108,162 @@ BEGIN
   END IF;
 END $$;
 
--- Regression guard (task A1d, TRACKER.md, "CRITICAL, blocking the QA gate"):
--- the total-wipe case. QA reproduced live that opting out EVERY founder in
--- the database removed 0 of 308 api_applications rows, because the view's
--- exclusion gated on founder_company.is_current, which is empty for the
--- real corpus -- a GDPR guarantee silently disabled. This is the single
--- assertion QA said would have caught it, run here as the very last thing
--- in this section (it touches every founder row in the whole transaction,
--- including every fixture inserted by every earlier section in this file --
--- intentional, it mirrors the QA repro exactly, and nothing after this
--- point in this section depends on any founder's opt-out state).
---
--- Asserted as an INVARIANT, not a literal "must return 0" (task A1d asked
--- for the latter, but the correct, design-mandated behaviour retains
--- founderless applications -- 190 live today -- so a bare zero-count
--- assertion would itself be wrong and would start failing against
--- legitimate data; the "or only founderless applications" caveat in task
--- A1d's own verify block confirms this). The invariant that actually proves
--- the fix: after every founder is opted out, NO application that has ANY
--- linked founder (via either resolution source api_applications itself
--- uses -- a founder card with card.application_id = the application, or a
--- founder_company.is_current row for its company) may still appear.
+-- Regression guard (task A1e, TRACKER.md, negative-karma half): the A1a fix
+-- above stopped the abort but also folded negative hn_karma into
+-- karma_term=1 ("maximally obscure"), diverging from lib/f02/obscurity.js
+-- (which treats a negative reading as unobserved, term dropped). Founder
+-- d2e2c8fb-3abc-4f31-9c65-66ecc16066e4 (real data, hn_karma=-2,
+-- gh_followers=4) is the exact measured case: before A1e this view returned
+-- 0.8835/{gh_followers,hn_karma}, the library returned 0.767/{gh_followers}.
+-- A1e made this view match the library term-for-term; pinned here so the
+-- two can never silently drift apart again.
 DO $$
 DECLARE
-  v_leaked int;
+  v_obscurity numeric;
+  v_basis     text[];
+BEGIN
+  SELECT obscurity, obscurity_basis INTO v_obscurity, v_basis
+  FROM radar_candidates WHERE founder_id = 'd2e2c8fb-3abc-4f31-9c65-66ecc16066e4';
+
+  IF v_obscurity IS DISTINCT FROM 0.767 THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates obscurity for the negative-karma founder expected 0.767 (matching lib/f02/obscurity.js), got % -- the A1e regression', v_obscurity;
+  END IF;
+  IF v_basis IS DISTINCT FROM ARRAY['gh_followers'] THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates obscurity_basis for the negative-karma founder expected {gh_followers} (hn_karma dropped as unobserved), got %', v_basis;
+  END IF;
+END $$;
+
+-- Regression guard (task A1e, TRACKER.md, "second item" -- duplicate founder
+-- cards): `cards` has no unique constraint on (founder_id, card_type), so
+-- radar_candidates' previous plain `FROM cards c ... WHERE
+-- c.card_type='founder'` emitted one row per founder-card, not one row per
+-- founder, the moment a founder ever picked up a second founder card --
+-- proven live by injecting exactly this shape (2 rows returned before the
+-- fix). radar_candidates now sources from a DISTINCT ON (founder_id) CTE
+-- (`founder_card`) with the same `created_at DESC, id DESC` tiebreak
+-- api_founders' own `founder_cards` CTE (task A1c) already uses, so the two
+-- views cannot disagree about which card wins a tie. api_founders itself was
+-- already provably safe (its founder_cards CTE had the DISTINCT ON fix from
+-- A1c); the risk was live in radar_candidates alone, which feature 09 may
+-- read directly (this view is also where `freshness` lives -- not exposed
+-- via api_founders at all, so a duplication there would have been invisible
+-- to 10's own guard).
+DO $$
+DECLARE
+  v_company_id     uuid;
+  v_application_id uuid;
+  v_row_count      int;
+  v_company_seen   uuid;
+BEGIN
+  SELECT id INTO v_company_id FROM companies LIMIT 1;
+  SELECT id INTO v_application_id FROM applications LIMIT 1;
+
+  IF v_company_id IS NULL OR v_application_id IS NULL THEN
+    RAISE EXCEPTION 'smoke FAIL: A1e duplicate-card guard needs at least one company and one application row to exist -- fixture data is missing';
+  END IF;
+
+  -- Founder 02f00001-...-0001 already carries one founder card (inserted
+  -- above, company_id/application_id both NULL). Give it a SECOND one with
+  -- a real company/application attached and a later created_at, so a
+  -- surviving duplication bug would either double the row count or blend in
+  -- the wrong company/application.
+  INSERT INTO cards (card_type, founder_id, company_id, application_id, created_at, updated_at)
+  VALUES ('founder', '02f00001-0000-0000-0000-000000000001', v_company_id, v_application_id, now() + interval '1 hour', now() + interval '1 hour');
+
+  SELECT count(*) INTO v_row_count FROM radar_candidates
+  WHERE founder_id = '02f00001-0000-0000-0000-000000000001';
+  IF v_row_count <> 1 THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates returned % row(s) for a founder with 2 founder cards, expected exactly 1 -- the A1e duplicate-card regression', v_row_count;
+  END IF;
+
+  SELECT company_id INTO v_company_seen FROM radar_candidates
+  WHERE founder_id = '02f00001-0000-0000-0000-000000000001';
+  IF v_company_seen IS DISTINCT FROM v_company_id THEN
+    RAISE EXCEPTION 'smoke FAIL: radar_candidates picked company_id % for the duplicated founder, expected the latest card''s % (created_at DESC tiebreak)', v_company_seen, v_company_id;
+  END IF;
+END $$;
+
+-- Regression guard (task A1d, widened task A1f gap 1, TRACKER.md,
+-- qa-report-10.md SS A4, "CRITICAL, blocking the QA gate"): the total-wipe
+-- case. QA reproduced live that opting out EVERY founder in the database
+-- removed 0 of 308 api_applications rows originally (founder_company-only
+-- gate, empty for the real corpus) -- a GDPR guarantee silently disabled.
+--
+-- gap 1: the FIRST version of this guard checked `c.application_id =
+-- aa.application_id` -- i.e. "does THIS SPECIFIC application have its own
+-- founder card" -- which is application-scoped, the exact same shape as the
+-- task A1d bug it was meant to catch. QA confirmed it reported v_leaked = 0
+-- even against the reverted, application-scoped view: a decorative guard
+-- that passed whether or not the fix was present. Two independent fixes
+-- below, not one: (1) a CONCRETE fixture -- a company with two
+-- applications where only ONE carries the founder card, the exact shape
+-- QA and the coordinator verified by hand -- built BEFORE the blanket wipe
+-- so it is asserted on known ids, not on how much of the live/fixture
+-- corpus happens to look like this shape at this point in the file; and
+-- (2) the generic invariant, corrected to genuine company-scoped
+-- reachability (card.company_id OR card.application_id -> applications.
+-- company_id OR founder_company.is_current, all keyed by the APPLICATION'S
+-- COMPANY, never the application itself) as a broad sweep across
+-- everything else in the transaction at this point (live corpus +
+-- every earlier fixture in this file).
+--
+-- Run as the very last thing in this section (touches every founder row in
+-- the whole transaction; nothing after this point in this section depends
+-- on any founder's opt-out state). Asserted as an INVARIANT for check (2),
+-- not a literal "must return 0" -- the correct, design-mandated behaviour
+-- retains founderless applications (190 live at task A1d's measurement), so
+-- a bare zero-count assertion on the view's total would itself be wrong.
+
+-- Fixture: company with two applications, one founder card -- built before
+-- the wipe so this check does not depend on the live corpus containing this
+-- shape (it does today, e.g. "safehttp", but this suite must not assume that).
+DO $$
+BEGIN
+  INSERT INTO founders (id, full_name)
+    VALUES ('10f00001-0000-0000-0000-000000000081', 'Smoke Total-Wipe Founder (two apps, one card)');
+  INSERT INTO companies (id, name, stage)
+    VALUES ('10f00001-0000-0000-0000-000000000082', 'Smoke Total-Wipe Co (two apps, one card)', 'pre_seed');
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000083', '10f00001-0000-0000-0000-000000000082', 'radar_activated');
+  INSERT INTO applications (id, company_id, kind)
+    VALUES ('10f00001-0000-0000-0000-000000000084', '10f00001-0000-0000-0000-000000000082', 'radar_activated');
+  INSERT INTO cards (id, card_type, founder_id, company_id, application_id)
+    VALUES ('10f00001-0000-0000-0000-000000000085', 'founder',
+            '10f00001-0000-0000-0000-000000000081', '10f00001-0000-0000-0000-000000000082', '10f00001-0000-0000-0000-000000000083');
+END $$;
+
+DO $$
+DECLARE
+  v_leaked         int;
+  v_carded_present int;
+  v_cardless_present int;
 BEGIN
   UPDATE founders SET opt_out_at = now();
 
+  -- Check (1): the concrete, guaranteed-to-discriminate shape.
+  SELECT count(*) INTO v_carded_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000083';
+  SELECT count(*) INTO v_cardless_present FROM api_applications
+    WHERE application_id = '10f00001-0000-0000-0000-000000000084';
+  IF v_carded_present <> 0 OR v_cardless_present <> 0 THEN
+    RAISE EXCEPTION 'smoke FAIL: total-wipe guard -- company-scoped two-apps-one-card fixture survived a full founder opt-out wipe (carded present=%, cardless present=%), expected both excluded', v_carded_present, v_cardless_present;
+  END IF;
+
+  -- Check (2): the broad sweep, now genuinely company-scoped.
   SELECT count(*) INTO v_leaked
   FROM api_applications aa
   WHERE EXISTS (
     SELECT 1 FROM cards c
-    WHERE c.application_id = aa.application_id
-      AND c.card_type = 'founder' AND c.founder_id IS NOT NULL
+    LEFT JOIN applications ca ON ca.id = c.application_id
+    WHERE c.card_type = 'founder' AND c.founder_id IS NOT NULL
+      AND (c.company_id = aa.company_id OR ca.company_id = aa.company_id)
   ) OR EXISTS (
     SELECT 1 FROM founder_company fc
     WHERE fc.company_id = aa.company_id AND fc.is_current
   );
 
   IF v_leaked <> 0 THEN
-    RAISE EXCEPTION 'smoke FAIL: % application(s) with a linked founder survived a total founder opt-out wipe -- the exact task A1d regression (GDPR guarantee disabled)', v_leaked;
+    RAISE EXCEPTION 'smoke FAIL: % application(s) with a company-reachable founder survived a total founder opt-out wipe -- the task A1d/A1f regression (GDPR guarantee disabled)', v_leaked;
   END IF;
 END $$;
 

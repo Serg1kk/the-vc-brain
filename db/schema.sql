@@ -1162,27 +1162,45 @@ obscurity_terms AS (
   -- founders with the least data to the top of the feed.
   SELECT
     founder_id, gh_followers, gh_notable_followers, hn_karma, hn_points, hn_comments,
-    -- Feature 10 fix to a Feature 02 object: log-domain guard, see TRACKER.md
-    -- (feature 10 task A1a). HN karma legitimately goes negative for a
-    -- downvoted user (real, measured: founder d2e2c8fb-3abc-4f31-9c65-
-    -- 66ecc16066e4 has hn_karma=-2) and log() of a non-positive argument
-    -- raised "cannot take logarithm of a negative number", aborting any
-    -- statement that reads `obscurity` across all rows (count(*) alone
-    -- doesn't trip it -- the planner prunes the unused column, which is why
-    -- 02's own smoke tests never caught it). GREATEST(x, 0) floors the log
-    -- argument to 1 at worst -- log(1)=0 -- so a non-positive metric now
-    -- resolves the term to its existing ceiling (1 - 0 = 1, "maximally
-    -- obscure"), which is already what this metric means for a founder with
-    -- no visible standing; it does not change the formula shape, the 3/4
-    -- divisors, or the NULL-vs-0 semantics above (still NULL, never 0, when
-    -- the metric was never observed at all). gh_followers cannot go negative
-    -- today but gets the same guard for free.
-    CASE WHEN gh_followers IS NOT NULL
-      THEN 1 - LEAST(GREATEST(log(1 + GREATEST(gh_followers, 0)) / 3, 0), 1)
-      ELSE NULL END AS followers_term,
-    CASE WHEN hn_karma IS NOT NULL
-      THEN 1 - LEAST(GREATEST(log(1 + GREATEST(hn_karma, 0)) / 4, 0), 1)
-      ELSE NULL END AS karma_term
+    -- Feature 10 fix to a Feature 02 object (TRACKER.md, task A1a), REVISED by
+    -- task A1e after it disagreed with lib/f02/obscurity.js. HN karma
+    -- legitimately goes negative for a downvoted user (real, measured:
+    -- founder d2e2c8fb-3abc-4f31-9c65-66ecc16066e4 has hn_karma=-2) and
+    -- log() of a non-positive argument raised "cannot take logarithm of a
+    -- negative number", aborting any statement that reads `obscurity` across
+    -- all rows (count(*) alone doesn't trip it -- the planner prunes the
+    -- unused column, which is why 02's own smoke tests never caught it). The
+    -- log-domain abort fix (A1a) was right to floor the log argument, but it
+    -- also folded a negative karma into "maximally obscure" (karma_term=1),
+    -- which is wrong: a negative value means the person was SEEN and poorly
+    -- received (e.g. downvoted), not that nobody found them. That is
+    -- information about reception, not about discovery -- the metric's
+    -- domain is karma >= 0, so a negative reading is OUT OF DOMAIN, i.e.
+    -- unobserved for this term, exactly like the JS library's
+    -- `isObserved(v) = isFiniteNumber(v) && v >= 0`.
+    --
+    -- A1e's fix: a negative metric now resolves the term to NULL (excluded
+    -- from the mean below, dropped from obscurity_basis), same as a metric
+    -- that was never observed at all -- the view's own header rule already
+    -- says "Absence must SHRINK the term count the mean is taken over, never
+    -- contribute a value to it," and this applies that rule literally to the
+    -- negative case too. The GREATEST(x, 0) log-domain guard from A1a is kept
+    -- INSIDE the non-negative branch, belt-and-braces, so no evaluation order
+    -- can ever route a negative value into log() even though that branch is
+    -- now unreachable for negatives by construction. Nothing else changes:
+    -- not the formula shape, not the 3/4 divisors, not the NULL-vs-0
+    -- semantics for a genuinely-absent metric (still NULL, never 0).
+    -- gh_followers cannot go negative today but gets the same guard for free.
+    CASE
+      WHEN gh_followers IS NULL THEN NULL
+      WHEN gh_followers < 0 THEN NULL
+      ELSE 1 - LEAST(GREATEST(log(1 + GREATEST(gh_followers, 0)) / 3, 0), 1)
+    END AS followers_term,
+    CASE
+      WHEN hn_karma IS NULL THEN NULL
+      WHEN hn_karma < 0 THEN NULL
+      ELSE 1 - LEAST(GREATEST(log(1 + GREATEST(hn_karma, 0)) / 4, 0), 1)
+    END AS karma_term
   FROM metrics_pivot
 ),
 earliest_signal AS (
@@ -1191,6 +1209,22 @@ earliest_signal AS (
   FROM raw_signals
   WHERE founder_id IS NOT NULL
   ORDER BY founder_id, observed_at
+),
+founder_card AS (
+  -- Task A1e, second item (TRACKER.md): `cards` has no unique constraint on
+  -- (founder_id, card_type), so a bare `FROM cards c ... WHERE
+  -- c.card_type='founder'` (the previous shape here) emits one row per
+  -- founder-card, not one row per founder -- proven live by injecting a
+  -- second founder-card with a different company_id/application_id: this
+  -- view returned 2 rows for that founder, `api_founders` did not (its own
+  -- `founder_cards` CTE, task A1c, already carries the same DISTINCT ON fix
+  -- applied here). Same convention as that CTE, so the two agree on which
+  -- card wins a tie: latest `created_at`, `id` as the final tiebreak.
+  SELECT DISTINCT ON (c.founder_id)
+    c.founder_id, c.company_id, c.application_id
+  FROM cards c
+  WHERE c.card_type = 'founder' AND c.founder_id IS NOT NULL
+  ORDER BY c.founder_id, c.created_at DESC, c.id DESC
 )
 SELECT
   c.founder_id,
@@ -1222,10 +1256,9 @@ SELECT
     WHEN ot.karma_term     IS NOT NULL THEN ARRAY['hn_karma']
     ELSE NULL
   END AS obscurity_basis
-FROM cards c
+FROM founder_card c
 LEFT JOIN obscurity_terms ot ON ot.founder_id = c.founder_id
-LEFT JOIN earliest_signal es ON es.founder_id = c.founder_id
-WHERE c.card_type = 'founder' AND c.founder_id IS NOT NULL;
+LEFT JOIN earliest_signal es ON es.founder_id = c.founder_id;
 
 -- ============================================================================
 -- Feature 10: api_founders / api_applications / api_claims
@@ -1434,51 +1467,54 @@ ORDER BY fsl.value DESC NULLS LAST, f.full_name ASC, f.id ASC;
 -- single-founder anti-join template verbatim -- this view's subject can be
 -- zero-or-many founders, not one).
 CREATE OR REPLACE VIEW api_applications AS
-WITH application_founders AS (
-  -- Task A1d (corrects the SAME defect A1c fixed in api_founders, TRACKER.md
-  -- -- QA-reproduced 2026-07-19, "CRITICAL, blocking the QA gate"): the
-  -- original source here was founder_company.is_current ONLY (design SS4's
-  -- literal wording), which is company-scoped and, exactly as A1c found,
-  -- effectively empty for the real corpus (5 rows total, 03/05 test
-  -- fixtures, pointing at companies with ZERO applications) -- feature 02,
-  -- which wrote the entire real corpus, never writes founder_company.
-  -- Consequence, reproduced live: opting out EVERY founder in the database
-  -- removed 0 of 308 applications, a GDPR guarantee silently disabled on a
-  -- code path a smoke fixture happened to make green (the fixture manually
-  -- inserted a founder_company row -- a path no real founder takes).
+WITH company_founders AS (
+  -- Task A1f (widens task A1d's fix, TRACKER.md -- "CRITICAL, blocking the
+  -- QA gate" round 2): A1d resolved an application's founders through
+  -- cards SCOPED TO THAT APPLICATION (card.application_id = a.id). Correct
+  -- as far as it went, but design SS4's rule was always "every current
+  -- founder OF THE COMPANY" -- the A1d dispatch mis-wrote it as
+  -- application-scoped, and that IS what got implemented. QA-reproduced
+  -- 2026-07-19: 77 of 198 companies have more than one application, and
+  -- 104 of 308 applications belong to a company with a known founder but
+  -- carry no founder card of their OWN -- e.g. "safehttp", 12 applications,
+  -- only 1 carries a founder card; opting out that one founder left 11 of
+  -- 12 still visible. For an erasure guarantee that is the dominant case,
+  -- not a corner.
   --
-  -- Fix, mirroring A1c exactly: prefer founder_company.is_current for a
-  -- company when it actually has a row there; otherwise resolve through the
-  -- founder card(s) actually LINKED TO THIS APPLICATION
-  -- (card_type='founder', card.application_id = a.id) -- application-scoped,
-  -- not company-scoped, so a second application at the same company (77 of
-  -- 198 companies have more than one, live) never inherits founders that
-  -- belong to a different one. DO NOT collapse this back to
-  -- founder_company-only; that is the bug.
+  -- Fix: the founder set is now keyed by company_id, not application_id.
+  -- Same "prefer founder_company.is_current, else cards" rule A1c/A1d
+  -- established (DO NOT collapse this back to founder_company-only --
+  -- 5 rows total, 03/05 fixtures, the ORIGINAL dead-filter bug), but a
+  -- founder's card now reaches the company two ways, both covered: directly
+  -- via card.company_id, or via card.application_id -> applications.
+  -- company_id (02 sets company_id and application_id together on the
+  -- founder card, but nothing guarantees every future writer does, so both
+  -- paths are checked independently, not assumed to agree).
   --
-  -- One (application_id, founder_id) edge per linked founder -- this feeds
+  -- One (company_id, founder_id) edge per linked founder -- feeds
   -- EXISTS/NOT EXISTS checks below only, so duplicate edges are harmless,
   -- but DISTINCT keeps the CTE itself an honest edge list.
-  SELECT DISTINCT a.id AS application_id, x.founder_id
-  FROM applications a
+  SELECT DISTINCT co.id AS company_id, x.founder_id
+  FROM companies co
   CROSS JOIN LATERAL (
     SELECT fc.founder_id
     FROM founder_company fc
-    WHERE fc.company_id = a.company_id AND fc.is_current
+    WHERE fc.company_id = co.id AND fc.is_current
 
     UNION ALL
 
     SELECT c.founder_id
     FROM cards c
-    WHERE c.application_id = a.id
-      AND c.card_type = 'founder'
+    LEFT JOIN applications ca ON ca.id = c.application_id
+    WHERE c.card_type = 'founder'
       AND c.founder_id IS NOT NULL
-      -- Only falls back to the card path when this application's company has
-      -- NO founder_company.is_current row at all -- the "prefer" half of the
+      AND (c.company_id = co.id OR ca.company_id = co.id)
+      -- Only falls back to the card path when this company has NO
+      -- founder_company.is_current row at all -- the "prefer" half of the
       -- rule above, not a merge of both sources.
       AND NOT EXISTS (
         SELECT 1 FROM founder_company fc2
-        WHERE fc2.company_id = a.company_id AND fc2.is_current
+        WHERE fc2.company_id = co.id AND fc2.is_current
       )
   ) x(founder_id)
 ),
@@ -1583,16 +1619,20 @@ LEFT JOIN theses                       th ON th.id = tl.thesis_id
 LEFT JOIN scores                       ts ON ts.id = tl.score_id
 LEFT JOIN memo_latest                  ml ON ml.application_id = a.id
 WHERE
-  -- Retained when the application has no linked founders at all...
-  NOT EXISTS (SELECT 1 FROM application_founders af WHERE af.application_id = a.id)
-  -- ...or when at least one linked founder is neither opted out nor a
-  -- merge-tombstone. Excluded only when linked founders exist AND every one
-  -- of them fails that check (design SS4 subject-resolution table).
+  -- Retained when the application's company has no linked founders at
+  -- all -- a company-scoped application with no known founder is not a
+  -- person's data (design SS4), which is why this stays NOT EXISTS / EXISTS
+  -- over company_founders rather than an inner join.
+  NOT EXISTS (SELECT 1 FROM company_founders cof WHERE cof.company_id = a.company_id)
+  -- ...or when at least one founder of the company is neither opted out nor
+  -- a merge-tombstone. Excluded only when the company's founders exist AND
+  -- every one of them fails that check (design SS4 subject-resolution
+  -- table -- company-scoped, task A1f).
   OR EXISTS (
     SELECT 1
-    FROM application_founders af
-    JOIN founders f ON f.id = af.founder_id
-    WHERE af.application_id = a.id
+    FROM company_founders cof
+    JOIN founders f ON f.id = cof.founder_id
+    WHERE cof.company_id = a.company_id
       AND f.opt_out_at IS NULL
       AND f.merged_into_founder_id IS NULL
   );

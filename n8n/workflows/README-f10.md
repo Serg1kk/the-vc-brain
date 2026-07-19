@@ -7,7 +7,7 @@ python3 n8n/build-f10-workflow.py           # regenerate + syntax-check every Co
 python3 n8n/build-f10-workflow.py --check   # check only, no write
 ```
 
-The deterministic executor lives in `lib/f10/{constants,plan,score}.js`, unit-tested (86 tests)
+The deterministic executor lives in `lib/f10/{constants,plan,score}.js`, unit-tested (99 tests)
 outside n8n. n8n Code nodes cannot `require` local files, so that source is **inlined**
 verbatim into the "Validate plan" and "Score" nodes by the generator — each preceded by
 `constants.js`'s own body (module.exports stripped) since both modules destructure from it and
@@ -39,6 +39,17 @@ automated equivalent.
 `python3 n8n/build-f10-workflow.py`, PUT the result to the workflow id below, and re-run Q1/Q2
 live to confirm the fix actually shipped — a green `node --test lib/f10/*.test.js` proves the
 *library* is correct, it proves nothing about what n8n is currently executing.
+
+**"The descriptor contract did not change" does NOT imply "no re-paste needed."** This drift
+trap fired a second time, same day, for exactly this reasoning error: a change to `score.js`
+was judged not to require a re-sync because it did not touch `plan.js`'s descriptor shape (the
+data contract between the two pasted modules). That answers a *different* question —
+"did the fetch layer need to change?" — from the one that actually determines whether a re-paste
+is needed: "did any byte of a pasted file change?" `plan.js`, `constants.js` and `score.js` are
+each pasted **verbatim** into a Code node; **any edit to any one of the three, for any reason,
+however self-contained it looks, requires a re-paste of that node and a re-export**, full stop.
+There is no such thing as a change to `lib/f10/*.js` that is "internal" to the deployed workflow
+— every byte of those three files only takes effect in production the moment it is re-pasted.
 
 ## Registered workflow
 
@@ -223,6 +234,75 @@ top 10 or in `low_confidence[]` — `has_match` sank it below every real match i
 /api/v1/executions/{id}?includeData=true`, executions 360/361) confirmed all 13 executable nodes
 ran on both re-runs, all three `IF` gates on the false/no-error branch — same verification method
 as the original build.
+
+### Re-sync after `lib/f10/score.js` QA-gate findings A + B (citation fabrication + structural founder resolution), same day
+
+Two more findings, this time from an independent QA gate, again required a re-paste — this is
+the incident the "descriptor contract" clarification above exists to document. Both are
+confirmed against live data, both required re-running `n8n/build-f10-workflow.py` → PUT →
+re-run Q1/Q2 (99 unit tests pass, 86 → 99, +13 for these two).
+
+**Finding A — citation fabrication.** The evidence shape used to fall back to
+`claims.text_verbatim` (our own system-generated claim text) under the field name
+`quote_verbatim` whenever the real evidence quote was `null` — live, this affected 32.5% of
+`relation='supports'` rows. `quote_verbatim` is now strictly `entry.quote_verbatim` or `null`,
+never substituted; `claim_text` (`claims.text_verbatim`) and `quote_source`
+(`'evidence'` when a real quote is present, else `null`) are new, distinctly-named siblings.
+Verified live post-resync: every `matched`/`matched_broadened` evidence object on a
+positive-polarity attribute carries both `claim_text` and `quote_source` keys (Q1: 59/59, Q2:
+10/10 — 0 missing either key).
+
+**A genuinely non-obvious follow-up, checked and root-caused rather than assumed away:** the
+requested check "`quote_verbatim` must never equal its sibling `claim_text`" fires 28 times out
+of 59 in a live Q1 response. Traced to root cause by querying `api_claims` directly for four
+of the 28 hits (spanning both `documented` and `inferred` tiers): in every case,
+`evidence[0].quote_verbatim` already equals `claims.text_verbatim` **at the PostgREST source**,
+before this workflow's Score node ever reads either field. This is NOT the reintroduced
+fabrication bug — the old bug substituted `text_verbatim` in place of a `null` `quote_verbatim`;
+here `quote_verbatim` is genuinely non-null in the evidence array, and coincides with
+`text_verbatim` because upstream (feature 02's write path, for the
+`founder.leadership.written_communication` topic specifically) the claim's own recorded text
+*is* a verbatim copy of the quoted HN comment — the two fields were populated with the same
+string at write time, by design of whatever ingested that topic, independent of any code in
+this workflow. Reported rather than silently treated as "acceptance passed", and NOT
+papered over by editing the pasted `score.js` logic (out of scope for a paste — this is a
+data-provenance question for feature 02's write path, not a scoring defect).
+
+**Finding B — structural attributes were previously incapable of matching.** Company-scoped
+claims (`company.sector` / `company.geography_country`) carry `founder_id: NULL` — live, 49
+rows across the two topics, exactly 1 with a `founder_id` set directly. The prior row-to-founder
+index kept only rows with a non-null `founder_id`, so a `structural` attribute's rows were
+silently dropped before scoring ever saw them: `geo_berlin`/`sector_ai_infra`-shaped attributes
+could only ever resolve `unknown`, for every candidate, regardless of what the corpus actually
+recorded. `score.js` now resolves a `founder_id: null` company/application-scoped row to every
+CURRENT founder of that company (via `founder_company.is_current`, reusing `api_founders`' own
+join, not a new one) — three-state semantics are unchanged; a founder with no company still
+yields `unknown`, never a fabricated match.
+
+Verified this actually took effect, live, two ways:
+
+1. `total` (candidate count) for Q2 grew 104 → 108 — the four founders newly reachable through
+   `geo_berlin`/`sector_ai_infra`'s own candidate contribution (previously these two attributes
+   generated zero candidates at all, since none of their rows carried a `founder_id`).
+2. Re-ran Q2 at `limit=150` (all 108 scored candidates visible, not just the top 10 + low
+   confidence): `geo_berlin` shows **1 `mismatch`** (107 `unknown`), `sector_ai_infra` shows
+   **3 `mismatch`es** (105 `unknown`). A `mismatch` is only reachable once a row has actually
+   been attributed to that founder and evaluated — under the old code every one of these 108
+   candidates could only ever show `unknown` for both attributes, unconditionally. This is
+   direct, positive proof the resolution mechanism works.
+
+**Zero `matched`/`matched_broadened` states for either attribute in the live corpus right now —
+traced to two independent, verified, corpus-level facts, not a residual code defect:**
+
+- Both live `company.geography_country = "DE"` claims belong to a company/application with
+  **no `founder_company` row at all** (`founder_company?company_id=eq.<id>` returns `[]` for
+  both) — no founder can be attributed to them no matter how correct the resolution logic is.
+- `company.sector` has **zero rows with `value = "ai-infra"` anywhere in the live corpus**
+  (the values present are `b2b-software`, `fintech`, `consumer`, `gambling` only) — there is
+  nothing to match against, independent of founder resolution entirely.
+
+Both are upstream data-completeness facts (02/08's ingestion, not this feature), reported here
+rather than left to look like an unresolved re-sync.
 
 ## Re-deploying after a change
 

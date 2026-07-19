@@ -42,7 +42,7 @@
 | 07 | thesis-engine | **done** (QA report present, `handoff.md` written) | 01-schema | 02 (gate), 09 | 1 |
 | 05 | truth-gap-trust | **in-build** (core done & committed `f0c2b90`/`8895ae9`/`875f4ae` · 147 tests · `claim_trust` view live · n8n `f05-trust-rollup` `Wtd887vYwv5x3FvH` active · QA pass 1 returned 2 findings, both in fix) | 03 & 04 output contracts | 06 | 2 |
 | 08 | founder-intake (compact B) | backlog | 01-schema, 02 (pre-fill sub-workflows) | 11 | 2 |
-| 10 | api-cli-skill | backlog | 01-schema (PostgREST); webhooks land per-feature | 09 (NL-search UI) | 2 |
+| 10 | api-cli-skill | **done** (QA gate PASSED, 3 rounds · views + `f10-nl-search` + `lib/f10` 99 tests + `bin/vcbrain` + skill · read-only · see `10-api-cli-skill/done.md`) | 01-schema (PostgREST) | 09 (NL-search UI) | 2 |
 | 06 | memo-decision | backlog | 03, 04, 05 | 09 | 3 |
 | 09 | investor-dashboard | backlog | 03-07 outputs (design track can start NOW) | 12 demo | 3 |
 | 11 | demo-data-ethics | backlog | 02, 08 | 12 demo | 3 |
@@ -647,3 +647,143 @@ workflow, rather than discovering it inside a 20-node execution trace.
 `GET /api/v1/executions/{id}?includeData=true`, write it to a file, and `curl --data @file`
 against the API. n8n's node error surface showed nothing; the API said exactly what was wrong in
 one line.
+
+## 2026-07-19 ~11:40 · 09 + 11 — DESIGN TRACK LANDED, and a demo fixture arrived with it
+
+**Feature 09 design track is complete and unblocked the way the ~08:50 dispatch plan predicted:
+its design phase needed no upstream data.** Four documents now live in
+`docs/backlog/09-investor-dashboard/`, and the Claude Design output has come back.
+
+| File | What it is | Who reads it |
+|---|---|---|
+| `scoring-ux.md` | Per-score design spec — what each number IS, what would misrepresent it, what its component looks like. 7 sections. | Anyone drawing or wiring a score |
+| `data-contracts.md` | Frozen read surfaces: exact columns, types, vocabularies, PostgREST examples | Whoever wires the front |
+| `lovable-brief.md` | Build instruction: routes, states, copy, acceptance criteria | Lovable / @frontend-developer |
+| `claude-design-brief.md` | Visual-first prompt sequence (6 prompts) | Claude Design |
+
+**Design output:** `09-investor-dashboard/The VC Brain operating system (1)/` — a Claude Design
+`.dc.html` covering **14 screens**: Feed · Sidebar · Founder card · Founder score · Evidence /
+Market / Competition / Interview / What-we-don't-know tabs · Explain panel · Parsed plan · Memo ·
+Thesis form · Watchlist. Not yet integrated into `web/`.
+
+### 11 — demo fixture, delivered as a side artifact of the design pass
+
+`db/fixtures/11-demo-data.sql` (61 KB) + `docs/backlog/11-demo-data-ethics/fixture-notes.md`.
+**10 synthetic applications** — 5 inbound, 5 radar_activated — written against the live schema in
+the style of fixtures 03 and 07. Reserved UUID range `11f0…`, every INSERT
+`ON CONFLICT (id) DO NOTHING`, one transaction, idempotent.
+
+```
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/fixtures/11-demo-data.sql
+```
+
+**It deliberately inserts NO `scores` / `score_components` / `thesis_evaluations` / `memos`** —
+same stance as fixture 07. It supplies source-of-truth rows only; the pipelines produce the
+numbers. Each of the 10 is built to exercise one honest-UI state that the live corpus cannot yet
+demonstrate: a documented contradiction with a full `claim_contradicted` payload · a
+not-disclosed gap · an outside-thesis-geo row · a forecast claim · `insufficient_evidence` by
+construction · a searched-nothing-found provenance row · an HN-only identity · star-farming red
+flag R2 · a karma-only obscurity basis.
+
+⚠️ **Unverified — nobody has applied it yet.** It was written against `db/schema.sql` by reading,
+not by running. Apply it and run the pipelines before trusting any of the scenarios above.
+
+**Ethics stance, and it is load-bearing:** every person and company is fictional,
+`is_synthetic = true` everywhere, domains use `.example`. Fabricating claims, contradictions or
+red flags about **real** founders is exactly the defamation the entity gate exists to prevent —
+so no row references a real person. The `SYNTHETIC` badge contract in `api_founders` is what makes
+this safe to render.
+
+### Cross-feature items this pass surfaced
+
+1. **10 — obscurity: SQL and JS disagree on negative HN karma.** `db/schema.sql`'s
+   `GREATEST(hn_karma, 0)` (added by terminal 10 to stop the `log()` abort) treats negative karma
+   as **observed and maximally obscure**; `lib/f02/obscurity.js` treats it as **unobserved**. The
+   view is what production reads, so **a downvoted HN user currently renders as "maximally
+   undiscovered" and sorts to the top of any obscurity-ranked view** — the NULL-vs-zero rule
+   defeated through a different door. Owner: **feature 10** (it made the edit; its `api_founders`
+   re-exposes the column; 02 is closed). Recommendation: align SQL to the library, because a NULL
+   sorts last and the lib/dashboard divergence is worse than either reading.
+2. **10 — `radar_candidates` can return duplicate founder rows.** `cards` has no unique constraint
+   on `(founder_id, card_type)`. `api_founders`' `SELECT DISTINCT` covers founder_id / obscurity /
+   obscurity_basis / channel but **not** `freshness`, `company_id`, `application_id` — which is
+   exactly what 09's feed reads.
+3. **06 — memo recommendation vocabulary conflict, unresolved.** The shipped CHECK is
+   `('invest','pass','watch')`; 06's README prose says `proceed / proceed-with-conditions / pass /
+   watchlist`. **The database will reject the README's values.** Design proceeds on the three
+   shipped values (operator ruling); reconcile before 06 builds.
+4. **09 — manager notes CUT** (operator, Jul 19). No table exists in the schema and adding one is
+   out of scope for the clock. Follow-up questions are driven by card gaps alone.
+
+## 2026-07-19 ~11:40 · 08 → 04, 05, 07 — three defects found while verifying 08, each reproducible
+
+Found by running 08's invariant checks against the whole database rather than only 08's rows.
+None are 08's to fix and none are urgent enough to derail anyone, but all three are the kind that
+stay invisible until a judge or a data-subject request finds them.
+
+**→ 07 · `company.*` gap claims have no `evidence` row.**
+```sql
+select c.topic, c.source_kind from claims c left join evidence e on e.claim_id = c.id
+where c.topic like 'company.%' and e.id is null;
+```
+Feature 03 resolves a claim's source through `evidence.raw_signal_id`; with no evidence row it
+falls back to `claims.source_kind`, and the wildcard mapping there licenses `not_met` on criteria
+the evidence says nothing about. That is REQ-003 inverted — the exact failure 02's cross-feature
+rule 3 was written to prevent. 08 writes an `evidence` row even for its `missing` markers
+(`tier='missing'`); the same treatment would close this.
+
+**→ 04 · 9 `raw_signals` with both FKs NULL, and 14 unpolyfilled `new URL()` calls.**
+```sql
+select source, count(*) from raw_signals
+where founder_id is null and company_id is null group by 1;   -- tavily_extract | 9
+```
+Already noted in this file at ~06:40; still true. Separately, `f04-competition-intel` (6 nodes)
+and `f04-market-intel` (8 nodes) call `new URL()` **without** the polyfill that `f02` prepends —
+`URL` is undefined in the Code-node sandbox, so those throw. Whether that surfaces as an error or
+as plausible-looking wrong data depends on what catches it.
+
+**→ 05 · ~190 `events` rows unreachable by erasure.**
+```sql
+select actor, count(*) from events where entity_type = 'application' group by 1 order by 2 desc;
+-- lib/f05/run.js | 194,  f05-verify-claims | 61
+```
+`purge_founder()` deletes `events` only `where entity_type = 'founder'` (02's cross-feature
+rule 2). Anything else is structurally unreachable, and these payloads carry application context.
+Cheapest fix is to write `entity_type='founder'` + the founder id and put the application id in
+the payload, which is what 08 does.
+
+## 2026-07-19 ~11:50 · Feature 10 CLOSED — QA gate PASSED (append by terminal 10)
+
+`10-api-cli-skill` is **done**. Agent-facing read surface, live end to end: three PostgREST views
+(`api_founders`, `api_applications`, `api_claims`), the `f10-nl-search` n8n workflow
+(`x7qXnx2asXrGB0ye`), `lib/f10` (99 tests), `bin/vcbrain`, `docs/api.md`,
+`skills/vcbrain-cli/SKILL.md`. Both acceptance queries pass live, including the brief's own
+reference query degrading honestly rather than fabricating matches. **Feature 10 writes no data.**
+
+**→ Downstream, read `docs/backlog/10-api-cli-skill/done.md` before consuming anything. Feature 09
+especially:** it reads `api_founders` and `radar_candidates` directly, and `done.md` lists the
+column semantics, the `freshness`-vs-`first_seen_at` difference, and the traps.
+
+### Things other features need to know
+
+- **`scores(axis='founder')` is empty database-wide.** 04 owns that axis and never wrote a row, so
+  `api_applications.score_founder.assessed` is `false` on every application. **06 and 09 will hit
+  this too** — an absent axis must read as "not assessed", never as zero.
+- **`claims.verification_status='verified'` is 0** database-wide (05 landed after this was measured
+  — recheck before relying on it). Verification status was not usable as a trust signal here.
+- **Three fixes were made to feature 02's `radar_candidates`** (02 is closed, no live terminal),
+  each marked in `db/schema.sql`: a log-domain guard, negative-karma-is-unobserved (aligning SQL
+  with `lib/f02/obscurity.js`, which disagreed), and `DISTINCT ON (founder_id)` dedup. The dedup one
+  was **live-broken**, not theoretical: a duplicate founder card made the view emit two rows
+  blending different `company_id`/`application_id`.
+
+### Two traps worth borrowing
+
+- **Code pasted into n8n Code nodes drifts silently from `lib/`.** It fired twice in one afternoon;
+  both times unit tests were green while the live endpoint served stale logic. "The contract did not
+  change" does not imply "no re-paste needed". Detect by grepping the **live** workflow via the n8n
+  API (not the tracked JSON file) for a symbol only present in the current library.
+- **A green test proves nothing until you have watched it fail.** A smoke assertion guarding GDPR
+  opt-out passed for hours while exercising a code path no real founder takes, because its fixture
+  hand-inserted a `founder_company` row. Every regression lock in feature 10 has since been verified
+  by reverting the fix and confirming the test fails loudly.

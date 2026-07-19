@@ -2,7 +2,15 @@
 
 > English version (primary): [README.md](README.md)
 
-Status: backlog · Depends on: 01-07 · Operator's hard requirement + P3 persona
+Status: **done** · QA-гейт ПРОЙДЕН (3 раунда) · Depends on: 01-07 · Operator's hard requirement + P3 persona
+
+> **Что вошло (вариант A):** NL-поиск вглубь, CLI и скилл тонкие, но настоящие. Фича 10
+> **только читает** — она не пишет никаких данных. Сделано: 3 вью над PostgREST · n8n-воркфлоу
+> `f10-nl-search` · скорер `lib/f10` (99 тестов) · `bin/vcbrain` (4 команды) · `docs/api.md` ·
+> `skills/vcbrain-cli/SKILL.md`.
+> **Потребителям ниже по течению — сначала читать [`done.md`](done.md)**, особенно фиче 09.
+> Вырезано из первоначального плана: `submit` (запись принадлежит фиче 08), команды-перечисления,
+> обёртки `score`/`gate`, `memo`/`watch`, а также виды атрибутов `velocity` и `text`.
 
 ## Что это
 
