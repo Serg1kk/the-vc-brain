@@ -1,6 +1,37 @@
 # 11 · Demo Data & Ethics Layer
 
-Status: backlog · Depends on: 02-08
+Status: **done** — QA gate PASSED 2026-07-19, zero blockers · Depends on: 02, 08
+Closeout: [done.md](done.md) · Fixture map: [fixture-notes.md](fixture-notes.md) · QA: [qa-report-11.md](qa-report-11.md)
+
+## Shipped (2026-07-19) — read this before the design narrative below
+
+What actually shipped differs from the original "real + synthetic" plan below, and the
+difference is deliberate:
+
+- **The demo fixture is 10 FULLY synthetic applications** (`db/fixtures/11-demo-data.sql`),
+  not "3-5 real + 1-2 synthetic". Every person and company is fictional, `is_synthetic=true`
+  everywhere, all domains `.example`. 5 inbound (deck) + 5 radar (deckless), each engineered
+  to force exactly one honest-UI state (documented contradiction, not-disclosed gap, outside-
+  thesis lane, forecast claim, insufficient-evidence, searched-nothing-found provenance,
+  HN-only identity, star-farming red flag R2, karma-only obscurity, cold-start).
+- **Why fully synthetic, not real:** fabricating claims, contradictions or red flags *about a
+  real founder* is exactly the defamation the entity gate exists to prevent. Real founders do
+  still appear in the product — the ~150-founder live corpus from the feature-02 radar is
+  browsable in the dashboard — but they are never given invented red flags. The seeded-
+  contradiction demo scenarios therefore live entirely on synthetic people.
+- **The ethics UI surfaces are delivered by other features**, by design: the SYNTHETIC badge
+  and the opt-out button on the founder card ship in feature 09; the "what we collect"
+  disclosure (`DisclosureBanner.tsx`) ships in feature 08. Feature 11 owns the **data**, the
+  **read-path guarantees** (badge resolves for all 10), and the **ethics guarantees**
+  (erasure works end-to-end, no Art.9 / minimisation fields, no real-person references).
+- **Scenario reconciliations vs the original narrative** (both verified live, see
+  `fixture-notes.md`): Kelpgrid lands "outside thesis" on **sector** (climate, off the fund's
+  b2b-software/ai-infra/devtools mandate), not on geography — Denmark satisfies the EU/US geo
+  rule; the "Outside thesis, never rejected" demo beat holds either way. Andrei (quietgpu) and
+  Tomás (ferrofluid) now carry **real founder scores** (23.68 low-confidence / 71.62 with the
+  R2 red flag visible on the scored row) rather than collapsing to insufficient-evidence.
+
+The sections below are the original design/grooming intent, kept as context.
 
 ## What it is
 

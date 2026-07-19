@@ -577,7 +577,9 @@ ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- RADAR 2/5 — quietgpu / Andrei Balan (Bucharest, RO)
--- HN-only identity (no cross-platform link) — the 64% normal branch.
+-- HN-only identity (no cross-platform link) — the 64% normal branch. Two extra
+-- HN-derived claims added below (waitlist + pre-funding history) so this clears
+-- min_coverage and renders a real founder_score, not insufficient_evidence.
 -- ============================================================================
 
 INSERT INTO founders (id, full_name, headline, profile, is_synthetic) VALUES
@@ -651,6 +653,39 @@ INSERT INTO metric_observations (id, metric, founder_id, value, observed_at) VAL
   ('11f0000b-0000-0000-0000-000000000701', 'hn_karma', '11f00007-0000-0000-0000-000000000007', 412, '2026-07-14T20:30:00Z'),
   ('11f0000b-0000-0000-0000-000000000702', 'hn_points', '11f00007-0000-0000-0000-000000000007', 178, '2026-07-14T20:30:00Z'),
   ('11f0000b-0000-0000-0000-000000000703', 'hn_author_replies', '11f00007-0000-0000-0000-000000000007', 31, '2026-07-14T20:30:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Added 2026-07-19 (feature 11 close-out, operator Option A): two more HN-derived,
+-- self-reported claims so Andrei clears score_formulas.min_coverage (0.25) and gets a
+-- real "normal branch" founder_score instead of insufficient_evidence — WITHOUT adding
+-- any GitHub cross-link, which would break the HN-only-identity narrative above. Both
+-- are follow-up comments in the same Show HN thread (raw_signals :701's item id),
+-- explicitly unverified/self-reported (source_kind='self_reported', tier='discovered'),
+-- same honesty posture as everything else in this fixture: nothing here claims to be
+-- independently corroborated.
+INSERT INTO raw_signals (id, source, source_url, payload, content_hash, founder_id, observed_at) VALUES
+  ('11f00005-0000-0000-0000-000000000702', 'hn_algolia', 'https://news.ycombinator.com/item?id=44807551',
+   '{"comment_by": "abalan_gpu", "text": "40 people on the waitlist since we posted here; will follow up with each individually.", "note": "author follow-up comment, self-reported signup count, no independent verification"}'::jsonb,
+   'f11fix:rawsignal:702', '11f00007-0000-0000-0000-000000000007', '2026-07-14T21:10:00Z'),
+  ('11f00005-0000-0000-0000-000000000703', 'hn_algolia', 'https://news.ycombinator.com/item?id=44807551',
+   '{"comment_by": "abalan_gpu", "text": "Been running this on my own boxes for about six months before posting here — no funding, just needed it myself.", "note": "author follow-up comment describing pre-funding history"}'::jsonb,
+   'f11fix:rawsignal:703', '11f00007-0000-0000-0000-000000000007', '2026-07-14T21:15:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO claims (id, card_id, topic, text_verbatim, value, axis, source_kind, base_confidence, content_hash) VALUES
+  ('11f00004-0000-0000-0000-000000000704', '11f00003-0000-0000-0000-000000000701',
+   'founder.leadership.waitlist', 'Author states 40 people joined the quietgpu waitlist since the Show HN post; no independent verification of signups.',
+   NULL, NULL, 'self_reported', 0.45, 'f11fix:claim:704'),
+  ('11f00004-0000-0000-0000-000000000705', '11f00003-0000-0000-0000-000000000701',
+   'founder.expertise.pre_funding_work', 'Author states quietgpu''s memory-fencing scheduler was built and self-hosted for about six months before the Show HN post, with no funding or commercial engagement at that time.',
+   NULL, NULL, 'self_reported', 0.50, 'f11fix:claim:705')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO evidence (id, claim_id, relation, strength, tier, quote_verbatim, source_url, raw_signal_id, content_hash) VALUES
+  ('11f00006-0000-0000-0000-000000000704', '11f00004-0000-0000-0000-000000000704', 'supports', 0.45, 'discovered',
+   '40 people on the waitlist since we posted here', 'https://news.ycombinator.com/item?id=44807551', '11f00005-0000-0000-0000-000000000702', 'f11fix:evidence:704'),
+  ('11f00006-0000-0000-0000-000000000705', '11f00004-0000-0000-0000-000000000705', 'supports', 0.50, 'discovered',
+   'Been running this on my own boxes for about six months before posting here', 'https://news.ycombinator.com/item?id=44807551', '11f00005-0000-0000-0000-000000000703', 'f11fix:evidence:705')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
@@ -740,7 +775,9 @@ ON CONFLICT (id) DO NOTHING;
 -- RADAR 4/5 — ferrofluid / Tomás Aguiar (Lisbon, PT)
 -- Star-farming red-flag case (R2): high stars, ~zero forks, issues disabled.
 -- The flag demotes E5 to self_asserted — rendered as ⚑ demoted_by, never a
--- point deduction.
+-- point deduction. Two extra claims added below (merged PR elsewhere + a
+-- pre-funding prototype) so this clears min_coverage and produces a real,
+-- moderate founder_score row with R2 still visible — not insufficient_evidence.
 -- ============================================================================
 
 INSERT INTO founders (id, full_name, headline, profile, is_synthetic) VALUES
@@ -807,6 +844,40 @@ INSERT INTO metric_observations (id, metric, founder_id, value, observed_at) VAL
   ('11f0000b-0000-0000-0000-000000000901', 'gh_followers', '11f00007-0000-0000-0000-000000000009', 55, '2026-07-16T09:00:00Z'),
   ('11f0000b-0000-0000-0000-000000000902', 'gh_stars', '11f00007-0000-0000-0000-000000000009', 9200, '2026-07-16T09:00:00Z'),
   ('11f0000b-0000-0000-0000-000000000903', 'gh_forks', '11f00007-0000-0000-0000-000000000009', 3, '2026-07-16T09:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Added 2026-07-19 (feature 11 close-out, operator Option A): two more documented-tier
+-- claims, deliberately from OTHER repos/profile facts than the ferrofluid snapshot above
+-- (raw_signals :901), so Tomás clears score_formulas.min_coverage (0.25) and gets a real
+-- founder_score row WITH the R2 red flag still visible in its score_components, instead
+-- of insufficient_evidence swallowing it. Do NOT touch rows :901-:903 above — the
+-- star-farming snapshot and its supports/contradicts pair on E5 must keep firing R2
+-- exactly as before. This is the "real, moderate technical contributor whose own
+-- flagship repo is vanity-inflated" story: a merged PR elsewhere (E1) and a pre-funding
+-- open-source prototype (X6), independent of the padded ferrofluid stars.
+INSERT INTO raw_signals (id, source, source_url, payload, content_hash, founder_id, observed_at) VALUES
+  ('11f00005-0000-0000-0000-000000000902', 'github_api', 'https://github.com/taguiar-ff',
+   '{"merged_prs_foreign": [{"repo": "tokio-rs/tokio", "title": "bound spawned-task memory via capability-scoped resource limiter", "merged_at": "2026-02-18"}], "note": "profile cross-check, independent of the ferrofluid repo snapshot (raw_signal :901)"}'::jsonb,
+   'f11fix:rawsignal:902', '11f00007-0000-0000-0000-000000000009', '2026-07-16T09:05:00Z'),
+  ('11f00005-0000-0000-0000-000000000903', 'github_api', 'https://github.com/taguiar-ff/agent-fence',
+   '{"repo": {"name": "agent-fence", "created_at": "2025-01-10", "archived_at": "2026-01-05", "stars": 40, "forks": 6, "description": "Prototype capability-scoped sandboxing runtime for local agent execution; predates ferrofluid and its funding conversations."}, "note": "pre-funding open-source work, a separate repo from the flagship ferrofluid snapshot"}'::jsonb,
+   'f11fix:rawsignal:903', '11f00007-0000-0000-0000-000000000009', '2026-07-16T09:07:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO claims (id, card_id, topic, text_verbatim, value, axis, source_kind, base_confidence, content_hash) VALUES
+  ('11f00004-0000-0000-0000-000000000903', '11f00003-0000-0000-0000-000000000901',
+   'founder.execution.merged_pr_foreign', 'Merged PR into tokio-rs/tokio (capability-scoped resource-limiter fix), merged 2026-02-18.',
+   NULL, NULL, 'public', 0.85, 'f11fix:claim:903'),
+  ('11f00004-0000-0000-0000-000000000904', '11f00003-0000-0000-0000-000000000901',
+   'founder.expertise.pre_funding_work', 'Maintained agent-fence, an open-source Rust capability-sandboxing prototype, for roughly 12 months before founding ferrofluid, with no commercial engagement at the time.',
+   NULL, NULL, 'public', 0.75, 'f11fix:claim:904')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO evidence (id, claim_id, relation, strength, tier, quote_verbatim, source_url, raw_signal_id, content_hash) VALUES
+  ('11f00006-0000-0000-0000-000000000904', '11f00004-0000-0000-0000-000000000903', 'supports', 0.85, 'documented',
+   'merged_prs_foreign: tokio-rs/tokio 2026-02-18', 'https://github.com/taguiar-ff', '11f00005-0000-0000-0000-000000000902', 'f11fix:evidence:904'),
+  ('11f00006-0000-0000-0000-000000000905', '11f00004-0000-0000-0000-000000000904', 'supports', 0.80, 'documented',
+   'created_at: 2025-01-10, archived_at: 2026-01-05', 'https://github.com/taguiar-ff/agent-fence', '11f00005-0000-0000-0000-000000000903', 'f11fix:evidence:905')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================

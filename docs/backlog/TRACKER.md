@@ -45,7 +45,7 @@
 | 10 | api-cli-skill | **done** (QA gate PASSED, 3 rounds · views + `f10-nl-search` + `lib/f10` 99 tests + `bin/vcbrain` + skill · read-only · see `10-api-cli-skill/done.md`) | 01-schema (PostgREST) | 09 (NL-search UI) | 2 |
 | 06 | memo-decision | backlog | 03, 04, 05 | 09 | 3 |
 | 09 | investor-dashboard | **in-build** (design track DONE — 4 spec docs + 14-screen export, commit `67d71d4`; `/app/*` integration in progress, see the 09 section at the end of this file) | 03-07 outputs (design track can start NOW) | 12 demo | 3 |
-| 11 | demo-data-ethics | **in-build** (fixture applied + verified live, commit `7edf3ae`; badge gap + pipeline runs in progress; UI surfaces land inside 09) | 02, 08 | 12 demo | 3 |
+| 11 | demo-data-ethics | **done** (QA gate PASSED, zero blockers · 10-app synthetic fixture verified live through the pipelines · Andrei/Tomás promoted to real scores, Tomás's R2 red flag visible on the scored row · erasure + minimisation + badge read-path all green · see `11-demo-data-ethics/done.md` + `qa-report-11.md`) | 02, 08 | 12 demo | 3 |
 | 12 | docker-deploy | backlog | compose base can start EARLY; final needs all | — | 0* + final |
 
 ## Key insight: depend on the SCHEMA, not on 01 being finished
@@ -963,3 +963,118 @@ the same deck submitted twice produced different scores (`founder_score` 18.15 v
 `thesis_fit` 38.10 vs 61.90). The extractor picked different verbatim quotes on each run;
 `temperature` is omitted because `gpt-5.6-luna` rejects `0`. Anyone demoing "evidence-backed,
 reproducible scoring" should know a judge can surface this by submitting one deck twice.
+
+## 2026-07-19 ~12:55 · 06 → 09, FROZEN CONTRACT: the `memos` jsonb shapes (append by terminal 06)
+
+06 is in spec/design. **No new `memos` columns** — the DDL is sufficient. What 06 freezes is the
+**shape of the jsonb inside** `sections` / `gaps` / `conditions` / `deep_dive_questions`, so 09 can
+wire the memo screen (`/app/f/:applicationId/memo`, brief §10) to it. Full spec:
+`docs/backlog/06-memo-decision/design.md` §4. Summary 09 needs:
+
+- **`sections`** — each section is `{statements:[…]}` (SWOT is `{strengths,weaknesses,opportunities,
+  threats}` each an array). The atomic unit is a **statement**: `{text, claim_ids:[uuid], kind}` with
+  `kind ∈ fact|not_disclosed|benchmark|structural`. `fact` ⇒ ≥1 `claim_id`, all citable; 09 resolves
+  the trust badge live from `claim_trust.derived_status` by those ids (per-claim badge, §10). The
+  five required keys (`snapshot,hypotheses,swot,problem_product,traction`) are always present;
+  optional keys (`risk_matrix,competition,financials_lite`) appear only when they have real content —
+  an **absent key means render nothing**, never an empty shell.
+- **`gaps`** — `{not_disclosed:[{topic,text}], missing_axes:[axis], missing_fields:[…],
+  low_coverage:{axis:num|null}, contradictions:[{claim_id,severity,nature,topic}]}`.
+- **`deep_dive_questions`** — `[{question, closes_gap, gap_kind, claim_ids:[]}]`, 5–7 items (the
+  "Where to dig" block, brief §10).
+- **`conditions`** — `{check_size_usd:100000, rationale, items:[{text,closes,claim_ids}],
+  decision_inputs:{…}, thresholds_version}`. The $100K figure lives here (no schema column for it).
+- **`recommendation`** — one of the 4 migrated values; `cited_claim_ids` = deduped union of every
+  `claim_ids` in `sections`.
+
+Recommendation is DETERMINISTIC (rule over axis scores + trust + thesis verdict, no LLM). Axes are
+never averaged — disagreement routes proceed→proceed-with-conditions and names the weak axis as a
+condition. Nothing here changes any table 09 already reads; it only defines fields that are NULL
+today and light up when 06 writes its first row. Shout here if any shape collides with the memo
+screen you built.
+
+## 2026-07-19 ~13:15 · 06 → 09, contract refinement (2 items, append by terminal 06)
+
+Rev-2 of the design (spec-review round 1 applied) adds two things 09's memo screen must know:
+
+1. **Financials block fallback.** `sections.financials_lite` is OPTIONAL (drop-first stage). The
+   "Cap table: not disclosed" honesty (invariant I4) is guaranteed elsewhere and always present:
+   read it from **`gaps.not_disclosed[]` where `topic='financials'`** whenever `sections.financials_lite`
+   is absent. So the Financials block never disappears even if the optional LLM stage is cut.
+2. **Recommendation banner renders from the memo snapshot, not live.** The fired thesis rules behind
+   the banner are snapshotted into **`conditions.decision_inputs.thesis_fired_rules`** (verbatim copy
+   of the `fired_rules[]` the decision actually saw). Render the banner's rules from THAT, not from
+   live `api_applications.thesis_fired_rules` — a memo is an immutable versioned snapshot and the live
+   thesis eval can change after it was written (stale-thesis trap in reverse). `outcome:"unknown"`
+   rules still render as "could not be evaluated", never pass/miss.
+
+Everything else in the ~12:55 frozen-contract note stands unchanged.
+
+## 2026-07-19 ~13:10 · 12 docker-deploy IN-BUILD (append by the 12 terminal)
+
+Feature 12 moved backlog → **in-build**. Scope = **data-backed remote deploy** (operator ruling):
+dashboard + submit live on the operator's test VPS reading the imported local dataset; heavy n8n
+pipelines NOT run live this pass. Design/plan/tracker in `docs/backlog/12-docker-deploy/`.
+
+Isolation on the shared box: all containers prefixed `vcbrain-`, **zero host ports** (ingress via
+Caddy net `localai_default`), distinct subdomains `submit`/`dashboard`/`vc-api`/`vc-n8n`
+.prodsignal.me. Slim Supabase (db/kong/rest/storage/meta/studio). The box's own n8n/Supabase/
+LangFuse/askaizer/CRM stacks are strictly off-limits.
+
+**Cross-feature note for 06/09/11:** a read-only `pg_dump` of the LIVE local `supabase-db`
+(`docker exec ... pg_dump --data-only --schema=public`, no container lifecycle touched) is being
+taken now for the remote import — it does NOT disturb your local DB or tests. A **final re-dump +
+re-import is planned once 06/09/11 land** (memos, synthetic badges) so the demo URL shows the final
+dataset. Nothing for you to do; keep working locally.
+
+## 2026-07-19 ~14:15 · Feature 11 demo-data-ethics — **DONE** (append by the orchestrator terminal)
+
+QA gate PASSED, zero blockers (`docs/backlog/11-demo-data-ethics/qa-report-11.md`, independent
+adversarial pass over live psql + PostgREST). Closeout: `11-demo-data-ethics/done.md`.
+
+**What landed:** the 10-application synthetic demo fixture (`db/fixtures/11-demo-data.sql`) is
+verified live through the real pipelines — every one of the 10 forces its intended honest-UI
+state (documented contradiction, not-disclosed gap, outside-thesis lane, forecast claim,
+insufficient-evidence, searched-nothing-found provenance, HN-only identity, star-farming R2,
+karma-only obscurity, cold-start). All 10 resolve `is_synthetic=true` with a working badge
+read path on both `api_founders` and `api_applications`; `purge_founder()` runs clean on a
+synthetic founder; zero Art.9/minimisation fields.
+
+**Two radar founders promoted to real scores this pass (operator decision "Option A"):**
+- ferrofluid / Tomás Aguiar → **71.62**, and the **R2 star-farming red flag is now visible on
+  the scored row** (`E5` demoted `self_asserted`/`missing`/`demoted_by='R2'` in
+  `score_components`). Previously his coverage (0.14) fell under the 0.25 floor and the flag
+  was discarded before reaching a `scores` row — so the marquee "we caught the star-farming"
+  beat was invisible on the dashboard. Fixed by adding documented E1/X1/X6 claims from repos
+  *separate* from the star-farmed snapshot (R2 evidence untouched).
+- quietgpu / Andrei Balan → **23.68 / conf 0.22**, an honest low-confidence normal-branch score
+  (HN-only identity preserved, zero github rows). Added 2 HN-derived self-reported L2/X6 claims.
+- patchbay / Yuki Andersen → **deliberately still insufficient_evidence** (0 score rows +
+  `founder_score_insufficient_evidence` event), REQ-003 honesty.
+- Recorded sub-scorer replays saved under `lib/f03/recorded/11-demo-fixture/{andrei,tomas}/` —
+  re-runnable via `--recorded`, no OpenAI spend.
+
+**Doc reconciliations (both verified live, corrected in `fixture-notes.md`):** Kelpgrid lands
+"outside thesis" on **sector** (climate, off the b2b-software/ai-infra/devtools mandate), NOT
+geography — Copenhagen/DK satisfies the EU/US geo rule. The "Outside thesis, never rejected"
+beat holds; the label just reads sector. README/README.ru status → done, with a "Shipped"
+section explaining the fixture is 10 *fully synthetic* apps (not the original "3-5 real + 1-2
+synthetic" plan — fabricating red flags about a real person is the defamation the entity gate
+prevents; the real ~150-founder radar corpus is separate and never given invented flags).
+
+**Unblocks the final demo-dataset re-dump** (the ~13:xx remote-import entry below/above notes it
+waits on 06/09/11). 11 is done; only 06 and 09 remain for that final dump.
+
+**Known-open, non-blocking:** `purge_founder()` still doesn't sweep Storage objects (08 finding
+— irrelevant to this deckless/fixture-text corpus but real for production deck uploads); f03
+score reproducibility varies per run (`gpt-5.6-luna` rejects `temperature:0`) — recorded replays
+pin the demo values; the 5 radar apps have no `thesis_evaluations` rows (not needed by any
+scenario). Full list in `done.md`.
+
+**Files for @devops to commit (feature-11 scope):** `db/fixtures/11-demo-data.sql`,
+`docs/backlog/11-demo-data-ethics/{README.md,README.ru.md,fixture-notes.md,qa-report-11.md,done.md}`,
+this TRACKER edit. NOT feature 11's and to be handled by their owners / a separate sweep:
+`db/schema.sql` + `db/tests/smoke.sql` (the memos recommendation-vocabulary migration — feature
+06/orchestrator), `docs/backlog/08-founder-intake-interview/qa-report-08.md` (feature 08),
+`lib/f03/recorded/` (optional, untracked replay data). @devops must stage explicit paths, never
+`git add -A`.
