@@ -1,0 +1,35 @@
+{
+ "_highlightResult": {
+  "author": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "G3819"
+  },
+  "title": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "Show HN: Peek-CLI: Let Claude Code iterate on front end designs"
+  },
+  "url": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "https://github.com/puffinsoft/peek-cli"
+  }
+ },
+ "_tags": [
+  "story",
+  "author_G3819",
+  "story_48961120",
+  "show_hn"
+ ],
+ "author": "G3819",
+ "created_at": "2026-07-18T19:02:50Z",
+ "created_at_i": 1784401370,
+ "num_comments": 0,
+ "objectID": "48961120",
+ "points": 2,
+ "story_id": 48961120,
+ "title": "Show HN: Peek-CLI: Let Claude Code iterate on front end designs",
+ "updated_at": "2026-07-18T20:47:32Z",
+ "url": "https://github.com/puffinsoft/peek-cli"
+}

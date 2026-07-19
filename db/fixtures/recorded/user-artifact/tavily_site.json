@@ -1,0 +1,28 @@
+{
+ "seed": "https://ayuhito.com",
+ "map": {
+  "base_url": "https://ayuhito.com",
+  "results": [],
+  "response_time": 3.69,
+  "usage": {
+   "credits": 0
+  },
+  "request_id": "0cdb221a-817d-47f7-85d0-13aa4fe38856"
+ },
+ "extract": {
+  "results": [
+   {
+    "url": "https://ayuhito.com",
+    "title": "Home | ayuhito",
+    "raw_content": "# About me\n\nHi, I'm Ayu. A Tokyo-based developer passionate about the\nopen-source ecosystem and building tools that prioritise\nimproving the web.\n\n## Projects\n\n## Let's Connect\n\nIf you want to get in touch with me about something or just to\nsay hi, feel free reach out on social media or send me an email.",
+    "images": []
+   }
+  ],
+  "failed_results": [],
+  "response_time": 0.02,
+  "usage": {
+   "credits": 0
+  },
+  "request_id": "7ffa4b6a-383a-456b-9799-de9306da7aff"
+ }
+}

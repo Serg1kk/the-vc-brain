@@ -1,0 +1,35 @@
+{
+ "_highlightResult": {
+  "author": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "ayuhito"
+  },
+  "title": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "Show HN: Safehttp \u2013 an SSRF-resistant HTTP client for Go"
+  },
+  "url": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "https://github.com/ayuhito/safehttp"
+  }
+ },
+ "_tags": [
+  "story",
+  "author_ayuhito",
+  "story_48957230",
+  "show_hn"
+ ],
+ "author": "ayuhito",
+ "created_at": "2026-07-18T11:54:57Z",
+ "created_at_i": 1784375697,
+ "num_comments": 0,
+ "objectID": "48957230",
+ "points": 4,
+ "story_id": 48957230,
+ "title": "Show HN: Safehttp \u2013 an SSRF-resistant HTTP client for Go",
+ "updated_at": "2026-07-18T13:32:02Z",
+ "url": "https://github.com/ayuhito/safehttp"
+}

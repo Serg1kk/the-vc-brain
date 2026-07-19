@@ -1,0 +1,15 @@
+{
+ "author": "ayuhito",
+ "children": [],
+ "created_at": "2026-07-18T11:54:57.000Z",
+ "created_at_i": 1784375697,
+ "id": 48957230,
+ "options": [],
+ "parent_id": null,
+ "points": 4,
+ "story_id": 48957230,
+ "text": null,
+ "title": "Show HN: Safehttp \u2013 an SSRF-resistant HTTP client for Go",
+ "type": "story",
+ "url": "https://github.com/ayuhito/safehttp"
+}

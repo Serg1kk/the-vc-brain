@@ -1,0 +1,35 @@
+{
+ "_highlightResult": {
+  "author": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "iamdavidoti"
+  },
+  "title": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "Show HN: RewindCup \u2013 explore 23 World Cups on an interactive globe"
+  },
+  "url": {
+   "matchLevel": "none",
+   "matchedWords": [],
+   "value": "https://rewindcup.com"
+  }
+ },
+ "_tags": [
+  "story",
+  "author_iamdavidoti",
+  "story_48962931",
+  "show_hn"
+ ],
+ "author": "iamdavidoti",
+ "created_at": "2026-07-18T22:07:14Z",
+ "created_at_i": 1784412434,
+ "num_comments": 0,
+ "objectID": "48962931",
+ "points": 3,
+ "story_id": 48962931,
+ "title": "Show HN: RewindCup \u2013 explore 23 World Cups on an interactive globe",
+ "updated_at": "2026-07-19T00:29:16Z",
+ "url": "https://rewindcup.com"
+}

@@ -1,0 +1,28 @@
+{
+ "seed": "https://rewindcup.com",
+ "map": {
+  "base_url": "https://rewindcup.com",
+  "results": [],
+  "response_time": 4.87,
+  "usage": {
+   "credits": 0
+  },
+  "request_id": "b162f589-e684-407c-a6cc-96b1d4258777"
+ },
+ "extract": {
+  "results": [
+   {
+    "url": "https://rewindcup.com",
+    "title": "Rewind Cup \u2014 Relive Every World Cup",
+    "raw_content": "# Rewind Cup tournament replay\n\nThe World Cup archive\n\n## Pick a year. Relive the World Cup.\n\nJourney from Uruguay 1930 to Canada, Mexico & USA 2026 through fixtures, stories and match highlights.\n\n[Made with \u2665 by David Oti](https://x.com/iamdavidoti)\n\n ",
+    "images": []
+   }
+  ],
+  "failed_results": [],
+  "response_time": 0.01,
+  "usage": {
+   "credits": 0
+  },
+  "request_id": "8c5d42bf-84a0-433a-b64f-abd647be1a55"
+ }
+}
