@@ -515,11 +515,27 @@ company full-text indexes are generated from empty columns and are effectively *
 is **no funding-related claim topic** — any "no prior VC backing" filter resolves as unresolvable by
 design, since a bare NOT-EXISTS would award all 122 founders a fabricated match.
 
-### ⚠️ One vocabulary conflict to resolve before building the memo banner
+### ✅ Memo recommendation vocabulary — RESOLVED 2026-07-19 ~12:20 (operator ruling)
 
-- **Shipped database constraint:** `memos.recommendation IN ('invest', 'pass', 'watch')`
-- **Feature 06's README prose:** `proceed` / `proceed-with-conditions` / `pass` / `watchlist`
+This section previously documented a conflict between the shipped constraint and feature 06's
+README. **The conflict is closed: the constraint was migrated to match the README.** Build the memo
+banner against these four values and no others:
 
-**These do not match — the database will reject the README's four values as written.** The UI must
-be built against the three shipped values, or the constraint changed first. Do not let a generated
-front-end invent a fourth state.
+```sql
+memos.recommendation IN ('proceed', 'proceed-with-conditions', 'pass', 'watchlist')
+```
+
+The old three-value list `('invest','pass','watch')` **no longer exists** and the database will now
+reject every one of `invest` and `watch`. Anything still rendering the old vocabulary is stale.
+
+Migration was idempotent (the same `pg_constraint`-guard pattern used elsewhere in `db/schema.sql`),
+the inline `CREATE TABLE` definition was updated too so a fresh clone is correct without replaying
+it, and `memos` held 0 rows so no data needed migrating. Verified by watching the new constraint
+**reject** `'invest'` and accept `'proceed-with-conditions'` inside a rolled-back transaction —
+not merely by reading it back. One consequence was fixed in the same pass: `db/tests/smoke.sql`'s
+Task-8 fixture hardcoded `'watch'` and was correctly rejected; it now uses `'watchlist'`.
+
+⚠️ Unrelated and deliberately NOT changed: `applications.status` also contains `'invest'` and
+`'pass'` (`db/schema.sql:204`). Different table, different column, different meaning — an
+application's lifecycle stage, not a memo's recommendation. Features 02 and 08 write it. Leave it
+alone.
