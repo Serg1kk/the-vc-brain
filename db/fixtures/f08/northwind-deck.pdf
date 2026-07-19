@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 873 >>
+stream
+BT /F1 11 Tf 40 780 Td 14 TL
+(Northwind Robotics - pre-seed deck) Tj T*
+(We build warehouse pick-and-place arms for mid-size 3PLs.) Tj T*
+(Traction: 2 paid pilots signed - Kesko Logistics \(Mar 2026\) and) Tj T*
+(Bertelsmann Fulfilment \(May 2026\). First pilot came from a cold) Tj T*
+(email after we published our grasp-planning benchmark.) Tj T*
+(ICP: 3PL operators, 200-800 staff, VP of Operations is the buyer,) Tj T*
+(trigger is a peak-season labour shortfall; today they use agency temps.) Tj T*
+(Competitors: Dexterity and RightHand. We lose deals to RightHand when) Tj T*
+(the customer already runs Zebra WMS; their integration is turnkey and) Tj T*
+(ours needs a two-week connector build. What breaks in production for) Tj T*
+(Dexterity is bin-clutter recovery - they stall on entangled SKUs.) Tj T*
+(Team: two founders, both ex-KUKA controls engineers.) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001165 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1235
+%%EOF
