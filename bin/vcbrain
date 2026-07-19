@@ -1,0 +1,909 @@
+#!/usr/bin/env node
+// bin/vcbrain
+//
+// The `vcbrain` CLI -- feature 10's thin, read-only surface over PostgREST
+// (api_founders / api_applications / api_claims, design.md SS4) and n8n's
+// f10-nl-search webhook (design.md SS5). Node, ZERO dependencies -- the repo
+// has no package.json (design.md SS6.1) and Node 22's built-in `fetch` /
+// `AbortController` cover everything this file needs.
+//
+// Primary consumer is an AI agent, not a human (design.md SS6.2, clispec.dev-
+// shaped): every list is `{ items, total, truncated }`, never a bare array;
+// every failure is `{ error: { kind, message, hint, retryable } }`; JSON is
+// the default whenever stdout is not a TTY; nothing ever prompts; a command
+// missing a required argument exits 2 and names it. Exit codes: 0 success ·
+// 1 structured error (kind-based) · 2 usage error (bad/missing CLI input).
+//
+// Four commands, nothing else (design.md SS6.3): `schema` (static, offline,
+// no token) · `search "<nl query>" [--limit N]` (POST f10-nl-search) ·
+// `founder <id>` (GET api_founders + api_claims) · `application <id>` (GET
+// api_applications + api_claims). Every other verb a hallucinating agent
+// might try (`submit`, `founders`/`applications`/`claims` list verbs,
+// `score`, `gate`, `memo`, `watch`) is caught explicitly below and answered
+// with a structured `not_yet_available` error naming the real reason
+// (design.md SS6.3/SS6.4) rather than a generic "unknown command" -- see
+// NOT_YET_AVAILABLE.
+//
+// docs/backlog/10-api-cli-skill/design.md rev.5 SS6, plan.md task D1.
+
+'use strict';
+
+// ============================================================================
+// Config (design.md "## Config") -- env only, no .env auto-load, no silent
+// defaults for the token. `schema` must work with none of this set.
+// ============================================================================
+
+const DEFAULT_REST_URL = 'http://localhost:8000/rest/v1';
+const DEFAULT_N8N_URL = 'http://localhost:5678/webhook';
+// infra/supabase/.env's own value, restated here because design.md SS6.2
+// cites it directly ("respecting PGRST_DB_MAX_ROWS=1000") -- this file has
+// no way to read the live Postgres config at "schema" time (no token, no
+// network), so the documented default is the only honest source.
+const PGRST_DB_MAX_ROWS = 1000;
+const DEFAULT_SEARCH_LIMIT = 10; // design.md SS5.4 rule 5
+const DEFAULT_CLAIMS_LIMIT = 50; // not specified by design.md -- this CLI's own default page size for the embedded claims[] on founder/application (see report)
+
+const CLAIM_SELECT =
+  'claim_id,card_id,founder_id,company_id,application_id,topic,axis,text_verbatim,value,source_kind,base_confidence,verification_status,created_at,evidence';
+
+function restUrl() {
+  return String(process.env.VCBRAIN_REST_URL || DEFAULT_REST_URL).replace(/\/+$/, '');
+}
+function n8nUrl() {
+  return String(process.env.VCBRAIN_N8N_URL || DEFAULT_N8N_URL).replace(/\/+$/, '');
+}
+function token() {
+  return process.env.VCBRAIN_TOKEN || '';
+}
+
+// ============================================================================
+// Error envelope (design.md SS5.7 / SS6.2) -- one shape, reused by every
+// command AND by the search webhook's own pass-through (the webhook "reuses
+// the CLI envelope", SS5.7 -- so when it already answers in this shape this
+// CLI forwards it verbatim rather than re-wrapping).
+// ============================================================================
+
+function errorEnvelope(kind, message, opts) {
+  const o = opts || {};
+  return { error: { kind, message, hint: o.hint != null ? o.hint : null, retryable: o.retryable === true } };
+}
+
+// ============================================================================
+// Output plumbing. `--json` is the default whenever stdout is not a TTY
+// (design.md SS6.2); when it IS a TTY and `--json` was not passed, a human
+// renderer is used instead -- plain text, no ANSI escapes anywhere in this
+// file (simplest way to guarantee "no ANSI when piped": never emit any).
+// `process.exitCode` is used rather than `process.exit()` so buffered stdout
+// is never cut off mid-write on a piped consumer (verified against `| python3
+// -m json.tool` below).
+// ============================================================================
+
+function isJsonMode(flags) {
+  return (flags && flags.json === true) || !process.stdout.isTTY;
+}
+
+function emit(payload, flags, humanFn) {
+  if (isJsonMode(flags) || typeof humanFn !== 'function') {
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+  } else {
+    process.stdout.write(humanFn(payload) + '\n');
+  }
+}
+
+function renderErrorHuman(env) {
+  const e = env.error;
+  const lines = [`Error [${e.kind}]: ${e.message}`];
+  if (e.hint) lines.push(`hint: ${e.hint}`);
+  lines.push(`retryable: ${e.retryable}`);
+  return lines.join('\n');
+}
+
+function failExit(kind, message, opts, flags, code) {
+  const env = errorEnvelope(kind, message, opts);
+  emit(env, flags, renderErrorHuman);
+  process.exitCode = code == null ? 1 : code;
+}
+
+// `usage_error` is THIS CLI's own kind, not one of design.md SS5.7's six or
+// the three SS6.2 adds (missing_token/not_found/not_yet_available) -- see
+// the task report's "ambiguity" section. Always exit 2.
+function usageErrorExit(cmdName, message, hint, flags) {
+  failExit('usage_error', `vcbrain ${cmdName}: ${message}`, { hint, retryable: false }, flags, 2);
+}
+
+function missingArgExit(cmdName, argName, usageLine, flags) {
+  usageErrorExit(cmdName, `missing required argument ${argName}`, `usage: ${usageLine}`, flags);
+}
+
+function missingTokenExit(cmdName, flags) {
+  failExit(
+    'missing_token',
+    `VCBRAIN_TOKEN is not set -- required for "vcbrain ${cmdName}" (sent as PostgREST's apikey + Authorization: Bearer header)`,
+    {
+      hint:
+        'export VCBRAIN_TOKEN=<a token from infra/supabase/.env, e.g. ANON_KEY>. WARNING: this token ' +
+        'has full read AND WRITE access to every table in the database, including theses and claims -- ' +
+        'it is a demo credential, not production auth (design.md SS3.2).',
+      retryable: false,
+    },
+    flags,
+    1
+  );
+}
+
+// ============================================================================
+// Argument parsing -- flat, no external parser (zero deps). `--json` and
+// `--help`/`-h` are recognised for every command; `--limit`/`--offset` only
+// where `spec` opts them in. Unrecognised flags and malformed values are
+// collected as usage errors, never silently ignored and never prompted for.
+// ============================================================================
+
+function extractFlags(args, spec) {
+  const s = spec || {};
+  const positional = [];
+  const flags = {};
+  let error = null; // first usage problem found, named
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--json') {
+      flags.json = true;
+      continue;
+    }
+    if (a === '--help' || a === '-h') {
+      flags.help = true;
+      continue;
+    }
+    if (a === '--limit' || a === '--offset') {
+      const name = a.slice(2);
+      if (!s[name]) {
+        error = error || { flag: a, message: `"${a}" is not a recognised flag for this command` };
+        continue;
+      }
+      const raw = args[i + 1];
+      i += 1;
+      if (raw === undefined) {
+        error = error || { flag: a, message: `${a} requires a value` };
+        continue;
+      }
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 0) {
+        error = error || { flag: a, message: `${a} must be a non-negative integer (got "${raw}")` };
+        continue;
+      }
+      flags[name] = n;
+      continue;
+    }
+    if (a.startsWith('--')) {
+      error = error || { flag: a, message: `unrecognised flag "${a}"` };
+      continue;
+    }
+    positional.push(a);
+  }
+
+  return { positional, flags, error };
+}
+
+// ============================================================================
+// HTTP helpers -- thin wrappers over the built-in `fetch`. Neither throws on
+// a non-2xx status; callers branch on `.ok`/`.status` explicitly so every
+// failure path maps to a named error kind instead of an uncaught exception.
+// ============================================================================
+
+async function getJson(url, tok, opts) {
+  const o = opts || {};
+  const headers = { apikey: tok, Authorization: `Bearer ${tok}` };
+  if (o.exactCount) headers.Prefer = 'count=exact';
+  try {
+    const res = await fetch(url, { headers });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch (_e) {
+      body = null;
+    }
+    let total = null;
+    const cr = res.headers.get('content-range'); // "0-9/42" or "*/0" or "0-9/*"
+    if (cr) {
+      const m = /\/(\d+|\*)$/.exec(cr);
+      if (m && m[1] !== '*') total = Number(m[1]);
+    }
+    return { ok: true, status: res.status, body, total };
+  } catch (e) {
+    return { ok: false, errMessage: e.message };
+  }
+}
+
+async function postJson(url, payload, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    let body = null;
+    try {
+      body = await res.json();
+    } catch (_e) {
+      body = null;
+    }
+    return { ok: true, status: res.status, body };
+  } catch (e) {
+    clearTimeout(timer);
+    const errMessage = e.name === 'AbortError' ? `timed out after ${timeoutMs}ms` : e.message;
+    return { ok: false, errMessage };
+  }
+}
+
+// ============================================================================
+// `schema` -- static, offline, no token, no network (design.md SS6.2's own
+// requirement: "an agent reaches for the schema precisely when nothing is
+// set up"). Every field below is either a literal from design.md or a
+// column list transcribed from the live `CREATE VIEW` statements in
+// db/schema.sql (SS4.1-SS4.3) -- nothing here is inferred or guessed.
+// ============================================================================
+
+function buildSchemaPayload() {
+  return {
+    name: 'vcbrain',
+    version: '1.0.0',
+    description:
+      'Read-only CLI for the VC Brain platform (Sourcing -> Screening -> Diligence -> Decision). ' +
+      'Primary consumer is an AI agent, not a human -- clispec.dev-shaped contract below.',
+    contract: {
+      list_envelope: '{ items: [...], total: N, truncated: bool } on every list result -- never a bare array.',
+      error_envelope: '{ error: { kind, message, hint, retryable } } on every failure.',
+      json_default:
+        'JSON is emitted whenever stdout is not a TTY, or --json is passed explicitly. No ANSI escapes are ever emitted by this CLI.',
+      exit_codes: {
+        '0': 'success',
+        '1': 'structured error (kind-based, see error_kinds below)',
+        '2': 'usage error -- bad or missing CLI argument/flag, never a hang or a prompt',
+      },
+      pagination:
+        '--limit / --offset apply where a command returns a list: search candidates, and the embedded ' +
+        'claims[] on founder/application. Hard cap PGRST_DB_MAX_ROWS=1000. truncated is always reported, ' +
+        'output is never silently cut.',
+    },
+    env: {
+      VCBRAIN_TOKEN: {
+        required_for: ['founder', 'application'],
+        purpose:
+          "sent as PostgREST's apikey AND Authorization: Bearer header. WARNING: this token has full " +
+          'read AND WRITE access to every table in the database (including theses and claims) -- it is ' +
+          'a demo credential, not production auth (design.md SS3.2).',
+        default: null,
+      },
+      VCBRAIN_REST_URL: { required_for: [], purpose: 'PostgREST base URL', default: DEFAULT_REST_URL },
+      VCBRAIN_N8N_URL: { required_for: [], purpose: 'n8n webhook base URL', default: DEFAULT_N8N_URL },
+    },
+    commands: {
+      schema: {
+        args: [],
+        flags: ['--json'],
+        backing: 'static, offline',
+        description: 'This document. Works with no token, no config, no network.',
+      },
+      search: {
+        args: ['<nl query>'],
+        flags: ['--limit N (default 10)', '--json'],
+        backing: `POST ${DEFAULT_N8N_URL}/f10-nl-search (VCBRAIN_N8N_URL)`,
+        requires_token: false,
+        description:
+          'Multi-attribute natural-language search resolved in one pass (design.md SS5). Returns founders ' +
+          'ranked by confidence_bucket (high>mid>low) then rank_score, each with per-attribute evidence. ' +
+          'unresolved attributes and scope-broadening are echoed in `plan` so the caller sees how its ' +
+          'words were interpreted.',
+      },
+      founder: {
+        args: ['<id>'],
+        flags: ['--limit N (default 50, applies to claims[])', '--offset N', '--json'],
+        backing: `GET ${DEFAULT_REST_URL}/api_founders + api_claims (VCBRAIN_REST_URL)`,
+        requires_token: true,
+        description: 'One founder (with their persistent Founder Score) plus their evidence ledger (claims[]).',
+      },
+      application: {
+        args: ['<id>'],
+        flags: ['--limit N (default 50, applies to claims[])', '--offset N', '--json'],
+        backing: `GET ${DEFAULT_REST_URL}/api_applications + api_claims (VCBRAIN_REST_URL)`,
+        requires_token: true,
+        description:
+          'One application -- three independent screening axes (never blended, REQ-002), thesis fit, ' +
+          'memo availability -- plus its evidence ledger (claims[]).',
+      },
+    },
+    absent_by_design: {
+      submit:
+        'feature 10 writes nothing -- companies.stage has no default (every insert fails 23502) and deck ' +
+        'upload belongs to feature 08\'s POST /webhook/f08-intake-submit (design.md SS1.1).',
+      'founders / applications / claims (list/enumeration verbs)':
+        'search is the only discovery route (design.md SS7 traps). An agent that wants a full unfiltered ' +
+        'list reads GET {VCBRAIN_REST_URL}/api_founders (or api_applications / api_claims) directly.',
+      score:
+        'the f03-score-founder webhook is documented in the vcbrain-cli skill for agents that want to ' +
+        'trigger scoring directly -- this CLI does not wrap it.',
+      gate:
+        'the f07-thesis-gate webhook is documented in the vcbrain-cli skill for agents that want to trigger ' +
+        'the thesis gate directly -- this CLI does not wrap it.',
+      memo:
+        'feature 06 (memo generation) has not landed -- api_applications.memo_available is false on every ' +
+        'row today, honestly, rather than a command that would have to fabricate one (design.md SS6.4).',
+      watch: 'the watchlist table exists but is empty and no feature populates it yet.',
+    },
+    error_kinds: {
+      empty_query: 'blank/whitespace search query. retryable: false.',
+      resolver_failed: "search webhook's LLM resolver returned malformed output. retryable: true.",
+      invalid_target: 'search plan referenced a target outside the documented taxonomy. retryable: false.',
+      unresolvable_query: 'every attribute in a search query was unresolvable. retryable: false.',
+      upstream_timeout: 'the n8n webhook or PostgREST did not answer, or was unreachable. retryable: true.',
+      limit_exceeded: `--limit exceeded PGRST_DB_MAX_ROWS=${PGRST_DB_MAX_ROWS}. retryable: false.`,
+      missing_token: 'VCBRAIN_TOKEN is unset for a command that needs it. retryable: false.',
+      not_found: 'no row exists for the given id (a well-formed id, zero matches). retryable: false.',
+      not_yet_available:
+        'the command names a real product surface, but the backing feature has not landed, or the CLI ' +
+        'deliberately does not wrap it (see absent_by_design). retryable: false.',
+      usage_error:
+        '[CLI-local -- not in design.md SS5.7\'s finite list, see the task report] malformed/missing CLI ' +
+        'argument or flag. Always exits 2, never 1.',
+      upstream_error:
+        '[CLI-local -- not in design.md SS5.7\'s finite list, see the task report] PostgREST answered with ' +
+        'a non-2xx status other than a legitimate empty result set (e.g. a bad/expired token, a 5xx). ' +
+        'retryable: true only for 5xx.',
+    },
+    semantics: {
+      absent_score_axis: '{ assessed: false, value: null, ... } -- never a fabricated 0 (REQ-003).',
+      unknown_vs_unknown_searched:
+        'unknown = never looked (no evidence at all). unknown_searched = looked, found nothing recorded ' +
+        "(missing-tier evidence, or a claim with verification_status='missing'). Neither ever lowers " +
+        'rank_score -- both lower confidence only.',
+      matched_broadened:
+        'the attribute was widened to fit the data (e.g. a city was asked for, a country was matched) -- ' +
+        'a distinct state from a clean matched, and it costs credit in the ranking too (BROADENING_CREDIT).',
+      result_order:
+        'confidence_bucket (ordinal high>mid>low, a count of assessed attributes, never weight-normalised) ' +
+        'DESC, then rank_score DESC NULLS LAST, then founder_id ASC. Reproducible from the response alone.',
+    },
+    views: {
+      api_founders: [
+        'founder_id', 'full_name', 'headline', 'is_synthetic', 'founder_score', 'founder_score_trend',
+        'founder_score_confidence', 'founder_score_missing', 'score_assessed', 'scored_at', 'obscurity',
+        'obscurity_basis', 'channel', 'first_seen_at', 'company_id', 'company_name', 'application_id',
+        'founder_score_gaps',
+      ],
+      api_applications: [
+        'application_id', 'company_id', 'company_name', 'company_domain', 'stage', 'category', 'kind',
+        'status', 'submitted_at', 'artifact_links', 'score_founder{value,trend,confidence,missing,assessed}',
+        'score_market{...}', 'score_idea_vs_market{...}', 'thesis_id', 'thesis_name', 'thesis_verdict',
+        'thesis_fit', 'thesis_coverage', 'thesis_missing_fields', 'thesis_fired_rules', 'memo_version',
+        'memo_available',
+      ],
+      api_claims: [
+        'claim_id', 'card_id', 'founder_id', 'company_id', 'application_id', 'topic', 'axis',
+        'text_verbatim', 'value', 'source_kind', 'base_confidence', 'verification_status', 'created_at',
+        'evidence[]{tier,relation,strength,quote_verbatim,source_url,raw_signal_id,captured_at}',
+      ],
+    },
+  };
+}
+
+// ============================================================================
+// `search "<nl query>" [--limit N]`
+// ============================================================================
+
+async function cmdSearch(argv) {
+  const { positional, flags, error } = extractFlags(argv, { limit: true });
+  if (flags.help) {
+    process.stdout.write(topHelpText());
+    process.exitCode = 0;
+    return;
+  }
+  if (error) return usageErrorExit('search', error.message, 'run "vcbrain --help" for usage', flags);
+  if (positional.length > 1) {
+    return usageErrorExit(
+      'search',
+      'takes exactly one positional argument -- quote the query string',
+      'usage: vcbrain search "<nl query>" [--limit N]',
+      flags
+    );
+  }
+  const query = positional[0];
+  if (query === undefined) {
+    return missingArgExit('search', '<nl query>', 'vcbrain search "<nl query>" [--limit N]', flags);
+  }
+
+  const limit = flags.limit != null ? flags.limit : DEFAULT_SEARCH_LIMIT;
+  if (limit > PGRST_DB_MAX_ROWS) {
+    return failExit(
+      'limit_exceeded',
+      `--limit ${limit} exceeds PGRST_DB_MAX_ROWS=${PGRST_DB_MAX_ROWS}`,
+      { hint: `use --limit <= ${PGRST_DB_MAX_ROWS}`, retryable: false },
+      flags,
+      1
+    );
+  }
+  if (query.trim() === '') {
+    return failExit(
+      'empty_query',
+      'query is blank or whitespace-only',
+      { hint: 'pass a non-empty natural-language query, e.g. vcbrain search "technical founder who ships to production"', retryable: false },
+      flags,
+      1
+    );
+  }
+
+  const url = `${n8nUrl()}/f10-nl-search`;
+  const result = await postJson(url, { query, limit }, 30000);
+
+  if (!result.ok) {
+    return failExit(
+      'upstream_timeout',
+      `could not reach ${url}: ${result.errMessage}`,
+      {
+        hint:
+          'the f10-nl-search n8n webhook may not be deployed/active yet (feature 10 task C1) -- confirm ' +
+          '"docker compose up -d" in infra/n8n/ and that the workflow is active, then retry.',
+        retryable: true,
+      },
+      flags,
+      1
+    );
+  }
+
+  const { status, body } = result;
+
+  if (status === 404) {
+    return failExit(
+      'upstream_timeout',
+      `f10-nl-search webhook returned 404 at ${url} -- not registered or the workflow is inactive`,
+      {
+        hint: 'the f10-nl-search n8n webhook may not be deployed/active yet (feature 10 task C1) -- confirm it is up and retry.',
+        retryable: true,
+      },
+      flags,
+      1
+    );
+  }
+
+  // The webhook speaks the same envelope this CLI does (design.md SS5.7) --
+  // forward a structured error verbatim rather than re-wrapping it.
+  if (body && body.error && body.error.kind) {
+    emit(body, flags, renderErrorHuman);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (status < 200 || status >= 300) {
+    return failExit(
+      'upstream_timeout',
+      `f10-nl-search returned HTTP ${status}${body ? '' : ' (no JSON body)'}`,
+      { hint: body ? JSON.stringify(body).slice(0, 300) : null, retryable: status >= 500 },
+      flags,
+      1
+    );
+  }
+
+  emit(body, flags, renderSearchHuman);
+  process.exitCode = 0;
+}
+
+// ============================================================================
+// `founder <id>` and `application <id>` share almost everything: validate ->
+// require token -> fetch the one-row view -> not_found if empty -> fetch the
+// paginated claims[] sub-list with an exact count -> assemble.
+// ============================================================================
+
+async function fetchOneById(cmdName, viewName, idColumn, id, tok, flags) {
+  const url = `${restUrl()}/${viewName}?${idColumn}=eq.${encodeURIComponent(id)}`;
+  const res = await getJson(url, tok, {});
+  if (!res.ok) {
+    failExit(
+      'upstream_timeout',
+      `could not reach ${restUrl()}: ${res.errMessage}`,
+      { hint: 'confirm Supabase/Kong is running (docker compose up -d in infra/supabase/)', retryable: true },
+      flags,
+      1
+    );
+    return null;
+  }
+  if (res.status !== 200) {
+    failExit(
+      'upstream_error',
+      `GET ${viewName} returned HTTP ${res.status}`,
+      {
+        hint: res.body ? JSON.stringify(res.body).slice(0, 300) : 'check VCBRAIN_TOKEN is a valid PostgREST apikey',
+        retryable: res.status >= 500,
+      },
+      flags,
+      1
+    );
+    return null;
+  }
+  const rows = Array.isArray(res.body) ? res.body : [];
+  if (rows.length === 0) {
+    failExit(
+      'not_found',
+      `no ${cmdName} with id "${id}"`,
+      { hint: `ids are UUIDs from ${viewName}.${idColumn}`, retryable: false },
+      flags,
+      1
+    );
+    return null;
+  }
+  return rows[0];
+}
+
+async function fetchClaims(filterColumn, id, limit, offset, tok, flags) {
+  const url =
+    `${restUrl()}/api_claims?${filterColumn}=eq.${encodeURIComponent(id)}` +
+    `&order=created_at.desc&limit=${limit}&offset=${offset}`;
+  const res = await getJson(url, tok, { exactCount: true });
+  if (!res.ok) {
+    failExit(
+      'upstream_timeout',
+      `could not reach ${restUrl()}: ${res.errMessage}`,
+      { hint: null, retryable: true },
+      flags,
+      1
+    );
+    return null;
+  }
+  if (res.status !== 200 && res.status !== 206) {
+    failExit(
+      'upstream_error',
+      `GET api_claims returned HTTP ${res.status}`,
+      { hint: res.body ? JSON.stringify(res.body).slice(0, 300) : null, retryable: res.status >= 500 },
+      flags,
+      1
+    );
+    return null;
+  }
+  const items = Array.isArray(res.body) ? res.body : [];
+  const total = res.total != null ? res.total : offset + items.length;
+  return { items, total, truncated: offset + items.length < total };
+}
+
+function paginationFromFlags(flags) {
+  const limit = flags.limit != null ? flags.limit : DEFAULT_CLAIMS_LIMIT;
+  const offset = flags.offset != null ? flags.offset : 0;
+  return { limit, offset };
+}
+
+async function cmdFounder(argv) {
+  const { positional, flags, error } = extractFlags(argv, { limit: true, offset: true });
+  if (flags.help) {
+    process.stdout.write(topHelpText());
+    process.exitCode = 0;
+    return;
+  }
+  if (error) return usageErrorExit('founder', error.message, 'run "vcbrain --help" for usage', flags);
+  if (positional.length > 1) {
+    return usageErrorExit('founder', 'takes exactly one positional argument', 'usage: vcbrain founder <id>', flags);
+  }
+  const id = positional[0];
+  if (id === undefined) return missingArgExit('founder', '<id>', 'vcbrain founder <id>', flags);
+
+  const tok = token();
+  if (!tok) return missingTokenExit('founder', flags);
+
+  const { limit, offset } = paginationFromFlags(flags);
+  if (limit > PGRST_DB_MAX_ROWS) {
+    return failExit(
+      'limit_exceeded',
+      `--limit ${limit} exceeds PGRST_DB_MAX_ROWS=${PGRST_DB_MAX_ROWS}`,
+      { hint: `use --limit <= ${PGRST_DB_MAX_ROWS}`, retryable: false },
+      flags,
+      1
+    );
+  }
+
+  const f = await fetchOneById('founder', 'api_founders', 'founder_id', id, tok, flags);
+  if (!f) return; // failExit already ran inside fetchOneById
+
+  const claims = await fetchClaims('founder_id', id, limit, offset, tok, flags);
+  if (!claims) return;
+
+  const payload = {
+    founder_id: f.founder_id,
+    full_name: f.full_name,
+    headline: f.headline,
+    is_synthetic: f.is_synthetic,
+    // Never a bare score value: assessed travels beside it always (REQ-003 --
+    // absent axis means "not assessed", never zero).
+    founder_score: {
+      value: f.founder_score,
+      trend: f.founder_score_trend,
+      confidence: f.founder_score_confidence,
+      missing: f.founder_score_missing,
+      gaps: f.founder_score_gaps,
+      assessed: f.score_assessed,
+    },
+    obscurity: f.obscurity,
+    obscurity_basis: f.obscurity_basis,
+    channel: f.channel,
+    first_seen_at: f.first_seen_at,
+    company: f.company_id != null ? { id: f.company_id, name: f.company_name } : null,
+    application_id: f.application_id,
+    claims,
+  };
+  emit(payload, flags, renderFounderHuman);
+  process.exitCode = 0;
+}
+
+async function cmdApplication(argv) {
+  const { positional, flags, error } = extractFlags(argv, { limit: true, offset: true });
+  if (flags.help) {
+    process.stdout.write(topHelpText());
+    process.exitCode = 0;
+    return;
+  }
+  if (error) return usageErrorExit('application', error.message, 'run "vcbrain --help" for usage', flags);
+  if (positional.length > 1) {
+    return usageErrorExit('application', 'takes exactly one positional argument', 'usage: vcbrain application <id>', flags);
+  }
+  const id = positional[0];
+  if (id === undefined) return missingArgExit('application', '<id>', 'vcbrain application <id>', flags);
+
+  const tok = token();
+  if (!tok) return missingTokenExit('application', flags);
+
+  const { limit, offset } = paginationFromFlags(flags);
+  if (limit > PGRST_DB_MAX_ROWS) {
+    return failExit(
+      'limit_exceeded',
+      `--limit ${limit} exceeds PGRST_DB_MAX_ROWS=${PGRST_DB_MAX_ROWS}`,
+      { hint: `use --limit <= ${PGRST_DB_MAX_ROWS}`, retryable: false },
+      flags,
+      1
+    );
+  }
+
+  const a = await fetchOneById('application', 'api_applications', 'application_id', id, tok, flags);
+  if (!a) return;
+
+  const claims = await fetchClaims('application_id', id, limit, offset, tok, flags);
+  if (!claims) return;
+
+  const payload = {
+    application_id: a.application_id,
+    company: { id: a.company_id, name: a.company_name, domain: a.company_domain },
+    stage: a.stage,
+    category: a.category,
+    kind: a.kind,
+    status: a.status,
+    submitted_at: a.submitted_at,
+    artifact_links: a.artifact_links,
+    // Three independent screening axes, never blended into one number
+    // (REQ-002 / invariant #1) -- each already {value,trend,confidence,
+    // missing,assessed} straight off the view.
+    scores: {
+      founder: a.score_founder,
+      market: a.score_market,
+      idea_vs_market: a.score_idea_vs_market,
+    },
+    thesis: {
+      id: a.thesis_id,
+      name: a.thesis_name,
+      verdict: a.thesis_verdict,
+      fit: a.thesis_fit,
+      coverage: a.thesis_coverage,
+      missing_fields: a.thesis_missing_fields,
+      fired_rules: a.thesis_fired_rules,
+    },
+    // false on every row today (feature 06 not built) -- truthful, not a
+    // placeholder (design.md SS6.4).
+    memo: { version: a.memo_version, available: a.memo_available },
+    claims,
+  };
+  emit(payload, flags, renderApplicationHuman);
+  process.exitCode = 0;
+}
+
+// ============================================================================
+// Human (TTY, non --json) renderers -- plain text, no ANSI. `search`'s
+// renderer surfaces `confidence_bucket` on the table so the displayed order
+// is explicable from what is displayed (design.md SS5.6's own requirement).
+// ============================================================================
+
+function scoreLine(label, s) {
+  if (!s) return `  ${label}: (no score object)`;
+  return `  ${label}: assessed=${s.assessed} value=${s.value ?? 'null'} confidence=${s.confidence ?? 'null'} trend=${s.trend ?? 'null'}` +
+    (Array.isArray(s.missing) && s.missing.length ? `  missing=[${s.missing.join(', ')}]` : '');
+}
+
+function renderFounderHuman(f) {
+  const lines = [];
+  lines.push(`Founder ${f.founder_id}`);
+  lines.push(`  name: ${f.full_name ?? '(unknown)'}    synthetic: ${f.is_synthetic}`);
+  lines.push(`  headline: ${f.headline ?? '(none)'}`);
+  lines.push(scoreLine('founder_score', f.founder_score));
+  lines.push(`  obscurity: ${f.obscurity ?? 'null'} (${(f.obscurity_basis || []).join(',') || 'no basis'})   first_seen: ${f.first_seen_at ?? 'null'}`);
+  lines.push(`  company: ${f.company ? `${f.company.name} (${f.company.id})` : '(none)'}    application_id: ${f.application_id ?? '(none)'}`);
+  lines.push(`  claims: ${f.claims.items.length}/${f.claims.total} shown${f.claims.truncated ? '  -- TRUNCATED, use --offset to page' : ''}`);
+  for (const c of f.claims.items) {
+    lines.push(`    - [${c.verification_status}] ${c.topic}: ${c.text_verbatim ? c.text_verbatim.slice(0, 80) : '(no text)'}`);
+  }
+  return lines.join('\n');
+}
+
+function renderApplicationHuman(a) {
+  const lines = [];
+  lines.push(`Application ${a.application_id}`);
+  lines.push(`  company: ${a.company.name} (${a.company.id})   domain=${a.company.domain ?? 'null'}`);
+  lines.push(`  stage=${a.stage ?? 'null'}  category=${a.category ?? 'null'}  kind=${a.kind}  status=${a.status}`);
+  lines.push(scoreLine('score_founder', a.scores.founder));
+  lines.push(scoreLine('score_market', a.scores.market));
+  lines.push(scoreLine('score_idea_vs_market', a.scores.idea_vs_market));
+  lines.push(`  thesis: ${a.thesis.name ?? 'null'}  verdict=${a.thesis.verdict ?? 'null'}  fit=${a.thesis.fit ?? 'null'}  coverage=${a.thesis.coverage ?? 'null'}`);
+  lines.push(`  memo: available=${a.memo.available}  version=${a.memo.version ?? 'null'}`);
+  lines.push(`  claims: ${a.claims.items.length}/${a.claims.total} shown${a.claims.truncated ? '  -- TRUNCATED, use --offset to page' : ''}`);
+  for (const c of a.claims.items) {
+    lines.push(`    - [${c.verification_status}] ${c.topic}: ${c.text_verbatim ? c.text_verbatim.slice(0, 80) : '(no text)'}`);
+  }
+  return lines.join('\n');
+}
+
+function renderSearchHuman(r) {
+  const lines = [];
+  lines.push(`query: ${r.query}`);
+  if (r.note) lines.push(`note: ${r.note}`);
+  const attrs = (r.plan && r.plan.attributes) || [];
+  lines.push(`plan.attributes: ${attrs.map((a) => `${a.id}(${a.kind}/${a.polarity}, w=${a.weight})`).join(', ') || '(none)'}`);
+  const unresolvable = (r.plan && r.plan.unresolvable) || [];
+  if (unresolvable.length) lines.push(`unresolvable: ${unresolvable.map((u) => `${u.label} [${u.reason}]`).join(', ')}`);
+  lines.push(`total=${r.total}  truncated=${r.truncated}  low_confidence_only=${r.low_confidence_only}`);
+  lines.push('');
+  lines.push('bucket  rank    conf  founder_id                            name');
+  for (const it of r.items || []) {
+    lines.push(
+      `${String(it.confidence_bucket ?? 'null').padEnd(6)}  ${String(it.rank_score ?? 'null').padEnd(6)}  ${String(it.confidence).padEnd(4)}  ${it.founder_id}  ${it.full_name ?? ''}`
+    );
+  }
+  if (r.low_confidence && r.low_confidence.length) {
+    lines.push('');
+    lines.push(`-- low_confidence[] (${r.low_confidence.length}, below the confidence floor, never interleaved above) --`);
+    for (const it of r.low_confidence) lines.push(`  ${it.founder_id}  conf=${it.confidence}`);
+  }
+  return lines.join('\n');
+}
+
+// ============================================================================
+// Help text (design.md SS6.2: "vcbrain --help must mention schema; the
+// schema command is how an agent discovers the tool when nothing is
+// configured yet.").
+// ============================================================================
+
+function topHelpText() {
+  return `vcbrain -- read-only CLI for the VC Brain platform (PostgREST + n8n).
+Primary consumer is an AI agent: --json is the default when stdout is not a TTY, every list
+response is wrapped { items, total, truncated }, every failure is { error: { kind, message,
+hint, retryable } }.
+
+USAGE
+  vcbrain schema                                       static, offline, no token required
+  vcbrain search "<nl query>" [--limit N]               POST {VCBRAIN_N8N_URL}/f10-nl-search
+  vcbrain founder <id> [--limit N] [--offset N]         GET {VCBRAIN_REST_URL}/api_founders + api_claims
+  vcbrain application <id> [--limit N] [--offset N]     GET {VCBRAIN_REST_URL}/api_applications + api_claims
+
+Run "vcbrain schema" first -- it documents the full contract, every command, every error kind,
+and the exact view columns, and needs no token/config/network to answer.
+
+ENV
+  VCBRAIN_TOKEN       PostgREST apikey/Authorization token. Required for founder/application.
+                      WARNING: full read+write access to every table -- demo credential only.
+  VCBRAIN_REST_URL    default ${DEFAULT_REST_URL}
+  VCBRAIN_N8N_URL     default ${DEFAULT_N8N_URL}
+
+EXIT CODES
+  0  success
+  1  structured error (kind-based -- see "vcbrain schema")
+  2  usage error (bad/missing argument or flag)
+
+This CLI is deliberately four commands. Deliberately absent: submit, founders/applications/claims
+(list verbs), score, gate, memo, watch -- run any of those names for a structured explanation of
+why, rather than an "unknown command".
+`;
+}
+
+// ============================================================================
+// Dispatch. Verbs a hallucinating agent is likely to try are matched
+// explicitly and answered with `not_yet_available` + a real reason
+// (design.md SS6.3/SS6.4) rather than falling through to a generic
+// "unknown command" -- see the task report for why this is a judgment call
+// beyond what design.md states verbatim.
+// ============================================================================
+
+const KNOWN_COMMANDS = ['schema', 'search', 'founder', 'application'];
+
+const NOT_YET_AVAILABLE = {
+  memo:
+    'feature 06 (memo generation) has not landed -- api_applications.memo_available is false on every ' +
+    'row today. Read that field via "vcbrain application <id>" instead of a memo command that would have ' +
+    'to fabricate one.',
+  watch: 'the watchlist table exists but is empty and no feature populates it yet.',
+  submit:
+    'feature 10 is read-only by design -- companies.stage has no default (every insert fails 23502) and ' +
+    "deck upload belongs to feature 08's POST /webhook/f08-intake-submit.",
+  score:
+    'the f03-score-founder webhook exists and is documented in the vcbrain-cli skill for agents that want ' +
+    'to trigger scoring directly -- this CLI does not wrap it.',
+  gate:
+    'the f07-thesis-gate webhook exists and is documented in the vcbrain-cli skill for agents that want to ' +
+    'trigger the thesis gate directly -- this CLI does not wrap it.',
+  founders: `there is no enumeration verb -- "search" is the only discovery route. Read GET ${DEFAULT_REST_URL}/api_founders directly.`,
+  applications: `there is no enumeration verb -- see "founders". Read GET ${DEFAULT_REST_URL}/api_applications directly.`,
+  claims: `there is no enumeration verb -- see "founders". Read GET ${DEFAULT_REST_URL}/api_claims directly.`,
+  list: 'there is no enumeration verb in this CLI -- see "founders"/"applications"/"claims".',
+};
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const cmd = argv[0];
+  const rest = argv.slice(1);
+
+  if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
+    process.stdout.write(topHelpText());
+    process.exitCode = 0;
+    return;
+  }
+
+  if (cmd === undefined) {
+    const flags = extractFlags(rest, {}).flags;
+    failExit(
+      'usage_error',
+      'vcbrain: no command given',
+      { hint: `commands: ${KNOWN_COMMANDS.join(', ')}. Run "vcbrain --help" for usage.`, retryable: false },
+      flags,
+      2
+    );
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(NOT_YET_AVAILABLE, cmd)) {
+    const flags = extractFlags(rest, {}).flags;
+    failExit('not_yet_available', `"vcbrain ${cmd}" is not implemented`, { hint: NOT_YET_AVAILABLE[cmd], retryable: false }, flags, 1);
+    return;
+  }
+
+  if (!KNOWN_COMMANDS.includes(cmd)) {
+    const flags = extractFlags(rest, {}).flags;
+    failExit(
+      'usage_error',
+      `unknown command "${cmd}"`,
+      { hint: `commands: ${KNOWN_COMMANDS.join(', ')}. Run "vcbrain --help" for usage.`, retryable: false },
+      flags,
+      2
+    );
+    return;
+  }
+
+  if (cmd === 'schema') {
+    const { flags, error } = extractFlags(rest, {});
+    if (flags.help) {
+      process.stdout.write(topHelpText());
+      process.exitCode = 0;
+      return;
+    }
+    if (error) return usageErrorExit('schema', error.message, 'run "vcbrain --help" for usage', flags);
+    emit(buildSchemaPayload(), flags);
+    process.exitCode = 0;
+    return;
+  }
+  if (cmd === 'search') return cmdSearch(rest);
+  if (cmd === 'founder') return cmdFounder(rest);
+  if (cmd === 'application') return cmdApplication(rest);
+}
+
+main().catch((err) => {
+  const flags = { json: !process.stdout.isTTY };
+  failExit(
+    'upstream_timeout',
+    `unexpected error: ${err.message}`,
+    { hint: err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : null, retryable: true },
+    flags,
+    1
+  );
+});

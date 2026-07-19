@@ -578,7 +578,20 @@ Rules the executor enforces, each derived from a specific finding:
    **`truncated` refers to the 200-candidate cap only** — it means "more founders would have
    qualified as candidates than we scored". `total > limit` is normal, expected, and expressed by
    `total`; it is **not** truncation (rev.3 — review round 2 S2, the two were conflated).
-6. **Stable ordering:** `bucket_ordinal DESC, rank_score DESC NULLS LAST, founder_id ASC`.
+6. **Stable ordering:** `has_match DESC, bucket_ordinal DESC, rank_score DESC NULLS LAST,
+   founder_id ASC`, where `has_match = rank_score > 0`.
+
+   **`has_match` leads the sort** (rev.6 — found by running Q2 live, after the bucket order was
+   already approved). Bucket-first ordering optimises for *how much we assessed* over *whether it
+   matches*, and at the extreme that inverts: live Q2 returned, at position **1**, a founder with
+   `rank_score = 0` — two demonstrable `mismatch`es and one `unknown` — ranked above nine founders
+   with `rank_score = 100`, purely because his coverage was 0.67 (`mid`) against their 0.33
+   (`low`). "We know this person well and they do not fit" is not the best answer to a search query.
+
+   Checked against the case that motivated bucketing in the first place: a 1-of-4 documented match
+   (rank 100, `low`) and a 4-of-4 match (rank 92.5, `high`) both have `has_match = true`, so the new
+   term does not separate them and the bucket still decides — 92.5 correctly stays above 100. No
+   regression.
 
    ```js
    coverage       = |{a : state ∈ assessed}| / |{a : resolvable}|   // COUNT, not weight
@@ -954,6 +967,7 @@ Sole writer of: three `api_*` views, `lib/f10/*`, `n8n/workflows/f10-nl-search.j
 | Scorer (`lib/f10/score.js`) | `node --test lib/f10/*.test.js` over plan+rows fixtures — no LLM, no network. Cases: negative never reaches FTS · empty-corpus negative → `unresolvable` · **negative against a sparse-but-nonempty topic yields `unknown` for candidates with no evidence in that family, never `matched`** (§5.4 rule 3, per-candidate) · six-attribute query returns rows · **`unknown` does NOT lower `rank_score`** — the explicit B2 regression: one match + two `unknown` must outrank one match + two `mismatch` · **`assessed = 0` → `rank_score: null`, not 0 and not a division by zero** · `confidence < 0.25` lands in `low_confidence[]` and never interleaves · tier credit orders `documented` above `discovered` above `inferred` · `missing`-tier evidence is never a match · negatives generate no candidates · zero-positive fallback returns an explained list · `truncated` reflects the 200-candidate cap, not `total > limit` — **unit-test only, over a >200-row fixture: the cap never binds on a 122-founder corpus, so this is unreachable end to end and QA must not chase it live** · identical plan → identical order across runs |
 | Views | `psql` assertions in `db/tests/smoke.sql` under `-- Feature 10:`: **a founder with `opt_out_at IS NULL` IS PRESENT** (the positive case — asserting only absence passes trivially against a view returning nothing, which is exactly how B1 survived rev.2) · opted-out and merged-tombstone founders absent · exactly one row per founder · no `overall_score` column · unscored founder yields NULL not 0 · thesis fit matches `thesis_evaluations` not a stale `scores` row · `missing` normalised to a string array on the three axes the views expose (`thesis_fit` is moot since §4.2's M2 fix), `_`-prefixed keys dropped |
 | Ordering regression | a founder with 1 assessed attribute at `documented` (rank 100, confidence 0.25) must NOT outrank a founder with 4 assessed at rank 92.5 / confidence 1.0 — this is the exact live-data case that motivated the bucket sort |
+| Ordering regression 2 | a founder with `rank_score = 0` (all mismatch/unknown) must NOT outrank any founder with `rank_score > 0`, **whatever their buckets** — the live Q2 case that motivated `has_match`. Assert both regressions together: they pull in opposite directions and a fix for one can break the other |
 | NL-search end to end | live calls for Q1 and Q2 (§5.8); Precision@10 hand-checked on Q1; Q2 asserted to return rows with `unresolvable` non-empty and reduced confidence |
 | CLI | smoke on all four commands incl. `schema` with `VCBRAIN_TOKEN` unset; error shape asserted for a missing required flag |
 

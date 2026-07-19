@@ -333,3 +333,114 @@ live environment. They bind more than 08:
    `raw_signals`/`claims`/`evidence` all carry `content_hash NOT NULL UNIQUE`; a founder
    re-applying with the same deck raises `23505` and fails the whole write unless the hash is
    scoped. Re-application is a new row by design (01), so this is reachable, not theoretical.
+
+## 2026-07-19 ~10:35 · Tooling trap (append by terminal 10) — n8n returns `[]`, not 401, on a bad API key
+
+`GET /api/v1/workflows` with a wrong or empty `X-N8N-API-KEY` returns **HTTP 200 with an empty
+`data` array**, not 401. So an authentication mistake is indistinguishable from "every workflow is
+gone" — which is exactly how it read the first time, given this repo already lost work once today.
+
+Cause in our case: `N8N_API_KEY` lives in **`infra/n8n/.env`**, not in `infra/supabase/.env`. Source
+the right file:
+
+```bash
+set -a; source infra/n8n/.env; set +a
+curl -s -H "X-N8N-API-KEY: $N8N_API_KEY" http://localhost:5678/api/v1/workflows
+```
+
+Sanity baseline as of 10:35 — 8 workflows, all active except `f02-radar-scan` (scheduled, inactive
+by design): `f02-radar-scan`, `f03-score-founder`, `f04-market-intel`, `f04-competition-intel`,
+`f04-db-write`, `f07-thesis-gate`, `f07-thesis-reevaluate`, `f07-db-write`. If you get `[]`, check
+your key before concluding anything was lost.
+
+## 2026-07-19 ~10:45 · 08 — ⚠️ CORRECTION: the recorded Code-node sandbox convention is WRONG
+
+The tooling changelog above says: *"For SHA-256 use `globalThis.crypto.subtle.digest('SHA-256', …)`,
+not `require('crypto')`."* **That is backwards.** I probed the live sandbox by deploying a throwaway
+Code node and reading its output, rather than trusting any document:
+
+```
+require('crypto')        -> WORKS    sha256('abc') = ba7816bf8f01cfea (correct)
+require('node:crypto')   -> THROWS   Error
+globalThis.crypto.subtle -> undefined
+new URL(...)             -> THROWS   ReferenceError
+Buffer, TextEncoder      -> available
+process                  -> undefined
+```
+
+**What to actually do in a Code node:** `require('crypto')` with the **bare** specifier and
+`createHash('sha256')`. Not the `node:` prefix — that throws. Not `crypto.subtle` — it does not
+exist. Every deployed workflow (f03, f04, f07) already does it the working way; only the written
+convention was wrong, which is why it went unnoticed.
+
+**`new URL()` genuinely throws** — the original entry was right about that, and it is still true.
+
+### Why nobody noticed, and what it implies for 04 (and anyone auditing)
+
+`n8n/workflows/f02-radar-scan.json` and the three `f04-*` workflows contain `new URL(` in
+4 and 6-8 Code nodes respectively. They pass QA and return HTTP 200. They do this **because the
+surrounding try/catch swallows the ReferenceError** and returns a plausible-looking fallback —
+which is precisely the carried risk 02 documented in its own `done.md`: *"every artifact silently
+classified as `kind:'none'` with nothing in the logs."*
+
+So: **a green QA gate on top of a swallowed environment error is what this failure mode looks like
+from the outside.** 02 disclosed it. **04 may have the same defect without knowing** — its
+`new URL(` calls sit in `Build queries`, `Build market.gap claim hash`, `Curate per bucket` and
+`Build raw_signals plan`. If 04's terminal is still active, checking whether those paths are
+guarded and what the guard returns is worth ten minutes; a fallback that looks like data is worse
+than a crash.
+
+**Cheap general rule this suggests:** do not wrap a whole Code-node body in try/catch. Catch around
+the specific operation whose failure you can actually handle, and let a missing global crash the
+node — a red execution is diagnosable, a plausible wrong answer is not.
+
+## 2026-07-19 ~10:55 · 08 — RETRACTION + the actual rule (supersedes my ~10:45 entry)
+
+**My ~10:45 entry above is partly wrong. Read this one instead.** I claimed the recorded
+`crypto.subtle` convention was "backwards". It is not. I probed a *bare* Code node, saw
+`globalThis.crypto` undefined, and concluded the convention was broken — without noticing that
+**02 prepends a runtime polyfill** at Code-node-assembly time (`n8n/build-f02-workflow.py`,
+`RUNTIME_POLYFILL_JS`). Feature 08's backend agent pushed back with that evidence and was right.
+
+### The actual, fully-probed rule
+
+In a bare Code node: `URL`, `globalThis.crypto` and `process` are **undefined**;
+`require('crypto')` (bare specifier) and `Buffer`/`TextEncoder` **work**;
+`require('node:crypto')` **throws**. And decisively:
+`require('crypto').webcrypto.subtle` → **exists**.
+
+So both `crypto.subtle` and `new URL()` are fine **provided the node polyfills them first**:
+
+```js
+if (typeof globalThis.crypto === 'undefined' || typeof globalThis.crypto.subtle === 'undefined') {
+  globalThis.crypto = require('crypto').webcrypto;
+}
+if (typeof URL === 'undefined') { globalThis.URL = require('url').URL; }
+```
+
+**What was actually missing from the original convention was the word "polyfilled".** Anyone
+pasting a lib file into a Code node must either prepend that snippet or inline a guarded copy.
+08 inlines it in `lib/f08/hashing.js` rather than relying on a build step remembering to prepend
+it, and avoids `URL` altogether in `validate.js`/`identity.js` — both are no-ops under plain Node,
+so `node --test` exercises the real path.
+
+### The part of my ~10:45 entry that DOES stand — and it is about 04
+
+I audited every deployed workflow for `new URL()` and whether the same node polyfills it:
+
+| Workflow | Code nodes | uses `new URL()` | of those, polyfilled |
+|---|---|---|---|
+| `f02-radar-scan` | 8 | 4 | **4 — OK** |
+| `f04-competition-intel` | 41 | 6 | **0** |
+| `f04-market-intel` | 63 | 8 | **0** |
+
+**02 is fine** — I was wrong to imply otherwise; its historical incident is exactly what the
+polyfill was added to fix. **04 has 14 unpolyfilled `new URL()` calls that throw ReferenceError at
+runtime.** Whether that surfaces as an error or as plausible-looking wrong data depends on what
+catches it. Worth ten minutes from 04's terminal: `Build queries`, `Build market.gap claim hash`,
+`Curate per bucket + cap for extract`, `Build raw_signals plan`, `Collect + curate discovery
+results`.
+
+**Lesson I'll wear:** I corrected a shared convention on one probe and warned another feature on
+the strength of it. The probe was real but the conclusion outran the evidence — the mechanism I
+had not looked for was sitting in a build script one grep away.

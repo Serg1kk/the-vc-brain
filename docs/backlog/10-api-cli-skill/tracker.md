@@ -9,14 +9,19 @@
 |---|---|---|---|---|---|---|
 | A1 | three `api_*` views | @database-engineer | — | **done** (verified) | `db/schema.sql:1216-1578` + `f10_normalize_missing_flags()` | 308/724/109 confirmed; `api_founders` blocked by A1a |
 | A1a | fix `radar_candidates` log-domain bug (**feature 02 object**) | @database-engineer | A1 | **done** (verified) | `GREATEST(x,0)` floor on both log args | karma −2 founder now yields obscurity 0.8835 instead of aborting |
+| A1c | fix `api_founders` company/application join | @database-engineer | F1a | **dispatched** 10:28 | — | source was `founder_company` (5 fixture rows); real linkage is in `cards` |
 | A1b | add `founder_score_gaps jsonb` | @database-engineer | A1 | **done** (verified) | trailing column on `api_founders` | must be trailing: CREATE OR REPLACE VIEW cannot reposition existing columns |
-| B1 | `lib/f10/` plan + score + tests | @backend-developer | — | **dispatched** 09:45 | — | wave 1, pure/fixture-driven |
+| B1 | `lib/f10/` plan + score + tests | @backend-developer | — | **done** (verified) | `5f2b0f1` · 82 tests pass | got the rev.5 ordering delta before writing `score.js` |
 | A2 | smoke.sql view assertions | @database-engineer | A1 | **done** (verified) | `db/tests/smoke.sql`, 10 assertions, 323 lines | guard proven to bite: `log(1+(-2))` still raises |
-| C1 | n8n `f10-nl-search` | n8n agents | A1, B1 | pending | — | resolver spec already written |
-| D1 | `bin/vcbrain`, 4 commands | @backend-developer | A1, C1 | pending | — | first to cut if clock bites |
-| E1 | live Q1/Q2 acceptance | orchestrator | C1 | pending | — | §5.8 criteria |
-| F1 | skill + api.md | @backend-developer | D1 | pending | — | written LAST by design |
-| G1 | QA gate | @qa-engineer | F1 | pending | — | independent, no dev-test reuse |
+| C1 | n8n `f10-nl-search` | @n8n-workflow-builder | A1, B1 | **done** (Q1+Q2 live) | wf `x7qXnx2asXrGB0ye` | agent caught 2 real bugs live |
+| C1a | re-sync stale `score.js` paste | @n8n-workflow-builder | B1-fix | **dispatched** 10:44 | — | deployed copy had 0 `hasMatch` |
+| D1 | `bin/vcbrain`, 4 commands | @backend-developer | A1 | **done** (3 of 4 verified) | `bin/vcbrain` | envelope + truncation flag confirmed correct; `search` success path still blocked on C1 |
+| E1 | live Q1/Q2 acceptance | orchestrator | C1 | **done** (found 1 defect) | both queries pass §5.8 | Q2 top hit had rank 0 → `has_match` fix |
+| F1a | `docs/api.md` (views only) | @backend-developer | A1 | **done** (verified) | `docs/api.md`, 409 lines | 4 findings returned; 1 was wrong and I corrected the doc |
+| F1b | `skills/vcbrain-cli/SKILL.md` | @backend-developer | C1, D1 | pending | — | written LAST by design |
+| G1a | QA gate part 1 (views/CLI/api.md) | @qa-engineer | A1,D1,F1a | **GATE FAILED** | `qa-report-10.md` | 1 CRITICAL + 1 MAJOR, both real |
+| A1d | **CRITICAL** opt-out dead on `api_applications` | @database-engineer | G1a | **dispatched** 10:44 | — | opting out all 124 founders removed 0 of 308 apps |
+| G1b | QA gate part 2 (NL-search) | @qa-engineer | C1a | pending | — | after re-sync |
 | H1 | commit DB layer | @devops | A2 | **done** | `b2a7788` (11 files, 2557 ins) | commit only, NOT pushed — `docs/` is tracked and the remote is public |
 
 ## Design/spec phase — closed
@@ -48,6 +53,23 @@
 
 - **09:58** Simulated Q1 against the live corpus before building the pipeline for it. Distribution is good (1 founder matches 4 attributes, 10 match 3, 90 match 2, 17 match 1) — **but running it through the real formula inverted the list**: `rank_score` is match-rate-among-assessed, so one documented match scores 100 while the best founder in the corpus scores 92.5. The confidence floor cannot catch it (1-of-4 = exactly 0.25, rule is `< 0.25`; and 2-of-4-documented = 100 at confidence 0.5). **Three adversarial review rounds missed this because it is invisible in the spec — it only shows up in numbers.**
 - **10:00** Review round 4 adjudicated the fix: bucket-then-rank ordering is not fusion (it produces no number; both inputs stay inspectable), but required four corrections — sort an **ordinal integer**, never the bucket string (`'high' < 'low' < 'mid'` alphabetically, so `DESC` yields mid→low→high, silently inverted); bucket on **attribute count**, not weight-normalised confidence (weight-based edges sit on the achievable lattice and diverge under non-uniform weights); **emit** `confidence_bucket` so the order is reproducible from the response; `bucket: null` + rank fallback when `low_confidence_only` fires. All applied → design rev.5. Delta pushed to the backend agent before it wrote `score.js`.
+
+- **10:20** Operator moved the session to autonomous mode: parallelise everything parallelisable. Three tracks now in flight — C1 (n8n), D1 (CLI), F1a (api.md). Pre-push compliance scan run over everything going public: no keys, no JWTs, no closed-source attribution. **Anonymised my own two mentions** attaching "hn_karma = −2" to a named live HN account — the founder UUID is technically sufficient and this repo is public.
+
+- **10:28** F1a returned `docs/api.md` plus four findings. Verified each rather than accepting them:
+  - **Real defect (mine):** `api_founders.application_id` is NULL on **all 124** founders and `company_id` on all but 5. §4.1 sourced them from `founder_company`, which feature 02 never writes — it has 5 rows, all 03/05 fixtures. The linkage lives in `cards`: **118 of 124** founders have a founder-card carrying both `application_id` and `company_id`. Round 2's M3 fix correctly killed a fan-out but pointed the join at an empty table; the founder card would have shown no company for 95% of the corpus. Dispatched A1c.
+  - **Agent was wrong, doc corrected:** it reported `REVOKE TRUNCATE` "never applied or reverted". Live: `has_table_privilege('anon','scores','TRUNCATE')` = **false**, `claims` = **true** — the revoke IS applied, on exactly the nine tables the schema lists; `claims` is not among them because it is not append-only. It generalised one table to all. Fixed the claim in `docs/api.md` before it stayed in a public doc, and told the db agent not to touch grants.
+  - Corpus is live and growing under us (124 founders / 734 claims / 7 contradicts now) — feature 05 is writing in parallel. `api.md` uses measured numbers, not the brief's.
+  - `api_claims.axis` is NULL on 654 of 734 rows; documented as measured rather than assumed.
+
+- **10:30** D1 verified independently: `schema` runs with no token/network, `founder` returns real evidence + `what_would_close_it` gaps, missing arg → exit 2 naming the argument, bad id → `not_found` without crashing. **`search`'s success path is still unproven** — `f10-nl-search` returns 404, so only its error degradation is tested. Agent flagged 5 spec gaps and resolved each visibly (two CLI-local error kinds are labelled as such inside `vcbrain schema` output rather than passed off as documented).
+- **10:30** Scare, then a tooling finding: an n8n workflow query returned `[]`. **n8n answers a bad API key with 200 + empty array, not 401** — indistinguishable from "everything was deleted", in a repo that already lost work once today. All 8 workflows are present and active; `N8N_API_KEY` lives in `infra/n8n/.env`, not `infra/supabase/.env`. Appended to the backlog TRACKER for the other terminals.
+
+- **10:32** A1c verified end-to-end, not just at the DB: `api_founders` now 124/124/123/118, the `founder_company` preference branch wins on all 5 rows it applies to, smoke green, and the CLI renders company `safehttp` + application id for the demo founder. The fix propagates through every layer.
+- **10:32** **Two false alarms of my own, both from bad verification rather than bad code.** I read `company_id` flat when the CLI nests it under `company:{id,name}`, and I counted `len()` of the claims *envelope* (3 keys) instead of `claims.items` (28 rows) — and briefly concluded the CLI was silently truncating, the one thing §6.2 forbids outright. It was not: `--limit 5` correctly returns `items:5, total:28, truncated:true`. Lesson recorded because it nearly cost two spurious fix dispatches: **when a check contradicts a layer already verified below it, suspect the check first.**
+
+- **10:44** **QA gate part 1: FAILED — and it was right.** Reproduced the CRITICAL myself: opting out *every one* of the 124 founders removes **0 of 308** `api_applications` rows. `api_founders` correctly drops to 0 and `api_claims` to 110, but the applications view still gates on `founder_company` — the same empty-table defect A1c fixed in `api_founders` and that I failed to carry across. **The smoke assertion passed only because its fixture hand-inserts a `founder_company` row — it tested a path no real founder takes.** A green test on a dead code path is exactly how this survived. Dispatched A1d, including a rewrite of the test to build the linkage through `cards` like real data does, plus an explicit opt-out-everyone assertion.
+- **10:44** QA's MAJOR was also right: A1c invalidated `docs/api.md`'s own prose (it still said `application_id` was 0/124 and blamed a corpus gap, when the cause was my view defect and the real fill is 118/124). Corrected in place — the doc is public, so a wrong explanation there is a live defect, not a typo.
 
 ## Open cross-feature items to report at close
 

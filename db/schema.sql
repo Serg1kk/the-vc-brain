@@ -1345,33 +1345,38 @@ founder_score_latest AS (
   WHERE s.axis = 'founder_score' AND s.founder_id IS NOT NULL
   ORDER BY s.founder_id, s.computed_at DESC, s.id DESC
 ),
-current_company AS (
-  -- company_id comes from founder_company.is_current ONLY, never from
-  -- radar_candidates -- "one source, no unreconciled second" (design SS4.1,
-  -- review M3). DISTINCT ON + id tiebreak guards a founder linked to more
-  -- than one is_current=true row -- the schema's UNIQUE is (founder_id,
-  -- company_id), not a partial unique on is_current, so nothing forbids it.
-  SELECT DISTINCT ON (fc.founder_id)
-    fc.founder_id, fc.company_id
-  FROM founder_company fc
-  WHERE fc.is_current
-  ORDER BY fc.founder_id, fc.created_at DESC, fc.id DESC
-),
-current_application AS (
-  -- application_id resolved through the SAME founder_company path (one
-  -- source, per the rule above) -- the most recently created application of
-  -- the founder's current company. NOTE: founder_company itself carries no
-  -- application_id column, and design.md SS4.1 does not spell out this
-  -- second hop verbatim; applied here by analogy with the "latest row + id
-  -- tiebreak" convention (rule 9) so the view still returns exactly one row
-  -- per founder even where a company has multiple applications (77 of 198
-  -- companies do, live). Flagged in the feature 10 task report as the one
-  -- genuinely underspecified join in SS4.1.
-  SELECT DISTINCT ON (cc.founder_id)
-    cc.founder_id, a.id AS application_id
-  FROM current_company cc
-  JOIN applications a ON a.company_id = cc.company_id
-  ORDER BY cc.founder_id, a.created_at DESC, a.id DESC
+founder_cards AS (
+  -- Task A1c (corrects design SS4.1, TRACKER.md): company_id/application_id
+  -- resolve from the founder's OWN card (card_type='founder'), NOT from
+  -- founder_company. The original SS4.1 instruction ("one source, no
+  -- unreconciled second") was solving a real double-sourcing problem but
+  -- pointed it at the wrong table for this corpus -- measured live
+  -- 2026-07-19: founder_company has exactly 5 rows total (03/05 test
+  -- fixtures only); feature 02, which wrote the entire founder corpus,
+  -- never writes founder_company at all. Reading company_id/application_id
+  -- through it left 124 founders with 0 resolved applications and only 5
+  -- with a company -- a bug that would have shown up in the demo. `cards`
+  -- is where 02 actually writes company and application together at
+  -- ingest time (a founder card carries founder_id/company_id/
+  -- application_id as three independent nullable columns on one row --
+  -- schema.sql's own cards comment: "a card can carry more than one at
+  -- once"); measured live, 118 of 124 founders resolve to an application
+  -- this way. founder_company.is_current is still preferred for
+  -- company_id when a row exists there (03/05's own founders populate it
+  -- deliberately), falling back to the card's company_id otherwise --
+  -- DO NOT "fix" this back to founder_company-only; that is the bug.
+  -- cards has no unique constraint on (founder_id, card_type), so this
+  -- keeps the same DISTINCT ON + created_at DESC, id DESC tiebreak used
+  -- throughout this view (rule 9) -- api_founders still returns exactly
+  -- one row per founder; there is a smoke assertion on it.
+  SELECT DISTINCT ON (c.founder_id)
+    c.founder_id,
+    COALESCE(fc.company_id, c.company_id) AS company_id,
+    c.application_id
+  FROM cards c
+  LEFT JOIN founder_company fc ON fc.founder_id = c.founder_id AND fc.is_current
+  WHERE c.card_type = 'founder' AND c.founder_id IS NOT NULL
+  ORDER BY c.founder_id, c.created_at DESC, c.id DESC
 )
 SELECT
   f.id                                             AS founder_id,
@@ -1390,9 +1395,9 @@ SELECT
   r.obscurity_basis,
   r.channel,
   fs.first_seen_at,
-  cc.company_id,
+  fcx.company_id,
   co.name                                          AS company_name,
-  ca.application_id,
+  fcx.application_id,
   -- Task A1b (design correction, TRACKER.md), appended at the end of the
   -- column list on purpose -- CREATE OR REPLACE VIEW cannot insert a column
   -- mid-list without a DROP (Postgres: "cannot change name of view column"),
@@ -1409,9 +1414,8 @@ FROM founders f
 LEFT JOIN radar               r   ON r.founder_id   = f.id
 LEFT JOIN first_seen          fs  ON fs.founder_id   = f.id
 LEFT JOIN founder_score_latest fsl ON fsl.founder_id  = f.id
-LEFT JOIN current_company     cc  ON cc.founder_id   = f.id
-LEFT JOIN companies           co  ON co.id           = cc.company_id
-LEFT JOIN current_application ca  ON ca.founder_id   = f.id
+LEFT JOIN founder_cards       fcx ON fcx.founder_id  = f.id
+LEFT JOIN companies           co  ON co.id           = fcx.company_id
 WHERE f.opt_out_at IS NULL
   AND f.merged_into_founder_id IS NULL
 -- Default ordering NEVER uses obscurity (design SS4.1, review round-2 S4):
@@ -1424,16 +1428,59 @@ ORDER BY fsl.value DESC NULLS LAST, f.full_name ASC, f.id ASC;
 -- ---- api_applications (design SS4.2) ---------------------------------------
 --
 -- One row per application (308 today). Subject resolution per SS4's table:
--- current founders of the company via founder_company.is_current; excluded
--- ONLY when every current founder is opted out or a merge-tombstone;
--- RETAINED when there are none. The two-branch WHERE below is that rule
--- written out logically (NOT the single-founder anti-join template verbatim
--- -- this view's subject can be zero-or-many founders, not one).
+-- founders linked to the application; excluded ONLY when every one of them
+-- is opted out or a merge-tombstone; RETAINED when there are none. The
+-- two-branch WHERE below is that rule written out logically (NOT the
+-- single-founder anti-join template verbatim -- this view's subject can be
+-- zero-or-many founders, not one).
 CREATE OR REPLACE VIEW api_applications AS
-WITH current_founders AS (
-  SELECT fc.company_id, fc.founder_id
-  FROM founder_company fc
-  WHERE fc.is_current
+WITH application_founders AS (
+  -- Task A1d (corrects the SAME defect A1c fixed in api_founders, TRACKER.md
+  -- -- QA-reproduced 2026-07-19, "CRITICAL, blocking the QA gate"): the
+  -- original source here was founder_company.is_current ONLY (design SS4's
+  -- literal wording), which is company-scoped and, exactly as A1c found,
+  -- effectively empty for the real corpus (5 rows total, 03/05 test
+  -- fixtures, pointing at companies with ZERO applications) -- feature 02,
+  -- which wrote the entire real corpus, never writes founder_company.
+  -- Consequence, reproduced live: opting out EVERY founder in the database
+  -- removed 0 of 308 applications, a GDPR guarantee silently disabled on a
+  -- code path a smoke fixture happened to make green (the fixture manually
+  -- inserted a founder_company row -- a path no real founder takes).
+  --
+  -- Fix, mirroring A1c exactly: prefer founder_company.is_current for a
+  -- company when it actually has a row there; otherwise resolve through the
+  -- founder card(s) actually LINKED TO THIS APPLICATION
+  -- (card_type='founder', card.application_id = a.id) -- application-scoped,
+  -- not company-scoped, so a second application at the same company (77 of
+  -- 198 companies have more than one, live) never inherits founders that
+  -- belong to a different one. DO NOT collapse this back to
+  -- founder_company-only; that is the bug.
+  --
+  -- One (application_id, founder_id) edge per linked founder -- this feeds
+  -- EXISTS/NOT EXISTS checks below only, so duplicate edges are harmless,
+  -- but DISTINCT keeps the CTE itself an honest edge list.
+  SELECT DISTINCT a.id AS application_id, x.founder_id
+  FROM applications a
+  CROSS JOIN LATERAL (
+    SELECT fc.founder_id
+    FROM founder_company fc
+    WHERE fc.company_id = a.company_id AND fc.is_current
+
+    UNION ALL
+
+    SELECT c.founder_id
+    FROM cards c
+    WHERE c.application_id = a.id
+      AND c.card_type = 'founder'
+      AND c.founder_id IS NOT NULL
+      -- Only falls back to the card path when this application's company has
+      -- NO founder_company.is_current row at all -- the "prefer" half of the
+      -- rule above, not a merge of both sources.
+      AND NOT EXISTS (
+        SELECT 1 FROM founder_company fc2
+        WHERE fc2.company_id = a.company_id AND fc2.is_current
+      )
+  ) x(founder_id)
 ),
 score_founder_latest AS (
   SELECT DISTINCT ON (s.application_id)
@@ -1536,16 +1583,16 @@ LEFT JOIN theses                       th ON th.id = tl.thesis_id
 LEFT JOIN scores                       ts ON ts.id = tl.score_id
 LEFT JOIN memo_latest                  ml ON ml.application_id = a.id
 WHERE
-  -- Retained when the company has no current founders at all...
-  NOT EXISTS (SELECT 1 FROM current_founders cf WHERE cf.company_id = a.company_id)
-  -- ...or when at least one current founder is neither opted out nor a
-  -- merge-tombstone. Excluded only when current founders exist AND every one
+  -- Retained when the application has no linked founders at all...
+  NOT EXISTS (SELECT 1 FROM application_founders af WHERE af.application_id = a.id)
+  -- ...or when at least one linked founder is neither opted out nor a
+  -- merge-tombstone. Excluded only when linked founders exist AND every one
   -- of them fails that check (design SS4 subject-resolution table).
   OR EXISTS (
     SELECT 1
-    FROM current_founders cf
-    JOIN founders f ON f.id = cf.founder_id
-    WHERE cf.company_id = a.company_id
+    FROM application_founders af
+    JOIN founders f ON f.id = af.founder_id
+    WHERE af.application_id = a.id
       AND f.opt_out_at IS NULL
       AND f.merged_into_founder_id IS NULL
   );
