@@ -32,7 +32,8 @@ parallelism and a headless runner instead.
 | **T2 — n8n + paid branch** |
 | C1a | generator + `f05-trust-rollup` | @n8n-workflow-builder | B3 | ✅ **done** | n8n id `Wtd887vYwv5x3FvH`, 17 nodes, **active** | Verified by orchestrator: live row `558883f6…` = **19.50 / 0.43 / 12**, identical to `lib/f05/run.js` — the Code-node inlining has not drifted from the tested module, which is the whole point of the generator. Executions API confirms every node on the taken branch ran and the insufficient-evidence branch correctly did **not**. Exported JSON carries secrets only as `$env.*`, zero literals. ⚠️ **Cross-feature find → recorded in the shared tooling changelog: `globalThis.crypto` is UNDEFINED in the n8n task-runner sandbox**, contradicting the project's own standing guidance; `docker exec` prints `object` on the same container because it is a different global scope. Use `require('crypto')` |
 | — | **commit checkpoint 3** | @devops | B4, C1a | ✅ **done** | `875f4ae` | Triggered early and deliberately, right after the project's **second** data-loss event (~11:00, feature 08 lost an hour to a stray `git reset` from another terminal). Dispatched with an explicit ban on pull/rebase/stash/reset/checkout/clean. Verified: nothing pushed, `.env` unstaged, other terminals' files untouched |
-| C3 | `factual_dynamic` Tavily branch | @backend-developer | B3 | **in progress** | | ∥ with C1a |
+| C3 | `factual_dynamic` Tavily branch | @backend-developer | B3 | ✅ **done** | `dynamic.js` + `run.js` extension, 41/41; commit `c58ba17` | Verified by orchestrator: orphan `raw_signals` unchanged at 9, all 16 `tavily_search` rows carry FKs, 196/196 across the feature. **Found the design gap that produced §5.9** (entity gate applied only to contradictions; a same-named real company minted `verified` on two claims). Also added `isClaimsOwnCitation()` unprompted — a claim re-finding its own inline footnote is not independent corroboration. ⭐ **Honest live result: 15 checkable claims → 0 verdicts**, correct for fictional `.example` fixtures; positive path validated against a real founder's traction claim (4 genuine third-party sources, and a Reddit post with a *conflicting* figure correctly tiered `inferred` so it could neither verify nor contradict — rule 4 working on real data). 20 Tavily credits. Disclosed limit: third-party contradictions downgrade to context-only until C1b's LLM entity-matcher lands |
+| — | **commit checkpoint 5** | @devops | C3 | ✅ **done** | `c58ba17` | nothing pushed; `.env` unstaged |
 | C1b | `f05-verify-claims` + `f05-contradiction-scan` | @n8n-workflow-builder | C1a, C3 | pending | | also owns entity-gate step 3 (the LLM matcher hook) |
 | **T3 — calibration, QA, close** |
 | D2 | `min_coverage` calibration | @database-engineer | A1,B1 | pending | | acceptance is a number with the count behind it, not a note |
@@ -75,6 +76,28 @@ contradiction_penalty, trust, derived_status`
 |---|---|---|
 | `class` | `router_class` | alias `router_class AS class` |
 | `card_application_id`, `card_company_id`, `card_founder_id` | only `card_id` | join `cards` and supply the three fields — B1's §8.1 scope predicate needs them |
+
+## 🔴 HEADLINE KNOWN LIMITATION: the entity gate is fail-shut on third-party `supports`
+
+Measured, not theorised: **0 of the 5 `supports` candidates** this feature has ever surfaced from a
+live Tavily call survive the entity gate as currently wired (the 2 same-name `gameloop.com` matches
+**and** the 3 genuine third-party sources from the real-founder validation — getlatka, YouTube, a blog).
+
+**Why:** only gate steps 1–2 run on that path. Step 1 cannot resolve (we deliberately withhold our
+own insert-time FK — it records who we searched *for*, not proof the content is *about* them). Step 2
+only matches the company's own domain. But third-party corroboration is by definition **not** on the
+company's domain.
+
+So the branch swapped one failure for its mirror: it was over-claiming via same-name matches, and it
+now under-claims by rejecting genuine independent evidence. **Under-claiming is the right direction
+to err** — REQ-003 and REQ-004 both say an honest "not enough evidence" beats a false `verified` —
+but it is not the end state, and the handoff must not imply this branch verifies what it currently
+cannot.
+
+**Fix: gate step 3, the LLM entity-matcher** (spec written in `agents/entity-matcher.md`, built by
+C1b for the contradiction path). It exists for exactly this case: proving a third-party page is about
+*this* company via a verbatim naming quote plus a disambiguator. When it lands, wire it into the
+`supports` path too.
 
 ## 🔴 KNOWN-OPEN: one stale pre-fix score row, deliberately NOT deleted
 
