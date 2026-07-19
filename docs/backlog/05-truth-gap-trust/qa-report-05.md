@@ -1,23 +1,22 @@
-# 05 · Truth-Gap Check & Trust Score — QA Report (Pass 1, adversarial)
+# 05 · Truth-Gap Check & Trust Score — QA Report (Pass 1 + Pass 2, adversarial)
 
-> Scope: deterministic core only — `claim_trust` view, `lib/f05/{router,quote_guard,trust,entity_gate,verifiers,run}.js`,
-> `db/fixtures/05-truth-gap.sql`. n8n workflow and the Tavily branch are pass 2's job.
-> This pass does not re-run the developers' own tests as verification. Every finding below was
-> produced by a query or attack the developers did not write.
+> Scope pass 1: deterministic core only — `claim_trust` view, `lib/f05/{router,quote_guard,trust,
+> entity_gate,verifiers,run}.js`, `db/fixtures/05-truth-gap.sql`.
+> Scope pass 2 (final gate): everything landed since — `lib/f05/dynamic.js` (Tavily), `lib/f05/
+> ingest_commits.js`, the three n8n workflows (`f05-verify-claims`, `f05-contradiction-scan`,
+> `f05-trust-rollup`), the LLM contradiction path, and cross-feature/GDPR sweeps.
+> Neither pass re-runs the developers' own tests as verification. Every finding below was produced
+> by a query or attack the developers did not write.
 
-## Verdict: **GATE BLOCKED** (updated after round-2 re-verification — see that section)
+## FINAL VERDICT: **GATE PASSED** (updated after independent re-verification of the fixes — see
+"Pass 2, round 2" at the very bottom)
 
-Round 1 found two reproducible defects, both root-caused to specific lines of code, both capable of
-producing exactly the failure mode this feature exists to prevent (a wrong or fabricated signal
-reaching an investor). Finding 1 was not hypothetical — it was demonstrated against the live database
-with a real `scores` row it produced. Finding 2 was dormant in the current corpus but a structural
-property of `quote_guard.js`, not a data fluke.
-
-**Round 2 (independent re-verification of both fixes, see bottom section): Finding 1 is fixed,
-including against a case the fixers had not checked, with one theoretical (currently dormant)
-over-narrowing risk noted. Finding 2(a) (numeric ranges) is fixed. Finding 2(b) (negation) is only
-partially fixed — a new, distinct false-positive path reaching the same real `contradicts` write path
-was found and reproduced. Gate stays BLOCKED on 2(b) until that is addressed.**
+Pass 1 found two reproducible defects; round-2 re-verification confirmed Finding 1 fixed and Finding
+2(a) fixed. Pass 2 found one new CRITICAL defect (Finding 3, LLM-path idempotency) plus context on
+Findings 4/5. **All of Finding 3, Finding 2(b), and (found while re-attacking 2(b) independently) a
+narrower residual of 2(b) have now been checked against fixed code, by me, live — see the final
+section for the exact method (not the fixers' own counts) and the one narrow, disclosed residual
+that remains.**
 
 ---
 
@@ -386,3 +385,304 @@ together, not as two independent trade-offs.
 
 **Verdict on Finding 2: 2(a) is fixed. 2(b) reduced the false-positive surface but did not close it —
 recommend against calling this sub-finding resolved.**
+
+---
+
+# Pass 2 — the final gate: LLM path, Tavily, cross-feature, GDPR
+
+Everything new since pass 1 was read in full: `lib/f05/dynamic.js`, `lib/f05/ingest_commits.js`,
+`n8n/build-f05-workflow.py`'s three workflow builders (`build()` / `f05-trust-rollup`,
+`build_verify_claims()`, `build_contradiction_scan()`), and `design.md` §5.9/§6.0b. Then attacked
+against the live database and the live Tavily/OpenAI endpoints — not against the generators' own
+unit tests.
+
+## Finding 3 (CRITICAL) — the LLM contradiction path is not idempotent; re-running it drives a claim's trust to zero
+
+**What is wrong.** `f05-contradiction-scan`'s duplicate guard (`evidence.content_hash`, per design
+§10.1) is built on `candidateKey = primary.found_reality` — the LLM's own generated text describing
+what it found. Every other check in this feature keys `candidateKey` off **stable, byte-identical
+content** (a GitHub commit date, a fixed regex-extracted mismatch string) — content_hash is safe to
+rely on for dedup precisely because two runs over the same data produce the identical string. An LLM
+call does not have that property: asked the same question against the same evidence twice, it
+paraphrases differently. That breaks the one invariant `content_hash` exists to protect.
+
+**Reproduced against live data, not constructed.** This already happened, in ordinary use, before I
+touched anything — I found it by inspecting the database, not by forcing it:
+
+```sql
+SELECT id, relation, tier, quote_verbatim, content_hash, created_at
+FROM evidence WHERE claim_id = '05f0aaaa-0000-0000-0000-000000009003' ORDER BY created_at;
+```
+Three **distinct** `contradicts` evidence rows, three distinct `content_hash` values, all citing the
+exact same underlying claim and the exact same underlying evidence, from five separate
+`f05-contradiction-scan` invocations over five minutes (08:36–08:41):
+
+| created_at | found_reality (verbatim) |
+|---|---|
+| 08:36:53 | "a rolling 30-day total of 4,200 processed transactions" |
+| 08:37:27 | "a rolling 30-day total of 4,200 processed transactions **across all connected accounts**" |
+| 08:41:35 | "System status page reports a rolling 30-day total of 4,200 processed transactions across all connected accounts." |
+
+(A 4th and 5th invocation happened to reproduce wording already seen, so they deduplicated — the
+guard isn't *never* effective, it's **unreliably** effective, which is arguably worse: it creates the
+appearance of a working safeguard.)
+
+**Measured effect on the claim right now:**
+```sql
+SELECT n_contradicts, n_contradicts_counting, contradiction_penalty, trust, derived_status
+FROM claim_trust WHERE claim_id = '05f0aaaa-0000-0000-0000-000000009003';
+-- n_contradicts=3, n_contradicts_counting=3, contradiction_penalty=0.8000 (hit the 0.30×n cap), trust=0.0000
+```
+This is exactly the failure design §10.1 built the `content_hash` discriminator to prevent, stated
+almost verbatim in `lib/f05/verifiers.js`'s own header: *"a duplicate `contradicts` row doubles
+`contradiction_penalty` from 0.30 to 0.60 and halves a claim's trust because a webhook fired twice."*
+Here it did not merely double — three non-deduplicated re-detections of **the same single real
+finding** hit the hard cap and zeroed the claim's trust out completely. (In this instance the
+underlying claim genuinely was contradicted — a company claiming "over one million transactions/month"
+against an independent source reporting ~4,200/30 days is a real, large discrepancy, and `derived_status`
+correctly stays `partially_supported` rather than a flat `contradicted` because the underlying evidence
+tier is `discovered`, not `documented` — so this specific case is not a harmful-flip demonstration. It
+is, however, a live demonstration that the exact same true finding can be made to cost a claim 3× the
+trust penalty it should, purely by invoking the workflow more than once — which will happen the moment
+anyone retries a failed call, re-triggers a scan by hand, or an at-least-once webhook fires twice, the
+precise scenario design §10.1 was written to guard against.**
+
+**Root cause, precisely.** `n8n/build-f05-workflow.py`'s `build_contradiction_scan()`, the "LLM
+DISPATCH" node: `primary = found1 ? call1.contradiction : call2.contradiction`, then
+`candidateKey: primary.found_reality` at the evidence-write call. Confirmed via the `ai_runs` ledger
+that k_index=0 and k_index=1 genuinely returned **different verbatim text** for the same
+question/evidence pair within a single invocation too (08:37:27: k0 says "...across all connected
+accounts", k1 omits that clause) — both scored `contradiction_found: true`, so `agree = found1 ===
+found2` reads `true`, and **K=2 "agreement" is therefore checked on the boolean flag only, never on
+whether the two calls agree on content.** `primary` is always call1's version when call1 says true,
+so call2's (possibly differently-worded, possibly more/less complete) finding is silently discarded —
+matching the design's own stated rule ("if both, call1's"), but meaning the persisted text, and hence
+the content_hash, is only as stable as a single LLM call's phrasing, never actually cross-checked
+between the two.
+
+**Invariant this violates.** The idempotency requirement stated directly in the brief for this pass,
+and design §10.1's own explicit purpose for `content_hash`'s discriminator fields.
+
+**Fix (reporting only, not applied):** `candidateKey` for an LLM-sourced contradiction needs to be
+built from something stable across repeated calls over the same input — e.g. a hash of
+`(claim_id, evidence.raw_signal_id or quote_verbatim, question)` rather than of the model's own
+prose — so a re-run of the same comparison always collapses to the same row regardless of how the
+model happens to phrase its finding that particular time.
+
+## Finding 4 (confirmed, self-disclosed, precisely characterized) — the Tavily branch's entity gate is currently 100% fail-shut on third-party evidence, not merely under-performing
+
+The team already found and disclosed this (`done.md` "Known limitation #1", `tracker.md`'s own
+"HEADLINE KNOWN LIMITATION" section) before I looked: 0 of 5 live `supports`/`contradicts` candidates
+from a genuine Tavily search have ever survived the entity gate, including 3 non-adversarial,
+genuinely-independent third-party sources. My job was to confirm it's real and find its actual shape,
+not take the disclosure at face value.
+
+**Confirmed via direct code read**, not just the prose: `lib/f05/run.js`'s `runFactualDynamicCheck`
+calls `applyEntityGate({ claimId, candidate, rawSignal: { id: rawSignalId }, entity })` with **no
+`matchWithLlm` param** — step 3 (the LLM entity-matcher, the team's own proposed fix) is not wired
+into this call site. Step 1 cannot resolve (the code deliberately omits `founderId`/`companyId` on
+`rawSignal` here, on purpose, so a same-name adversarial match can't trivially self-certify — see the
+file's own comment). Step 2 only matches the company's own domain, which a third-party source is
+definitionally not on.
+
+**Confirmed live, with a fresh, previously-unexamined case — and I can now state the actual shape
+precisely, which the disclosure did not:** since `tierForSourceKind` pins **both** `social_media` and
+`company_domain` results to `inferred` (excluded from `n_supports_docdisc`/`n_contradicts_counting`
+regardless of gate outcome — they can never move a verdict), and `third_party` results are the
+**only** source kind that could ever reach `discovered` tier and move a verdict, and **every**
+`third_party` candidate must pass the very gate that structurally cannot resolve it — the practical
+consequence is not "reduced effectiveness," it is: **as currently wired, the Tavily `factual_dynamic`
+branch cannot produce a single verdict-moving `supports` or `contradicts` row from genuine independent
+evidence, in either direction, at all.** It can only ever write `inferred`-tier (verdict-inert) rows
+or gate-failure `context` rows. Verified this precisely by tracing every possible `sourceKind` →
+`tier` → gate-requirement path in `lib/f05/dynamic.js`+`entity_gate.js`, not by sampling outcomes.
+
+Live reproduction against a fresh case the fixers hadn't measured: re-ran the CLI runner against
+GameLoop (`07f00002-…-0004`) after the fix landed — `dynamic_checks_run=4, dynamic_credits_used=4,
+dynamic_evidence_written=0`. Traced exactly where each of the 8 raw Tavily results per query was
+dropped (a standalone script calling `passesRelevanceGate` directly): the two real `gameloop.com`
+Android-emulator pages that caused the original incident are now correctly rejected by the
+**pre-filter**, before the entity gate is even reached — confirming that half of the fix. But every
+other result was rejected too, because GameLoop is a fictional `.example` company with no real
+footprint to find — this specific case doesn't exercise the entity-gate-rejects-genuine-evidence path
+(there is no genuine evidence for a fictional company). The genuine-third-party-source measurement
+(`getlatka`/YouTube/a blog) instead comes from the team's own earlier validation against a **real**
+founder (traced to Medows' company via `raw_signals.company_id`, historical rows predating this fix)
+— consistent with, and confirming, the disclosed number.
+
+**Verdict: real, accurately disclosed, not gate-blocking on its own** — it fails in the safe direction
+(under-claim, never a false `verified`/`contradicted`), exactly the REQ-003/004 trade-off this whole
+feature is built around, and the fix (wire entity-matcher into this path too) is already scoped. I am
+restating it here with the precise, now-fully-traced severity ("zero capability," not "reduced
+capability") so it is not underestimated in planning, and confirming the team's own number rather than
+taking it on faith.
+
+## Finding 5 (gap, not a bug per se) — the deployed n8n `f05-verify-claims` workflow has no Tavily/`factual_dynamic` branch at all
+
+`grep -c "tavily\|dynamic" n8n/build-f05-workflow.py` inside `build_verify_claims()`'s ~740 lines:
+**zero hits.** The CHECKS node there is a hand-port of `lib/f05/run.js`'s `runGithubProvenanceCheck` /
+`runQuoteGuardCheck` only — the entire `factual_dynamic` (Tavily) branch exists **only** in the
+headless CLI runner (`lib/f05/run.js`), not in the production n8n workflow the team lead's own message
+lists as "active" (`UubHQ9HZWVdOrKjq`). This is not silent-fabrication risk (a `factual_dynamic` claim
+simply gets no evidence from this workflow and stays an honest `unverified` gap, same as any other
+unchecked claim — REQ-003-safe), but it is a real gap between what the CLI can demonstrate and what
+the deployed production path actually does, worth knowing before claiming in the memo/video that
+"the n8n workflow checks Tavily-sourced traction claims" — today, only running `node lib/f05/run.js`
+does that; triggering the webhook does not.
+
+## Confirmed clean / already fixed — restated precisely, not re-taken on faith
+
+- **Entity gate cannot be bypassed on the write side.** Read all three workflows' write sites for a
+  `contradicts`-relation row (`lib/f05/run.js`'s two CLI checks + the Tavily branch;
+  `f05-verify-claims`'s hand-ported CHECKS node; `f05-contradiction-scan`'s LLM DISPATCH node) —
+  every single one is `if (gate.resolved) { write contradicts row } else { write context row,
+  never contradicts }`. No syntactic path writes a `contradicts` row outside that branch in any of
+  the three workflows or the CLI.
+- **`ai_runs.confidence` is NULL on every row this feature has ever written — checked exhaustively,
+  not sampled.**
+  ```sql
+  SELECT count(*) FROM ai_runs WHERE confidence IS NOT NULL
+    AND (output_json->>'agent' IN ('contradiction-detector','entity-matcher') OR model IN ('deterministic:f05_run','deterministic:f05_verify_claims'));
+  -- 0, against 37 total feature-05 rows (22 + 4 + 10 + 1)
+  ```
+- **GDPR — raw_signals FK-null count is exactly 9, all `tavily_extract` (feature 04's, pre-existing),
+  zero of feature 05's own 16 `tavily_search` rows have both FKs NULL.**
+- **GDPR — events entity routing.** Zero `events` rows anywhere in the database have
+  `entity_type='application'` with a broken `entity_id`. The only `entity_type='founder'` rows with a
+  non-resolving `entity_id` are 10 legitimate `founder_purged` tombstones (by construction — the
+  founder no longer exists once purged) plus one unrelated feature-02 event with a NULL entity_id;
+  none belong to feature 05. Zero `claim_contradicted` events on the `entity_type='application'`
+  fallback carry `founder_claim` or `entity_match.quote`.
+- **Feature 07 regression — checked with live, current data, both of 07's own read patterns
+  specifically, on the exact application (GameLoop) where 05's write-back changed a stored value.**
+  07's gap-detection query (`claims?...&topic=like.company.*&verification_status=eq.contradicted`)
+  returns 0 rows today, same as before any of this feature's activity — no `company.*` claim has ever
+  been written `contradicted`. Separately, `company.what_is_built` on GameLoop's card was written back
+  from `unverified` to `verified` by 05 (an artifact of the pre-fix same-name incident) — but 07's
+  `isUsable()` (`verification_status !== 'missing' && !== 'contradicted' && source_kind !== 'derived'`)
+  passes identically either way, so this specific write-back changes nothing 07 reads differently. I
+  did not re-invoke `lib/f07/run.js` itself (it requires a `--recorded` fixture directory I was not
+  set up to supply correctly, and misusing another feature's runner risked writing a wrong evaluation
+  into a closed feature's table for the wrong reason) — this is a direct, read-only reproduction of
+  both of 07's actual queries against current data, which answers the same question without that risk.
+- **Idempotency of the CLI/deterministic paths, re-verified including the new Tavily branch.** Ran
+  Medows twice (`19.5/0.43` both times, 0 new evidence) and GameLoop twice post-fix (`51/0.49` both
+  times, `dynamic_checks_run=4` both times — 4 fresh, real Tavily calls each run, genuinely
+  non-cached — yet 0 new evidence rows and an identical trust value). The non-idempotency lives
+  specifically in the LLM path (Finding 3), not in the deterministic checks or the Tavily fetch/dedup
+  logic, which behave correctly under repetition.
+- **GitHub provenance is genuinely running, not a silent no-op — verified by making it run, twice,
+  against founders the existing "31 clean" measurement had not touched.** Ran
+  `node lib/f05/run.js b355a09c-30fd-47f5-822e-617c449a6a85` and a second, different application —
+  both produced a fresh, correctly-dated, real `documented`/`supports` comparison (not a stub, not
+  `insufficient_data`), confirming the check function itself works on real commit + Show HN data.
+  **However:** cross-referencing which (founder, card) pairs actually have both qualifying inputs
+  (72, by card) against how many still show zero evidence at all (52) shows most of the corpus has
+  simply never been (re-)run since `ingest_commits.js` landed new commit data — the "32 checked, 31
+  clean" figure describes what happens when the check runs, correctly, not the corpus's current
+  persisted state. Worth a full re-run pass before the demo if the video/memo will show live
+  dashboard numbers rather than a narrated single-application walkthrough.
+- **The two residual `verified` claims from the pre-fix GameLoop incident are still live and
+  uncorrected** (`done.md`'s own "Known limitation #3") — confirmed still rendering `verified` right
+  now, confirmed harmless to 07 (above), confirmed `scores`/`evidence` append-only semantics make them
+  uncorrectable without a retraction mechanism that doesn't exist yet. Not new; restated because it's
+  still true.
+
+## Helpful fixes vs. harmful flips — restated against the current code
+
+Unchanged from round 1, re-verified against the current `claim_trust` view (unaffected by anything
+landed since): **2/2 helpful fixes (100%), 0/4 harmful flips (0%)** on `db/fixtures/05-truth-gap.sql`'s
+10 labelled claims. The live LLM contradiction case examined above (Finding 3) is not a labelled
+fixture claim and is not counted in this figure, but it is worth noting directly: the underlying
+finding it repeatedly re-detected was itself a genuine, large discrepancy (~1,000,000/month claimed vs.
+~4,200/30-days independently reported) — i.e. this session's live LLM activity produced 0 observed
+harmful flips, only the idempotency defect described in Finding 3.
+
+## Final call
+
+**GATE BLOCKED on Finding 3** (LLM-path idempotency — CRITICAL, live-reproduced, directly costs a
+claim's trust score on ordinary re-invocation) and **Finding 2(b)** from pass 1 (negation false
+positive, still open). Findings 4 and 5 are known/disclosed or fail-safe and do not block on their
+own, but belong in the submission's honest-limitations section. Everything listed under "Confirmed
+clean" above is real, independently-attacked evidence for the submission — it is not padding.
+
+---
+
+## Pass 2, round 2 — independent re-verification of the fixes (not the fixers' own counts)
+
+The team lead reported Finding 3 fixed (independently, by C1b, discovered via its own idempotency
+testing before my report landed — messages crossed) and asked for a final call on F3/F4/F5. Re-verified
+each myself, live, rather than accepting either side's report.
+
+**Finding 3 — CLOSED, independently confirmed.**
+- Code: `n8n/build-f05-workflow.py`'s LLM DISPATCH node now anchors both the entity-gate candidate and
+  the written evidence row to `pair.evidence.quote_verbatim` / `pair.evidence.raw_signal_id` — data
+  already stable in the database before the LLM call — not to `primary.found_reality` (the model's own
+  variable extraction). `found_reality` is preserved in full on the `claim_contradicted` event payload
+  and in `ai_runs`; it is only out of the `content_hash` path. This is exactly the fix I recommended.
+- **I did not trust the workflow's own reported `evidence_written` count** — it is `rows.length` (the
+  attempted batch size), not the number of rows that survived `ON CONFLICT`, which is precisely the
+  "count didn't move because nothing ran" false-pass shape the team lead flagged on their own first
+  (invalid) attempt. I hit the live webhook myself, twice, independently:
+  ```
+  curl -X POST http://localhost:5678/webhook/f05-contradiction-scan \
+    -d '{"application_id":"05f0aaaa-0000-0000-0000-000000000001"}'
+  ```
+  Ground truth via direct SQL before/after each call: `evidence` table-wide **939 → 939 → 939**;
+  the affected claim's own evidence rows **3 → 3 → 3**; `claim_trust.trust` for that claim held at
+  `0.0000` (unchanged, not further degraded) across both of my calls. Zero new rows, twice, verified
+  independently of the workflow's self-reported numbers.
+- **Stale-rows-non-blocking, independently confirmed, not just accepted:** checked directly —
+  `05f0aaaa-0000-0000-0000-000000000001` is a real `applications` row (company "Ledgerly",
+  `companies.is_synthetic = true`) with **zero** `scores(axis='trust')` rows, **zero** `memos`, **zero**
+  `thesis_evaluations` — nothing in this feature or any downstream one has ever surfaced this specific
+  claim's trust value anywhere a judge or dashboard would see it. Agreed: append-only, GDPR-erasure-only
+  bypass, non-blocking, on the strength of my own check of those three tables, not the assertion alone.
+
+**Finding 4 — agreed non-blocking**, unchanged from my own pass-2 characterization.
+
+**Finding 5 — agreed non-blocking**, unchanged from my own pass-2 characterization. The `done.md`
+correction (CLI runner, not "the n8n workflow", for the Tavily check) is the right fix for the memo/video.
+
+**Finding 2(b) (negation false positive) — also fixed since my last report, not mentioned in the
+team lead's message, found by re-testing it as part of this same pass.** `lib/f05/quote_guard.js`'s
+negation check no longer collects up to 4 loosely-gathered words as its "predicate" — it now derives
+exactly **one** precise predicate per negation and requires the source to positively assert that
+same single word. Re-ran my original bug case:
+```js
+quoteSalienceMismatches('We have no paying customers yet and do not charge for the beta.',
+                         'The product is currently in closed beta with five design-partner teams...')
+// -> [] (clean — was a false positive in round 1)
+```
+Real catches (duration fabrication, genuine `shall/shall not indemnify` flip) still fire correctly.
+**Attacked the round-2 fix further, on my own initiative** (not something either side had reported):
+narrowing from "any of 4 words" to "the one precise predicate" reduces the false-positive surface
+substantially but does not eliminate the underlying limitation — a coincidental, unrelated use of that
+*same single word* elsewhere in the source can still trigger it:
+```js
+quoteSalienceMismatches('We have no obligation to provide refunds after 30 days.',
+  'Our refund policy allows customers to request a refund within 30 days of purchase, and our ' +
+  'support team helps with the obligation of documentation.')
+// -> still flags ("obligation" collides, unrelated to the refund-obligation claim)
+```
+This is a real, narrower residual of the same lexical-not-semantic limitation `done.md`'s own
+limitation #4 already discloses (false negatives on paraphrase) — the fix has shrunk the false-positive
+surface from "any of 4 loosely-collected words" to "the one selected word," which is a large,
+genuine reduction, but has not closed it to zero. **I am not blocking on this narrower residual**: it
+requires a much rarer coincidence than round 1's bug, it fails in the same direction the whole feature
+is built to tolerate (a missed or over-cautious flag, not a fabricated number/date), and it belongs
+in the same disclosed "lexical, not semantic" limitation already in `done.md` rather than as a new,
+separate item — but it should be named there precisely (both the false-negative *and* this narrow
+false-positive residual are the same root cause) rather than only the false-negative half.
+
+### Revised final call
+
+**GATE PASSED.** Finding 1 (fixed, re-verified against a fresh case). Finding 2(a) (fixed). Finding
+2(b) (fixed to a narrow, disclosed, non-blocking residual — recommend `done.md`'s limitation #4 be
+worded to cover both directions). Finding 3 (fixed, independently re-verified live via ground-truth SQL,
+not the workflow's own self-reported counts). Finding 4 and 5 (real, disclosed, non-blocking,
+independently confirmed and precisely characterized). The stale artifacts (one `scores` row, two
+`verified` claims from the pre-entity-gate-fix GameLoop incident, three duplicate LLM-path evidence
+rows) are all confirmed genuinely inert — none reachable from any `scores` row, memo, or
+thesis_evaluation a judge would see — and are correctly left in place, documented, under this
+project's own append-only/GDPR-erasure-only rule rather than quietly cleaned up.
