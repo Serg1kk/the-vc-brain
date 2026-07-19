@@ -1,6 +1,19 @@
 # 02 · Sourcing Radar (GitHub + HN, one channel deep)
 
-Status: backlog · Depends on: 01
+Status: **DONE** (2026-07-19 · QA gate PASSED · 265 tests · see [done.md](done.md)) · Depends on: 01 (schema), 07 (thesis gate)
+
+> **Design of record: [design.md](design.md)** — it supersedes the "Implementation view" below,
+> which was written before the sponsor material and the live APIs were checked. Nine assumptions
+> in this README turned out to be wrong on contact with real data; §2.1, §4.1 and §7.1 of the
+> design record each one with its measurement. Notably: the funnel is ~1380 candidates per
+> 14-day window (not 40–80), only ~36% of Show HN posts link to GitHub (so the product URL is
+> the majority path, not the repo), the artifact owner is an Organization 11% of the time, and
+> Tavily `/map` returns zero URLs on real personal sites.
+>
+> Proof it works end to end: a founder discovered by the radar — who never applied and has no
+> deck — carries a real Founder Score of **60.76** (confidence 0.61) produced by feature 03's
+> pipeline, with all 16 cited claims tracing back through evidence to 5 raw signals across 3
+> sources. See [tracker.md](tracker.md).
 
 ## What it is
 
