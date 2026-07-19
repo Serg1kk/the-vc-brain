@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f08/deck-claims-extractor.json",
+  "title": "deck-claims-extractor output",
+  "description": "Founder-signal claims extracted verbatim from a pre-seed pitch deck. Contains no confidence, score or verdict field by design: confidence is computed by the backend from span verification and extraction_mode (see the input spec).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["extraction_mode", "founder_identity", "claims", "failure_reason"],
+  "properties": {
+    "extraction_mode": {
+      "description": "Echo of the input mode. Caps the confidence the backend assigns to every claim in this response.",
+      "enum": ["text_layer", "vision", "none"]
+    },
+    "founder_identity": {
+      "description": "The person presenting as founder/CEO, exactly as printed. null when no name appears; never derived from the company name or an email address.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["full_name", "quote_verbatim"],
+          "properties": {
+            "full_name": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "role_stated": { "type": ["string", "null"], "maxLength": 120 },
+            "quote_verbatim": { "type": "string", "minLength": 1, "maxLength": 400 }
+          }
+        }
+      ]
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 15,
+      "description": "At most 3 per topic across 5 permitted topics. An empty array is valid and expected for a deck that says nothing about the founder.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic", "criterion_id", "text_verbatim", "quote_verbatim", "page", "stated_metrics", "value"],
+        "properties": {
+          "topic": {
+            "description": "Closed vocabulary. company.* is forbidden — feature 07 owns it and writes it from the same deck text.",
+            "enum": [
+              "founder.expertise.vertical_tenure",
+              "founder.expertise.insight_specificity",
+              "founder.expertise.competitor_granularity",
+              "founder.leadership.first_customers",
+              "founder.leadership.icp_specificity"
+            ]
+          },
+          "criterion_id": {
+            "description": "The scoring criterion this topic anchors. Must agree with topic: X1/X2/X5 for expertise.*, L2/L3 for leadership.*.",
+            "enum": ["X1", "X2", "X5", "L2", "L3"]
+          },
+          "text_verbatim": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "The deck's own sentence or bullet, unedited. Written to claims.text_verbatim."
+          },
+          "quote_verbatim": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "The exact substring that makes the claim true. MUST be a literal substring of the source; if the backend cannot locate it, the claim is discarded and a hallucination flag is recorded."
+          },
+          "page": { "type": ["integer", "null"], "minimum": 1 },
+          "stated_metrics": {
+            "type": "array",
+            "maxItems": 8,
+            "description": "Numbers PRINTED in the deck. Never computed, converted, annualised, totalled or averaged.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "value_verbatim", "unit_verbatim"],
+              "properties": {
+                "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "value_verbatim": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "description": "String, not number — the deck's own rendering is preserved ('Two', '£4,000', '14')."
+                },
+                "unit_verbatim": { "type": ["string", "null"], "maxLength": 60 }
+              }
+            }
+          },
+          "value": {
+            "type": ["object", "null"],
+            "description": "Small structured echo built ONLY from strings already present in the deck. Written to claims.value (jsonb)."
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "criterion_id": { "const": "X1" } }, "required": ["criterion_id"] },
+            "then": { "properties": { "topic": { "const": "founder.expertise.vertical_tenure" } } }
+          },
+          {
+            "if": { "properties": { "criterion_id": { "const": "X2" } }, "required": ["criterion_id"] },
+            "then": { "properties": { "topic": { "const": "founder.expertise.insight_specificity" } } }
+          },
+          {
+            "if": { "properties": { "criterion_id": { "const": "X5" } }, "required": ["criterion_id"] },
+            "then": { "properties": { "topic": { "const": "founder.expertise.competitor_granularity" } } }
+          },
+          {
+            "if": { "properties": { "criterion_id": { "const": "L2" } }, "required": ["criterion_id"] },
+            "then": { "properties": { "topic": { "const": "founder.leadership.first_customers" } } }
+          },
+          {
+            "if": { "properties": { "criterion_id": { "const": "L3" } }, "required": ["criterion_id"] },
+            "then": { "properties": { "topic": { "const": "founder.leadership.icp_specificity" } } }
+          }
+        ]
+      }
+    },
+    "failure_reason": {
+      "description": "null on any successful read. no_text_extracted maps to deck.warning='image_only_deck'; unreadable_input maps to 'extraction_failed'.",
+      "enum": [null, "no_text_extracted", "unreadable_input"]
+    }
+  },
+  "examples": [
+    {
+      "extraction_mode": "text_layer",
+      "founder_identity": {
+        "full_name": "Dana Okoye",
+        "role_stated": "Co-founder & CEO",
+        "quote_verbatim": "Dana Okoye, Co-founder & CEO"
+      },
+      "claims": [
+        {
+          "topic": "founder.leadership.first_customers",
+          "criterion_id": "L2",
+          "text_verbatim": "Two paid pilots live: Meridian Logistics and Halder Freight, both signed in March. 14 more warehouses on the waitlist.",
+          "quote_verbatim": "Two paid pilots live: Meridian Logistics and Halder Freight",
+          "page": 9,
+          "stated_metrics": [
+            { "label": "paid pilots", "value_verbatim": "Two", "unit_verbatim": "pilots" },
+            { "label": "waitlist", "value_verbatim": "14", "unit_verbatim": "warehouses" }
+          ],
+          "value": {
+            "customers_named": ["Meridian Logistics", "Halder Freight"],
+            "arrangement": "paid pilots",
+            "signed": "March"
+          }
+        },
+        {
+          "topic": "founder.expertise.vertical_tenure",
+          "criterion_id": "X1",
+          "text_verbatim": "Previously at Halder Freight.",
+          "quote_verbatim": "Previously at Halder Freight.",
+          "page": 14,
+          "stated_metrics": [],
+          "value": { "employer_named": "Halder Freight" }
+        }
+      ],
+      "failure_reason": null
+    },
+    {
+      "extraction_mode": "none",
+      "founder_identity": null,
+      "claims": [],
+      "failure_reason": "no_text_extracted"
+    }
+  ]
+}

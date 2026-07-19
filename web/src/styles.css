@@ -5,27 +5,31 @@
 @custom-variant dark (&:is([data-theme="dark"] *), &:is(.dark *));
 
 /*
- * Design tokens — brief §5.
- * Light default; dark via prefers-color-scheme or [data-theme="dark"] on :root.
+ * Maschmeyer Group palette — light warm background,
+ * dark-navy squared primary buttons, lavender secondary.
  */
 
 @theme inline {
-  --radius-sm: 6px;
-  --radius-md: 8px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
-  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Inter, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
 
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-border: var(--border);
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-lavender: var(--lavender);
+  --color-accent-soft: var(--lavender);
+  --color-accent-soft-foreground: var(--text);
   --color-warn: var(--warn);
   --color-ok: var(--ok);
 
-  /* shadcn aliases, kept mapped so any leftover primitives still render */
   --color-background: var(--bg);
   --color-foreground: var(--text);
   --color-card: var(--surface);
@@ -33,12 +37,11 @@
   --color-popover: var(--surface);
   --color-popover-foreground: var(--text);
   --color-primary: var(--accent);
-  --color-primary-foreground: #ffffff;
+  --color-primary-foreground: var(--accent-foreground);
   --color-secondary: var(--surface);
   --color-secondary-foreground: var(--text);
   --color-muted: var(--surface);
   --color-muted-foreground: var(--text-muted);
-  --color-accent-foreground: #ffffff;
   --color-destructive: var(--warn);
   --color-destructive-foreground: #ffffff;
   --color-input: var(--border);
@@ -46,40 +49,20 @@
 }
 
 :root {
-  --bg: #FAFAF9;
-  --surface: #FFFFFF;
-  --border: #E7E5E4;
-  --text: #1C1917;
-  --text-muted: #78716C;
-  --accent: #1D4ED8;
-  --warn: #B45309;
+  --bg: #FFFFFF;            /* clean white page */
+  --surface: #F1EEE8;       /* warm light-gray form panel — like Maschmeyer content cards */
+  --surface-2: #ECE7F7;     /* pale lavender panel */
+  --border: #E4E0D6;
+  --text: #0A0F3C;          /* deep midnight navy */
+  --text-muted: #5B6079;
+  --accent: #0A0F3C;        /* primary — dark navy */
+  --accent-foreground: #FFFFFF;
+  --lavender: #D3C7F5;
+  --warn: #0A0F3C;          /* Maschmeyer branding — use navy line, not orange */
   --ok: #15803D;
-  --radius: 8px;
+  --radius: 6px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0C0C0D;
-    --surface: #161618;
-    --border: #27272A;
-    --text: #FAFAF9;
-    --text-muted: #A1A1AA;
-    --accent: #60A5FA;
-    --warn: #FBBF24;
-    --ok: #4ADE80;
-  }
-}
-
-:root[data-theme="dark"] {
-  --bg: #0C0C0D;
-  --surface: #161618;
-  --border: #27272A;
-  --text: #FAFAF9;
-  --text-muted: #A1A1AA;
-  --accent: #60A5FA;
-  --warn: #FBBF24;
-  --ok: #4ADE80;
-}
 
 @layer base {
   * {
@@ -103,15 +86,17 @@
   }
 
   h1 {
-    font-size: 24px;
-    font-weight: 600;
-    line-height: 1.25;
-    letter-spacing: -0.01em;
+    font-size: 36px;
+    font-weight: 500;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    color: var(--color-text);
   }
 
   label {
     font-size: 13px;
     font-weight: 500;
+    color: var(--color-text);
   }
 
   input, textarea, select, button {
@@ -119,3 +104,11 @@
     color: inherit;
   }
 }
+
+/* Maschmeyer branding — thin navy horizontal bar as section divider.
+   Applied to <fieldset> elements inside the intake form. */
+@utility ms-rule {
+  border-top: 2px solid var(--color-text);
+  padding-top: 18px;
+}
+

@@ -21,3 +21,6 @@ __pycache__/
 node_modules/
 other-projects/
 infra/supabase/volumes/
+
+# --- Lovable export archives (contents in web/) ---
+docs/backlog/08-founder-intake-interview/*.zip

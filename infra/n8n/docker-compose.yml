@@ -11,6 +11,17 @@ services:
       - N8N_PROTOCOL=http
       - WEBHOOK_URL=http://localhost:5678/
       - N8N_SECURE_COOKIE=false
+      # CORS for feature 08: the founder intake SPA runs on its own dev-server
+      # origin and posts to n8n at :5678. Without this every call fails in the
+      # browser and nowhere else -- curl tests stay green, which is what makes
+      # it expensive to discover. Verified by preflight: OPTIONS with
+      # Origin: http://localhost:5173 returns 204 + Access-Control-Allow-Origin.
+      - N8N_CORS_ALLOW_ORIGIN=http://localhost:5173,http://localhost:3000
+      # Payload ceiling for feature 08: the intake contract carries the deck
+      # plus up to three extra files as base64 in one JSON request; the default
+      # is 16 MB. Operator chose to raise the limit rather than change the
+      # already-built frontend contract.
+      - N8N_PAYLOAD_SIZE_MAX=192
       # feature-04 workflows read these via $env.* expressions in Code/HTTP
       # Request nodes -- never pasted as literals into workflow JSON. Values
       # live in infra/n8n/.env (gitignored), loaded here via compose's

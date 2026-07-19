@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://the-vc-brain.local/schemas/f08/gap-question-phraser.json",
+  "title": "gap-question-phraser output",
+  "description": "0 to 3 founder-facing gap questions, one per selected criterion, in the order the criteria were supplied. This shape is FROZEN: it is rendered verbatim by the built frontend as gap_questions[] (lovable-brief.md §4.1) and as questions[] in the follow-up contract (§4.4). Do not add fields.",
+  "type": "array",
+  "minItems": 0,
+  "maxItems": 3,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["criterion_id", "question", "why", "placeholder"],
+    "properties": {
+      "criterion_id": {
+        "type": "string",
+        "description": "Echo of the supplied criterion id. Against the live seeded config only L2, L3 and X5 are ever selected — the other founder-score criteria are reachable by public sources and are never asked.",
+        "pattern": "^[A-Z][0-9]+$",
+        "examples": ["L2", "L3", "X5"]
+      },
+      "question": {
+        "type": "string",
+        "minLength": 15,
+        "maxLength": 140,
+        "description": "Past-tense, single ask, Mom Test register. A sufficient answer contains a name, a number or a date. Exactly one question mark. Must contain no forward-looking framing and none of the forbidden stems.",
+        "examples": ["Who is using it today, and how did the first one find you?"]
+      },
+      "why": {
+        "type": "string",
+        "minLength": 10,
+        "maxLength": 120,
+        "description": "One line naming what we could not learn on our own. When card_context.deck_readable is false it must NOT claim the deck omitted anything.",
+        "examples": ["Your deck doesn't name a first customer or pilot."]
+      },
+      "placeholder": {
+        "type": "string",
+        "minLength": 10,
+        "maxLength": 120,
+        "description": "Rendered on the textarea. States the smallest sufficient answer; never implies length or polish is rewarded.",
+        "examples": ["A name, a date, and how the conversation started is enough."]
+      }
+    }
+  },
+  "examples": [
+    [
+      {
+        "criterion_id": "L2",
+        "question": "Who is using it today, and how did the first one find you?",
+        "why": "Your deck doesn't name a first customer or pilot.",
+        "placeholder": "A name, a date, and how the conversation started is enough."
+      },
+      {
+        "criterion_id": "L3",
+        "question": "Think of the last person who really wanted this — what were they using before, and what made them start looking?",
+        "why": "Your deck says \"logistics companies\", which doesn't tell us who actually signs.",
+        "placeholder": "Their job title, their company size, and what they did instead is plenty."
+      },
+      {
+        "criterion_id": "X5",
+        "question": "When someone chose a different tool over yours, what did they pick and what did it do better?",
+        "why": "We can find who your competitors are; we can't find where you actually lose.",
+        "placeholder": "One specific instance is more useful than a full comparison."
+      }
+    ],
+    []
+  ]
+}

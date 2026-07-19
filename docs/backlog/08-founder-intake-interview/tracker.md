@@ -1,0 +1,71 @@
+# 08 · Founder Intake — Execution Tracker
+
+> Single writer: the orchestrator session. Agents report back; they never edit this file.
+> Plan: [`plan.md`](plan.md) · Design: [`design.md`](design.md) rev.2
+> Started 2026-07-19 ~10:35 Minsk, ~5.4 h to deadline.
+
+## Task board
+
+| ID | Task | Executor | Depends | Status | Result / notes |
+|---|---|---|---|---|---|
+| T1 | Storage bucket `decks` + cold-start docs | @devops | — | **done** | verified: bucket exists, private; `CLAUDE.md` cold-start step added |
+| T2 | n8n env: CORS + payload 192 MB | @devops | — | **done** | verified live in container; **all 8 workflows survived the restart**; CORS allows `:5173`/`:3000` — e2e must use the default Vite port |
+| T3 | `deck-claims-extractor` spec | ai-agent-builder | — | **done** | verified: `span` is required in the schema; `luna` for text_layer, `terra` for vision; `temperature` omitted, not zeroed |
+| T4 | `gap-question-phraser` spec | ai-agent-builder | — | **done** | verified: all four contract fields required incl. `placeholder`; forbidden words appear only as negative instructions and one explicit counter-example; `terra` |
+| T5 | `lib/f08/validate.js` | @backend-developer | — | **done** | `URL` removed for a manual parser; found and did **not** port a real security bug in the OSS source (`??` fall-through let a credentialed URL through on the second attempt) |
+| T6 | `lib/f08/identity.js` | @backend-developer | — | **done** | GitHub-first resolution + symmetric identity write so a later radar pass resolves back |
+| T7 | `lib/f08/hashing.js` | @backend-developer | — | **done** | `require('crypto').createHash`, **synchronous** — callers must not `await` `contentHash.*` |
+| T8 | `lib/f08/gaps.js` | @backend-developer | — | **done** | returns `[L2, L3, X5]`; topic vocabulary confirmed against the live DB and the extractor spec |
+| T9 | `lib/f08/completeness.js` | @backend-developer | T8 | **done** | 0.51 arithmetic corrected by the agent before I asked |
+| T9b | n8n workflow requirements spec | n8n-requirements-orchestrator | — | dispatched | depends on contracts, not on code |
+| PR | Plan review | @implementation-plan-reviewer | — | dispatched | |
+| T0 | Response contract: `responseNode` + real HTTP codes | n8n-workflow-builder | — | pending | **BLOCKER** — `lastNode` can only emit 200; no error code could reach the UI |
+| T19 | `f08-followup-create` (token producer) | n8n-workflow-builder | T10 | pending | without it T12 is untestable and T15 has no target |
+| T20 | Recompute founder score after answers | n8n-workflow-builder | T11 | pending | the headline claim; `scores` has **no `founder` axis rows at all** |
+| T10 | `f08-intake-submit` workflow | n8n-workflow-builder | T0,T1,T2,T5-T9b | pending | |
+| T11 | `f08-gap-answers` workflow | n8n agents | T10 | pending | |
+| T12 | `f08-followup` + `-answers` | n8n agents | T10 | pending | cuttable if clock tightens |
+| T13 | `f08-application-status` | n8n agents | T10 | pending | first to cut |
+| T14 | End-to-end in a browser | orchestrator | T10-T13 | pending | only way to catch CORS |
+| T15 | QA gate | @qa-engineer | T14 | pending | independent, adversarial |
+| T16 | `done.md` for feature 11 | orchestrator | T15 | pending | |
+| T17 | Rewrite feature README body | orchestrator | — | **done** | EN + RU pair rewritten in the S2 waiting window, per plan review §10 — no longer contradicts its own header |
+| T18 | Final commit + backlog status | @devops | T16,T17 | pending | |
+
+## Already done before the board opened
+
+| Item | Result |
+|---|---|
+| Phase 0 — four source passes | intel base (12 queries), NotebookLM ×10, Exa ×11, 20 OSS clones |
+| `lovable-brief.md` | frozen API contracts; commit `e7f5e93` |
+| Frontend built in Lovable, imported | `web/`, 92 files, commit `deff7cc` |
+| Frontend restyled to Maschmeyer palette | installed; `api.ts` unchanged, contracts intact |
+| Next-phase panel shortened; rationale → roadmap | operator, Jul 19; EN + RU pair updated |
+| `design.md` rev.1 → adversarial spec review | 19 findings, 5 blockers, **all verified real** |
+| `design.md` rev.2 | every finding folded in; `agents/spec-review-rev1.md` |
+| Cross-feature findings published | `docs/backlog/TRACKER.md` (bucket, purge gap, 07 gap convention, hash scoping) |
+
+## Event log
+
+- **~10:35** — Plan written, board opened. S0-A (@devops, T1+T2) and S0-B (agent specs, T3+T4)
+  dispatched in parallel; plan review dispatched alongside, since S0 is infra prerequisites no
+  plan revision would change.
+- **~10:40** — Operator: full autonomy, parallelise everything possible. S1 (@backend-developer,
+  T5-T9) and the n8n requirements spec dispatched immediately rather than after S0 — neither
+  depended on it. Five agents in flight.
+- **~10:22** — **T1 + T2 done and verified independently.** Bucket `decks` exists and is private;
+  both env vars live; **all 8 workflows survived the container restart** (the real risk — the
+  instance is shared by three terminals). `f02-radar-scan` shows inactive, but that is its
+  original state per its own `done.md`, not a regression.
+- **~10:28** — **Plan review returned CHANGES REQUIRED: 3 blockers, 9 majors, 6 minors.** Two
+  findings hit agents that were mid-flight, so corrections were sent live rather than after:
+  - `URL` is undefined in the n8n Code sandbox, and my "port verbatim from `reporting`"
+    instruction actively caused the failure. Recorded in 02's `done.md` as the bug that silently
+    classified every artifact as `kind:'none'`. Correction sent to @backend-developer.
+  - `responseMode:"lastNode"` (used by all four existing workflows, no `respondToWebhook` node
+    anywhere — verified) can only emit HTTP 200, so **no frozen error code could ever reach the
+    UI**. Correction sent to the n8n requirements agent, plus ten more.
+  Two claims verified against the live system: **CORS works** (real preflight → 204 with the
+  right origin, so T14's main risk is retired early), and the **status-screen falsehood is real**
+  — without T13 a founder who answered everything is told "You left 3 questions unanswered",
+  which inverts the old cut order. Plan amended as rev.2; three tasks added (T0, T19, T20).

@@ -1,93 +1,81 @@
-# 08 · Founder Intake & Optional Agent-Check (compact — option B)
+# 08 · Founder Intake & Optional Gap Questions
 
-Status: backlog · Depends on: 01, 02 · Founder-side entry (two-sidedness, asymmetric)
+Status: **in build** · Depends on: 01 (schema), 02 (pre-fill contract) · Blocks: 11
 
-> **REVISED Jul 19 ~02:00 (operator decision, option B)** — supersedes the «full cycle»
-> framing below where they conflict. Compact intake: minimal form + **upload ANY
-> files/presentations** (deck parsed to claims; other types optional — a **dummy upload
-> button is fine for MVP**, honestly labeled) + **optional short agent-check** (3-5
-> gap-driven text questions, skippable, never a wall). Voice in/TTS — stretch within MVP,
-> not core. Follow-up simplified: VC-manager notes/comments on the card → AI
-> suggests an additional-questions form (send/email — polished STUB). Full interview cycle + voice
-> agent → post-mvp/. **MANDATORY UI teaser (operator):** the founder flow must showcase the
-> upcoming «AI Interview — next phase» panel with a short pitch of WHY it's powerful and what
-> it will add: separate interview-derived scores, voice-recording vs live-call comparison
-> metrics, intonation/hesitation/latency signals (anti-gaming), richer founder profile.
-> Freed ~1.5-2h go into features 04/05/06. Rationale: Carl's own brief —
-> «Fix works both ways» but the entry is a SHORT form; rubric weight is investor-side.
+Design: [`design.md`](design.md) rev.2 · Plan: [`plan.md`](plan.md) rev.2 ·
+Frontend contract: [`lovable-brief.md`](lovable-brief.md) · Execution: [`tracker.md`](tracker.md)
 
 ## What it is
 
-The founder's entrance: a **minimal application form** (deck + company name + optional
-artifact links) followed by a **chat interview with an LLM agent** that arrives pre-filled
-from public footprints, asks ONLY about the card's gaps, supports **voice input (ElevenLabs
-STT) and TTS playback**, and builds the company/founder/team cards live on screen. Plus a
-**real share-link second interview** the investor can request (email delivery mocked). Voice
-originals stored as provenance artifacts.
+The founder's entrance to the system:
 
-## Why (rubric & evidence)
+1. **A three-field application** — company name, contact email, deck. Optional artifact links
+   and optional extra files. Nothing else is required, ever.
+2. **The deck parsed into claims**, with an honest declaration when it cannot be read.
+3. **Up to three optional questions**, generated from what the system could not learn on its
+   own. Skippable in one click.
+4. **An immediate status screen** — the product's promise is a verdict within 24 hours.
+5. **A manager-initiated follow-up form** delivered by share link (email delivery mocked).
 
-- Operator decision (Jul 19): FULL cycle, voice in/out in MVP, «Voice agent — next phase» note.
-- Founder's #1 pain: time + repetition, not rejection (SeedForge 4,690-pain research: 37%
-  timeline drag; «same 15 questions 20 times, no shared infrastructure for founder proof») —
-  the card IS that infrastructure; «prove once».
-- Brief minimum: deck + company name; over-collecting counts against (REQ-008, FAQ-4). Form
-  asks for artifacts — «GitHub, jupyter NB, replit app — 100x more useful than a deck»
-  (REC-014).
-- Interview guardrails (research-locked in roadmap): disclosure upfront + human-review note ·
-  questions only from gaps · pre-fill before asking · answers = self-reported claims (low base
-  confidence, NOT scored for eloquence — SIG-018) · outcome immediately · duration stated +
-  progress bar · «request a human» button · known deterrence risk mitigated (interview after
-  form, not a wall).
-- Precedents: Parley (FACT-012, 40+ VCs — demand proven), SeedForge Living Profile; NONE of
-  the 9 OSS references have a founder-facing interview → differentiation.
-- Zapier Ezra pilot: 97% completion at 4.5/5 when opt-in + human-reviewed; fraud avoids
-  completing interviews → the interview doubles as a fraud filter.
+## What it is not
 
-## Where the idea comes from
+Not an interview, not a chat, not voice, not a founder account, not a product surface. REQ-007
+puts the platform in the fund manager's hands; this side is a door, and every hour spent
+widening it is taken from features 04/05/06, where most of the judging weight sits.
 
-- IDEA-002 (hacker Zahil @28:24, confirmed by KB), operator's two-sided vision (personas.md
-  P2 + «Two-sidedness» section). Abandon-mid-interview = itself a founder signal (operator).
-- Voice provenance: spoken answers harder to fake than pasted text; stored originals may have
-  legal value (operator, Jul 19).
+## Why it is shaped this way
 
-## Implementation view
+**The questions are optional and are never called an interview.** A natural field experiment on
+3,000+ applicants found async interview formats cut application continuation by over 50%, and
+the drop was largest among the *most qualified* applicants and largest for women. A product whose
+whole thesis is finding people the market's filters miss cannot afford a component that filters
+hardest on the qualified. The same study found the AI *assessment* out-predicted human
+recruiters — deterrence and accuracy are separable, so we keep the second and drop the first.
 
-n8n + Supabase + frontend chat component:
+**The three questions are not arbitrary.** They are selected by arithmetic, not by a model:
+the scoring formula's registry is read, and the criteria kept are those no public source can
+reach — `neg_src ⊆ {deck_parse, interview_answer}`. Exactly three qualify: first customers
+(L2, weight 0.150), ICP specificity (L3, 0.090), and insider-level competitor knowledge
+(X5, 0.056). Together that is **0.296 of the founder score that public sourcing structurally
+cannot see.** The radar's own end-to-end proof is limited by exactly these criteria: a founder
+discovered with no application scored 60.76 at coverage 0.395 against a 0.704 ceiling. So the
+questions are the mechanism that lifts coverage, and the lift is measurable on screen. An LLM
+only phrases them; the choice of what to ask is explainable and immune to eloquence.
 
-1. **`intake-form`** (frontend → Supabase): minimal fields; creates company+founder+card rows;
-   triggers `identity-resolve` + pre-fill scan (feature 02 sub-workflows).
-2. **`interview-agent`** (n8n, webhook per message; prompts via ai-agent-builder): context =
-   card + gaps list; picks next question from highest-value gap; each answer → claim
-   (source_kind: interview|voice, verbatim preserved); updates card completeness → frontend
-   live-preview re-renders (Supabase realtime or polling).
-3. **Voice**: mic button → audio → n8n webhook → ElevenLabs STT → text into the same flow;
-   original audio → Supabase Storage (`voice_artifacts`); TTS button per agent message →
-   ElevenLabs TTS via backend proxy (key never in browser).
-4. **`follow-up-interview`**: investor clicks «Request follow-up» on card → generates
-   share_token link (real, opens interview scoped to selected gaps) → email delivery MOCKED
-   (show the composed email + link in UI).
-5. Finish: immediate status screen («card complete, verdict within 24h») + opt-out link.
+**Skipping lowers confidence, never the score.** Penalising a skip conflates stealth with
+failure — the one-sided label-noise trap — and it would punish exactly the heads-down builders
+this product exists to find.
 
-## Boundaries & stubs
+**Answers are never scored for eloquence.** They are scored on whether they yield a checkable
+fact: a name, a number, a date. There is no AI-text detector anywhere in the system, deliberately:
+the best available accuracy is unusable, polished human writing is indistinguishable from
+generated, and the errors land disproportionately on non-native English speakers.
 
-Email sending mocked. Voice AGENT (hears intonation/latency, counters LLM-assisted answers) —
-post-MVP with its own text-vs-voice risk analysis (roadmap parking lot). No auth for founders —
-share_token links only.
+## What is genuinely new here
 
-## Agents & work modes (orchestration — read before grooming)
+Across 20 open-source VC tools surveyed, searches for founder-facing follow-up, applicant status,
+and any GDPR or opt-out concept return **zero results**. One project generates a diligence
+question list — and ships it to the investment team. Another detects a gap and returns
+"Need More Info" for a human to chase. **Nobody routes a machine-detected gap back to the founder
+as an answerable question.** That connection is this feature's contribution.
 
-- **Plan first:** @implementation-plan-architect ⇄ @implementation-plan-reviewer (until ✅ APPROVED). Git/deploy — @devops ONLY.
-- **AI logic (MANDATORY `ai-agent-builder`):** THE key product prompt — interview agent (gap-driven questions, pre-fill confirmation, guardrails baked into system prompt); claims-extraction from answers.
-- **n8n (MANDATORY, two n8n agents):** `intake-form` trigger, `interview-agent` webhook flow, `follow-up-interview` (share-token), ElevenLabs STT/TTS proxy nodes.
-- **Data model:** @database-engineer — interviews / voice_artifacts / share_token; possible additions (progress, question log); reconcile with 01.
-- **UX/Design — HEAVIEST UX FEATURE, mandatory UX-brainstorm with operator:** split-screen live-preview of the card, mic/TTS controls, disclosure banner, progress, «request a human», «Voice agent — next phase» note — @designer first, then @frontend-developer.
-- **Build:** @backend-developer — thin ElevenLabs proxy (key never in browser).
-- **QA:** @qa-engineer — all 8 interview guardrails from roadmap verified one by one; voice originals stored & linked to claims.
+## Honest boundaries
 
-## Open questions
+| Item | Status |
+|---|---|
+| Email sending | Mocked — the composed message and link are shown, nothing is sent |
+| Non-PDF uploads | Stored and labelled unparsed; only PDFs are read automatically |
+| Image-only decks | Detected and declared, with extraction confidence capped |
+| Voice input | Not built. A short "next phase" note, and nothing records audio |
+| Founder accounts | None. Share tokens only |
+| Team composition | Not extracted by this feature; the memo renders it as a gap |
+| Erasure of stored files | The deletion function does not sweep object storage — disclosed, not hidden |
 
-- Interview length cap (5-7 questions?) and gap-priority order — groom.
-- Live-preview split-screen (UX question #2 to operator — pending answer).
-- Deck parsing depth in MVP: text extraction only vs slide-by-slide claims (I lean text-only
-  + claims extraction; visual parsing post-MVP).
+## Where the numbers come from
+
+Grounding for every claim above lives in [`design.md`](design.md) and the source passes behind
+it: the project's internal requirement base, ten NotebookLM queries under an explicit early-stage
+frame, eleven external research queries, and a re-reading of the twenty open-source references.
+The design then went through an adversarial spec review that returned 19 findings, five of them
+blocking — all of which proved real and all of which are folded in
+([`agents/spec-review-rev1.md`](agents/spec-review-rev1.md)).

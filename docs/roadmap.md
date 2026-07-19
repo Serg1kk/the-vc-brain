@@ -188,7 +188,27 @@ Harmonic, Specter, PDL) — post-MVP, only if a concrete gap demands it.
   counter to LLM-assisted answering that text chat cannot detect. Needs its own work item:
   **detailed risk analysis «text agent vs voice agent»** (gaming resistance, deterrence/drop-off,
   accessibility, bias of voice-based judgments, legal/consent for voice analysis). Explicitly
-  out of the 24h scope; the MVP UI carries a «Voice agent — next phase» note.
+  out of the 24h scope; the MVP UI carries a short «Voice conversations — next phase» note with
+  no detail (operator, Jul 19: the *why* belongs here, not on the founder's screen).
+
+  > ### 📣 PITCH MATERIAL — why voice, in three lines (operator, Jul 19)
+  >
+  > Kept verbatim for the investor pitch. This is the argument, not UI copy; the product page
+  > says only «coming soon».
+  >
+  > - **A spoken answer is far harder to fake than pasted text**, so it counts as stronger
+  >   evidence — the artefact itself carries provenance.
+  > - **Hesitation, pacing and latency carry signal that written answers cannot**, which is what
+  >   makes a voice answer resistant to being generated on the fly. Text cannot distinguish a
+  >   founder who knows their numbers from one reading them off a second screen.
+  > - **Voice answers will be scored separately** and shown to investors *alongside* — never
+  >   merged into — the evidence we gather ourselves. A second, independent axis rather than a
+  >   louder version of the same one.
+  >
+  > Why it is a real differentiator and not a feature bullet: the whole product is built against
+  > the collapse of self-reported signal (AI writes perfect decks, LLMs answer written questions,
+  > persuasion is devalued — SIG-018, FACT-014). Voice is the one intake channel where that
+  > collapse has not happened yet.
 - Второе интервью email-делivery по-настоящему; MCP-сервер; остальные sourcing-каналы
   из дашборда-заглушек.
 
