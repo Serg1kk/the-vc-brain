@@ -1104,8 +1104,19 @@ BEGIN
 
   -- Prior audit history for every id in the set -- GDPR beats audit
   -- (design.md SS5.4); the one anonymized row this function writes at the
-  -- end is what survives.
-  DELETE FROM events WHERE entity_type = 'founder' AND entity_id = ANY (v_person_ids);
+  -- end is what survives. Two entity_type branches, not one: f05's pipelines
+  -- (claim_verification_attempted and friends) write entity_type='application'
+  -- events that entity_type='founder' alone never reached -- 909 rows live,
+  -- 868 of them claim_verification_attempted, surviving every erasure request
+  -- until now. Second branch scoped to v_sole_app_ids, the SAME sole-ownership
+  -- boundary every other application-scoped sweep in this function already
+  -- uses (thesis_evaluations/memos/scores/ai_runs/applications above), so a
+  -- co-founder's erasure never touches a shared company's events.
+  -- events.entity_id carries no FK (schema comment above its own definition),
+  -- so there is no ordering hazard forcing this sweep any earlier or later.
+  DELETE FROM events
+   WHERE (entity_type = 'founder' AND entity_id = ANY (v_person_ids))
+      OR (entity_type = 'application' AND entity_id = ANY (v_sole_app_ids));
 
   -- founder_identities for every id, then the tombstones (two separate
   -- statements, tombstones-first -- they reference the canonical row via
