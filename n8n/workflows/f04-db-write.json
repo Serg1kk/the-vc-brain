@@ -1,0 +1,171 @@
+{
+ "name": "f04-db-write",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "trigger",
+   "name": "When Executed by Another Workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB  = $env.SUPABASE_URL;\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\n\n// \u00a73.6 card preflight. The card_type filter is mandatory \u2014 a founder card can carry the same\n// application_id \u2014 and ORDER BY created_at ASC makes the pick deterministic, so a run cannot\n// silently scatter one application's claims across two cards.\nconst inp = $input.first().json;\nconst appId = inp.application_id;\nif (!appId) throw new Error('f04-db-write: application_id is required');\nconst app = await pg.call(this, 'GET', `applications?id=eq.${appId}&select=id,company_id,thesis_id`);\nif (!app.length) throw new Error('f04-db-write: application not found: ' + appId);\nconst companyId = app[0].company_id;\nlet cards = await pg.call(this, 'GET',\n  `cards?application_id=eq.${appId}&card_type=eq.company&select=id&order=created_at.asc&limit=1`);\nlet cardId = cards.length ? cards[0].id : null;\nif (!cardId) {\n  const made = await pg.call(this, 'POST', 'cards',\n    { card_type: 'company', company_id: companyId, application_id: appId, status: 'draft' },\n    'return=representation');\n  cardId = made[0].id;\n}\nreturn [{ json: { ...inp, application_id: appId, company_id: companyId, card_id: cardId,\n                  thesis_id: inp.thesis_id ?? app[0].thesis_id ?? null } }];\n"
+   },
+   "id": "preflight-resolve-card",
+   "name": "Preflight: resolve card",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB  = $env.SUPABASE_URL;\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\n\n// 01 design \u00a74.5 is binding: LLM output ALWAYS lands here, before the validator lets anything\n// through to the target tables. This is the traceability receipt the rubric's stretch goal asks for.\nconst inp = $input.first().json;\nconst r = inp.ai_run || {};\nconst rows = await pg.call(this, 'POST', 'ai_runs', {\n  task_type: r.task_type || 'market_intel',\n  company_id: inp.company_id, application_id: inp.application_id,\n  model: r.model || 'unknown', prompt_version: r.prompt_version || null,\n  input_hash: r.input_hash || null,\n  output_json: { ...(r.output_json || {}), config: r.config || {}, credits: r.credits ?? null },\n  confidence: r.confidence ?? null, disagreement: r.disagreement ?? null,\n  n8n_execution_id: String($execution.id),\n}, 'return=representation');\nreturn [{ json: { ...inp, ai_run_id: rows[0].id } }];\n"
+   },
+   "id": "write-ai-run",
+   "name": "Write ai_run",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB  = $env.SUPABASE_URL;\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\n\n// \u00a73.5 \u2014 select-by-content_hash, insert only if absent, and REUSE the returned id.\n// NOT `ON CONFLICT DO NOTHING`: over PostgREST that returns zero rows, so evidence.raw_signal_id\n// would be written null and the provenance chain \u2014 this feature's headline claim \u2014 would break\n// on exactly the demo re-run. A no-op `DO UPDATE ... RETURNING` is not an option either: it\n// trips the append-only trigger from feature 01.\nconst crypto = require('crypto');\nconst sha = (...p) => crypto.createHash('sha256').update(p.map(x => x ?? '').join(' '), 'utf8').digest('hex');\nconst inp = $input.first().json;\nconst out = {};\nfor (const s of (inp.raw_signals || [])) {\n  const hash = sha(s.source, s.source_url, s.query, s.observed_at);\n  let found = await pg.call(this, 'GET', `raw_signals?content_hash=eq.${hash}&select=id`);\n  let id;\n  if (found.length) { id = found[0].id; }\n  else {\n    const made = await pg.call(this, 'POST', 'raw_signals', {\n      source: s.source, source_url: s.source_url || null, payload: s.payload || {},\n      content_hash: hash,\n      // company_id is always set: a purged company must not keep a web-search shadow (GDPR).\n      company_id: inp.company_id, founder_id: s.founder_id || null,\n      observed_at: s.observed_at,  // coalesce(published_date, pinned end_date) \u2014 never now()\n    }, 'return=representation');\n    id = made[0].id;\n  }\n  out[s.ref] = id;\n}\nreturn [{ json: { ...inp, raw_signal_ids: out } }];\n"
+   },
+   "id": "write-raw-signals",
+   "name": "Write raw_signals",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    660,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB  = $env.SUPABASE_URL;\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\n\n// \u00a73.5 \u2014 the hash carries ai_run_id AND item_key.\n//   ai_run_id: a re-run MUST create new rows, otherwise scores.trend has no history.\n//   item_key:  several topics write N rows per run (one per competitor, one per tailwind).\n//              Without it every tailwind in a run hashes identically, the second INSERT raises\n//              23505, and the competitor set \u2014 the feature's highest-value output \u2014 is lost.\nconst crypto = require('crypto');\nconst sha = (...p) => crypto.createHash('sha256').update(p.map(x => x ?? '').join(' '), 'utf8').digest('hex');\nconst BASE_CONF = { public: 0.6, derived: 0.5, self_reported: 0.3, interview: 0.3, voice: 0.3 };\nconst inp = $input.first().json;\nconst out = {};\nfor (const c of (inp.claims || [])) {\n  const itemKey = c.item_key || '_';\n  const hash = sha(inp.card_id, c.topic, inp.ai_run_id, itemKey);\n  // supersedes matches per (card_id, topic, item_key): once a topic holds N rows, \"the prior\n  // claim with the same topic\" is ambiguous. A competitor found last run but absent this run\n  // gets NO successor \u2014 inventing one would assert we re-checked and disconfirmed it.\n  const prior = await pg.call(this, 'GET',\n    `claims?card_id=eq.${inp.card_id}&topic=eq.${encodeURIComponent(c.topic)}` +\n    `&select=id,value&order=created_at.desc&limit=20`);\n  const match = prior.find(p => ((p.value || {}).item_key || '_') === itemKey);\n  const made = await pg.call(this, 'POST', 'claims', {\n    card_id: inp.card_id, topic: c.topic,\n    text_verbatim: c.text_verbatim,   // NOT NULL \u2014 omitting it 23502s at runtime\n    value: { ...(c.value || {}), item_key: itemKey },\n    axis: c.axis || null, source_kind: c.source_kind || 'derived',\n    base_confidence: c.base_confidence ?? BASE_CONF[c.source_kind || 'derived'] ?? 0.5,\n    verification_status: c.verification_status || 'unverified',\n    content_hash: hash, supersedes_claim_id: match ? match.id : null,\n  }, 'return=representation');\n  out[c.ref] = made[0].id;\n}\nreturn [{ json: { ...inp, claim_ids: out } }];\n"
+   },
+   "id": "write-claims",
+   "name": "Write claims",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    880,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB  = $env.SUPABASE_URL;\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\n\n// \u00a73.5 \u2014 the `query` discriminator is what keeps multiple tier='missing' rows on one claim from\n// colliding: those rows have NULL url AND NULL quote, so without it the second INSERT 23505s.\n// \u00a73.4 \u2014 strength comes from the tier table. Feature 05's rollup is f(tier, relation, strength);\n// writing nulls here would degrade it silently rather than loudly.\nconst crypto = require('crypto');\nconst sha = (...p) => crypto.createHash('sha256').update(p.map(x => x ?? '').join(' '), 'utf8').digest('hex');\nconst STRENGTH = { documented: 0.9, discovered: 0.6, inferred: 0.3, missing: 0.0 };\nconst inp = $input.first().json;\nlet n = 0;\nfor (const e of (inp.evidence || [])) {\n  const claimId = inp.claim_ids[e.claim_ref];\n  if (!claimId) continue;\n  const relation = e.relation || (e.tier === 'missing' ? 'context' : 'supports');\n  const hash = sha(claimId, relation, e.source_url, e.quote_verbatim, e.query);\n  const exists = await pg.call(this, 'GET', `evidence?content_hash=eq.${hash}&select=id`);\n  if (exists.length) continue;\n  await pg.call(this, 'POST', 'evidence', {\n    claim_id: claimId, relation, tier: e.tier,\n    strength: e.strength ?? STRENGTH[e.tier] ?? null,\n    quote_verbatim: e.quote_verbatim || null, source_url: e.source_url || null,\n    raw_signal_id: e.raw_ref ? (inp.raw_signal_ids[e.raw_ref] || null) : null,\n    content_hash: hash,\n  });\n  n++;\n}\nreturn [{ json: { ...inp, evidence_written: n } }];\n"
+   },
+   "id": "write-evidence",
+   "name": "Write evidence",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1100,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "\nconst SB  = $env.SUPABASE_URL;\nconst KEY = $env.SUPABASE_SERVICE_ROLE_KEY;\nasync function pg(method, path, body, prefer) {\n  const headers = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };\n  if (prefer) headers.Prefer = prefer;\n  return await this.helpers.httpRequest({ method, url: SB + '/rest/v1/' + path, headers, body, json: true });\n}\n\n// \u00a73.7 \u2014 up to THREE rows per run: market, idea_vs_market, founder (\u00a76.6).\n// A null value means \"not assessed\" and writes NO row. Two cases depend on this: an absent\n// founder_score must never become a zero founder axis (\u00a76.6), and a run where every search came\n// back empty must produce no market score at all (\u00a74) \u2014 a score with no evidence is worse than\n// no score, and an absent row means \"not assessed\", never zero (\u00a711's contract with 06/09).\nconst inp = $input.first().json;\nconst written = [];\nfor (const s of (inp.scores || [])) {\n  if (s.value === null || s.value === undefined) continue;\n  const rows = await pg.call(this, 'POST', 'scores', {\n    application_id: inp.application_id, founder_id: null,  // subject XOR: application only\n    axis: s.axis, value: s.value, trend: s.trend || null,\n    confidence: s.confidence ?? null, missing_flags: s.missing_flags || {},\n    input_claim_ids: (s.input_claim_refs || []).map(r => inp.claim_ids[r]).filter(Boolean),\n    formula_version: s.formula_version || 'f04_v1',\n    prompt_version: s.prompt_version || null, model: s.model || null,\n    thesis_id: inp.thesis_id || null,\n  }, 'return=representation');\n  written.push({ axis: s.axis, id: rows[0].id, value: s.value });\n}\nreturn [{ json: { application_id: inp.application_id, card_id: inp.card_id,\n                  ai_run_id: inp.ai_run_id, claim_ids: inp.claim_ids,\n                  raw_signal_ids: inp.raw_signal_ids,\n                  evidence_written: inp.evidence_written, scores_written: written } }];\n"
+   },
+   "id": "write-scores",
+   "name": "Write scores",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1320,
+    0
+   ]
+  }
+ ],
+ "connections": {
+  "When Executed by Another Workflow": {
+   "main": [
+    [
+     {
+      "node": "Preflight: resolve card",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Preflight: resolve card": {
+   "main": [
+    [
+     {
+      "node": "Write ai_run",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write ai_run": {
+   "main": [
+    [
+     {
+      "node": "Write raw_signals",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write raw_signals": {
+   "main": [
+    [
+     {
+      "node": "Write claims",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write claims": {
+   "main": [
+    [
+     {
+      "node": "Write evidence",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write evidence": {
+   "main": [
+    [
+     {
+      "node": "Write scores",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ }
+}
